@@ -1,0 +1,1718 @@
+// Assets/Editor/SimpleMeshFactory.cs
+// 階層型Undoシステム統合済みメッシュエディタ
+// MeshData（Vertex/Face）ベース対応版
+
+using System.Collections.Generic;
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+using MeshEditor.UndoSystem;
+using MeshEditor.Data;
+
+public class SimpleMeshFactory : EditorWindow
+{
+    // ================================================================
+    // メッシュデータ（内部クラス → MeshDataと名前衝突を避けるためリネーム）
+    // ================================================================
+    private class MeshEntry
+    {
+        public string Name;
+        public Mesh Mesh;                           // Unity Mesh（表示用）
+        public MeshData Data;                       // 新構造データ
+        public Vector3[] OriginalPositions;         // 元の頂点位置（リセット用）
+    }
+
+    private List<MeshEntry> _meshList = new List<MeshEntry>();
+    private int _selectedIndex = -1;
+    private Vector2 _listScroll;
+    private Vector2 _vertexScroll;
+
+    // ================================================================
+    // マテリアル管理
+    // ================================================================
+    private Material _registeredMaterial;
+
+    // ================================================================
+    // プレビュー
+    // ================================================================
+    private PreviewRenderUtility _preview;
+    private float _rotationY = 0f;
+    private float _rotationX = 20f;
+    private float _cameraDistance = 2f;
+    private Vector3 _cameraTarget = Vector3.zero;
+
+    // ================================================================
+    // 頂点編集
+    // ================================================================
+    private Vector3[] _vertexOffsets;       // 各Vertexのオフセット
+    private Vector3[] _groupOffsets;        // グループオフセット（後方互換用、Vertexと1:1）
+
+    // 頂点ドラッグ用
+    private int _dragVertexIndex = -1;
+    private bool _isDraggingVertex = false;
+
+    // 表示設定
+    private bool _showWireframe = true;
+    private bool _showVertices = true;
+    private bool _vertexEditMode = false;
+
+    // ================================================================
+    // Undoシステム統合
+    // ================================================================
+    private MeshFactoryUndoController _undoController;
+
+    // 頂点ドラッグ用
+    private Vector3[] _dragStartPositions;
+
+    // スライダー編集用
+    private bool _isSliderDragging = false;
+    private Vector3[] _sliderDragStartOffsets;
+
+    // カメラドラッグ用
+    private bool _isCameraDragging = false;
+    private float _cameraStartRotX, _cameraStartRotY;
+    private float _cameraStartDistance;
+    private Vector3 _cameraStartTarget;
+
+    // ================================================================
+    // ウインドウ初期化
+    // ================================================================
+    [MenuItem("Tools/SimpleMeshFactory")]
+    private static void Open()
+    {
+        var window = GetWindow<SimpleMeshFactory>("SimpleMeshFactory");
+        window.minSize = new Vector2(700, 500);
+    }
+
+    private void OnEnable()
+    {
+        InitPreview();
+        wantsMouseMove = true;
+
+        // Undoコントローラー初期化
+        _undoController = new MeshFactoryUndoController("SimpleMeshFactory");
+        _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
+    }
+
+    private void OnDisable()
+    {
+        CleanupPreview();
+        CleanupMeshes();
+
+        if (_previewMaterial != null)
+        {
+            DestroyImmediate(_previewMaterial);
+            _previewMaterial = null;
+        }
+
+        // Undoコントローラー破棄
+        if (_undoController != null)
+        {
+            _undoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
+            _undoController.Dispose();
+            _undoController = null;
+        }
+    }
+
+    /// <summary>
+    /// Undo/Redo実行後のコールバック
+    /// </summary>
+    private void OnUndoRedoPerformed()
+    {
+        // コンテキストからメッシュに反映
+        if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+        {
+            var entry = _meshList[_selectedIndex];
+            var ctx = _undoController.MeshContext;
+
+            if (ctx.MeshData != null && ctx.MeshData.VertexCount > 0)
+            {
+                // MeshDataの変更をUnity Meshに反映
+                entry.Data = ctx.MeshData.Clone();
+                SyncMeshFromData(entry);
+                UpdateOffsetsFromData(entry);
+            }
+        }
+
+        // EditorStateContextからUI状態を復元
+        var editorState = _undoController.EditorState;
+        _rotationX = editorState.RotationX;
+        _rotationY = editorState.RotationY;
+        _cameraDistance = editorState.CameraDistance;
+        _cameraTarget = editorState.CameraTarget;
+        _showWireframe = editorState.ShowWireframe;
+        _showVertices = editorState.ShowVertices;
+        _vertexEditMode = editorState.VertexEditMode;
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// MeshDataからUnity Meshを再生成
+    /// </summary>
+    private void SyncMeshFromData(MeshEntry entry)
+    {
+        if (entry.Data == null || entry.Mesh == null)
+            return;
+
+        var newMesh = entry.Data.ToUnityMesh();
+        entry.Mesh.Clear();
+        entry.Mesh.vertices = newMesh.vertices;
+        entry.Mesh.triangles = newMesh.triangles;
+        entry.Mesh.uv = newMesh.uv;
+        entry.Mesh.normals = newMesh.normals;
+        entry.Mesh.RecalculateBounds();
+
+        DestroyImmediate(newMesh);
+    }
+
+    /// <summary>
+    /// MeshDataからオフセットを更新
+    /// </summary>
+    private void UpdateOffsetsFromData(MeshEntry entry)
+    {
+        if (entry.Data == null || _vertexOffsets == null)
+            return;
+
+        int count = Mathf.Min(entry.Data.VertexCount, _vertexOffsets.Length);
+        for (int i = 0; i < count; i++)
+        {
+            if (i < entry.OriginalPositions.Length)
+            {
+                _vertexOffsets[i] = entry.Data.Vertices[i].Position - entry.OriginalPositions[i];
+            }
+        }
+
+        // グループオフセットも更新（Vertexと1:1）
+        if (_groupOffsets != null)
+        {
+            for (int i = 0; i < count && i < _groupOffsets.Length; i++)
+            {
+                _groupOffsets[i] = _vertexOffsets[i];
+            }
+        }
+    }
+
+    private void InitPreview()
+    {
+        _preview = new PreviewRenderUtility();
+        _preview.cameraFieldOfView = 30f;
+        _preview.camera.nearClipPlane = 0.01f;
+        _preview.camera.farClipPlane = 100f;
+    }
+
+    private void CleanupPreview()
+    {
+        if (_preview != null)
+        {
+            _preview.Cleanup();
+            _preview = null;
+        }
+    }
+
+    private void CleanupMeshes()
+    {
+        foreach (var entry in _meshList)
+        {
+            if (entry.Mesh != null)
+                DestroyImmediate(entry.Mesh);
+        }
+        _meshList.Clear();
+    }
+
+    // ================================================================
+    // メインGUI
+    // ================================================================
+    private void OnGUI()
+    {
+        // Undoショートカット処理
+        if (_undoController != null)
+        {
+            _undoController.HandleKeyboardShortcuts(Event.current);
+        }
+
+        // グローバルなドラッグ終了検出
+        Event e = Event.current;
+        if (e.type == EventType.MouseUp)
+        {
+            if (_isSliderDragging)
+            {
+                EndSliderDrag();
+            }
+            if (_isCameraDragging)
+            {
+                EndCameraDrag();
+            }
+        }
+
+        HandleScrollWheel();
+
+        EditorGUILayout.BeginHorizontal();
+
+        // 左ペイン：メッシュリスト
+        DrawMeshList();
+
+        // 中央ペイン：プレビュー
+        DrawPreview();
+
+        // 右ペイン：頂点編集
+        DrawVertexEditor();
+
+        EditorGUILayout.EndHorizontal();
+    }
+
+    private void HandleScrollWheel()
+    {
+        Event e = Event.current;
+
+        // 中ボタンドラッグで視点XY移動（パン）
+        if (e.type == EventType.MouseDrag && e.button == 2)
+        {
+            if (!_isCameraDragging)
+            {
+                BeginCameraDrag();
+            }
+
+            Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, 0);
+            Vector3 right = rot * Vector3.right;
+            Vector3 up = rot * Vector3.up;
+
+            float panSpeed = _cameraDistance * 0.002f;
+            _cameraTarget -= right * e.delta.x * panSpeed;
+            _cameraTarget += up * e.delta.y * panSpeed;
+
+            e.Use();
+            Repaint();
+            return;
+        }
+
+        // ホイールでズーム
+        if (e.type == EventType.ScrollWheel)
+        {
+            if (!_isCameraDragging)
+            {
+                BeginCameraDrag();
+            }
+
+            _cameraDistance *= (1f + e.delta.y * 0.05f);
+            _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 10f);
+
+            EndCameraDrag();
+
+            e.Use();
+            Repaint();
+        }
+    }
+
+    // ================================================================
+    // カメラドラッグのUndo
+    // ================================================================
+
+    private void BeginCameraDrag()
+    {
+        if (_isCameraDragging) return;
+
+        _isCameraDragging = true;
+        _cameraStartRotX = _rotationX;
+        _cameraStartRotY = _rotationY;
+        _cameraStartDistance = _cameraDistance;
+        _cameraStartTarget = _cameraTarget;
+    }
+
+    private void EndCameraDrag()
+    {
+        if (!_isCameraDragging) return;
+        _isCameraDragging = false;
+
+        bool hasChanged =
+            !Mathf.Approximately(_cameraStartRotX, _rotationX) ||
+            !Mathf.Approximately(_cameraStartRotY, _rotationY) ||
+            !Mathf.Approximately(_cameraStartDistance, _cameraDistance) ||
+            Vector3.Distance(_cameraStartTarget, _cameraTarget) > 0.0001f;
+
+        if (hasChanged && _undoController != null)
+        {
+            _undoController.RecordViewChange(
+                _cameraStartRotX, _cameraStartRotY, _cameraStartDistance, _cameraStartTarget,
+                _rotationX, _rotationY, _cameraDistance, _cameraTarget);
+
+            _undoController.SetEditorState(
+                _rotationX, _rotationY, _cameraDistance, _cameraTarget,
+                _showWireframe, _showVertices, _vertexEditMode);
+        }
+    }
+
+    // ================================================================
+    // 左ペイン：メッシュリスト
+    // ================================================================
+    private void DrawMeshList()
+    {
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(170)))
+        {
+            EditorGUILayout.LabelField("Meshes", EditorStyles.boldLabel);
+
+            if (GUILayout.Button("Clear All"))
+            {
+                CleanupMeshes();
+                _selectedIndex = -1;
+                _vertexOffsets = null;
+                _groupOffsets = null;
+                _undoController?.VertexEditStack.Clear();
+            }
+
+            EditorGUILayout.Space(5);
+
+            // Undo/Redo ボタン
+            EditorGUILayout.LabelField("History", EditorStyles.miniBoldLabel);
+            EditorGUILayout.BeginHorizontal();
+
+            using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanUndo))
+            {
+                if (GUILayout.Button("Undo"))
+                {
+                    _undoController?.Undo();
+                }
+            }
+
+            using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanRedo))
+            {
+                if (GUILayout.Button("Redo"))
+                {
+                    _undoController?.Redo();
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(5);
+
+            // ================================================================
+            // メッシュ読み出し機能
+            // ================================================================
+            EditorGUILayout.LabelField("Load Mesh", EditorStyles.miniBoldLabel);
+
+            if (GUILayout.Button("From Mesh Asset..."))
+            {
+                LoadMeshFromAsset();
+            }
+
+            if (GUILayout.Button("From Prefab..."))
+            {
+                LoadMeshFromPrefab();
+            }
+
+            if (GUILayout.Button("From Selection"))
+            {
+                LoadMeshFromSelection();
+            }
+
+            EditorGUILayout.Space(5);
+
+            // メッシュ追加ボタン
+            EditorGUILayout.LabelField("Create Mesh", EditorStyles.miniBoldLabel);
+
+            if (GUILayout.Button("+ Cube..."))
+            {
+                CubeMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+            if (GUILayout.Button("+ Plane..."))
+            {
+                PlaneMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+            if (GUILayout.Button("+ Pyramid..."))
+            {
+                PyramidMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+            if (GUILayout.Button("+ Capsule..."))
+            {
+                CapsuleMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+            if (GUILayout.Button("+ Cylinder..."))
+            {
+                CylinderMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+            if (GUILayout.Button("+ Sphere..."))
+            {
+                SphereMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+            if (GUILayout.Button("+ NohMask..."))
+            {
+                NohMaskMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+            if (GUILayout.Button("+ Revolution..."))
+            {
+                RevolutionMeshCreatorWindow.Open(OnMeshDataCreated);
+            }
+
+            // 他のメッシュ作成ボタン（存在する場合）
+            // SphereMeshCreatorWindow, CapsuleMeshCreatorWindow, etc.
+
+            EditorGUILayout.Space(5);
+
+            // 表示設定チェックボックス
+            EditorGUILayout.LabelField("Display", EditorStyles.miniBoldLabel);
+
+            EditorGUI.BeginChangeCheck();
+            bool newShowWireframe = EditorGUILayout.Toggle("Wireframe", _showWireframe);
+            bool newShowVertices = EditorGUILayout.Toggle("Show Vertices", _showVertices);
+
+            bool newVertexEditMode;
+            using (new EditorGUI.DisabledScope(!newShowVertices))
+            {
+                newVertexEditMode = EditorGUILayout.Toggle("Vertex Edit", _vertexEditMode);
+            }
+
+            if (!newShowVertices)
+            {
+                newVertexEditMode = false;
+            }
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                bool hasDisplayChange =
+                    newShowWireframe != _showWireframe ||
+                    newShowVertices != _showVertices ||
+                    newVertexEditMode != _vertexEditMode;
+
+                if (hasDisplayChange && _undoController != null)
+                {
+                    _undoController.BeginEditorStateDrag();
+                }
+
+                _showWireframe = newShowWireframe;
+                _showVertices = newShowVertices;
+                _vertexEditMode = newVertexEditMode;
+
+                if (_undoController != null)
+                {
+                    _undoController.EditorState.ShowWireframe = _showWireframe;
+                    _undoController.EditorState.ShowVertices = _showVertices;
+                    _undoController.EditorState.VertexEditMode = _vertexEditMode;
+                    _undoController.EndEditorStateDrag("Change Display Settings");
+                }
+            }
+
+            if (_vertexEditMode)
+            {
+                _undoController?.FocusVertexEdit();
+            }
+            else
+            {
+                _undoController?.FocusView();
+            }
+
+            EditorGUILayout.Space(5);
+
+            EditorGUILayout.LabelField("Zoom", EditorStyles.miniLabel);
+
+            EditorGUI.BeginChangeCheck();
+            float newDist = EditorGUILayout.Slider(_cameraDistance, 0.1f, 10f);
+            if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newDist, _cameraDistance))
+            {
+                if (!_isCameraDragging) BeginCameraDrag();
+                _cameraDistance = newDist;
+            }
+
+            EditorGUILayout.Space(5);
+
+            _listScroll = EditorGUILayout.BeginScrollView(_listScroll);
+
+            for (int i = 0; i < _meshList.Count; i++)
+            {
+                EditorGUILayout.BeginHorizontal();
+
+                bool isSelected = (i == _selectedIndex);
+                bool newSelected = GUILayout.Toggle(isSelected, _meshList[i].Name, "Button");
+
+                if (newSelected && !isSelected)
+                {
+                    _selectedIndex = i;
+                    InitVertexOffsets();
+
+                    var entry = _meshList[_selectedIndex];
+                    LoadEntryToUndoController(entry);
+                }
+
+                if (GUILayout.Button("×", GUILayout.Width(20)))
+                {
+                    EditorGUILayout.EndHorizontal();
+                    RemoveMesh(i);
+                    break;
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+    }
+
+    /// <summary>
+    /// MeshEntryをUndoコントローラーに読み込む
+    /// </summary>
+    private void LoadEntryToUndoController(MeshEntry entry)
+    {
+        if (_undoController == null || entry == null)
+            return;
+
+        _undoController.SetMeshData(entry.Data.Clone(), entry.Mesh);
+        _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+    }
+
+    // ================================================================
+    // メッシュ読み出し機能
+    // ================================================================
+
+    /// <summary>
+    /// メッシュアセットから読み込み
+    /// </summary>
+    private void LoadMeshFromAsset()
+    {
+        string path = EditorUtility.OpenFilePanel("Select Mesh Asset", "Assets", "asset,fbx,obj");
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        // プロジェクト相対パスに変換
+        if (path.StartsWith(Application.dataPath))
+        {
+            path = "Assets" + path.Substring(Application.dataPath.Length);
+        }
+
+        Mesh loadedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (loadedMesh == null)
+        {
+            // FBX/OBJの場合、サブアセットからメッシュを探す
+            var allAssets = AssetDatabase.LoadAllAssetsAtPath(path);
+            foreach (var asset in allAssets)
+            {
+                if (asset is Mesh m)
+                {
+                    loadedMesh = m;
+                    break;
+                }
+            }
+        }
+
+        if (loadedMesh != null)
+        {
+            AddLoadedMesh(loadedMesh, loadedMesh.name);
+        }
+        else
+        {
+            EditorUtility.DisplayDialog("Error", "メッシュを読み込めませんでした", "OK");
+        }
+    }
+
+    /// <summary>
+    /// プレファブから読み込み
+    /// </summary>
+    private void LoadMeshFromPrefab()
+    {
+        string path = EditorUtility.OpenFilePanel("Select Prefab", "Assets", "prefab");
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        if (path.StartsWith(Application.dataPath))
+        {
+            path = "Assets" + path.Substring(Application.dataPath.Length);
+        }
+
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (prefab == null)
+        {
+            EditorUtility.DisplayDialog("Error", "プレファブを読み込めませんでした", "OK");
+            return;
+        }
+
+        // MeshFilterからメッシュを取得
+        var meshFilters = prefab.GetComponentsInChildren<MeshFilter>(true);
+        if (meshFilters.Length == 0)
+        {
+            EditorUtility.DisplayDialog("Error", "プレファブにMeshFilterが見つかりませんでした", "OK");
+            return;
+        }
+
+        // 複数メッシュがある場合は全て追加
+        foreach (var mf in meshFilters)
+        {
+            if (mf.sharedMesh != null)
+            {
+                string meshName = $"{prefab.name}_{mf.sharedMesh.name}";
+                AddLoadedMesh(mf.sharedMesh, meshName);
+
+                // マテリアルも取得（最初のものだけ）
+                if (_registeredMaterial == null)
+                {
+                    var renderer = mf.GetComponent<MeshRenderer>();
+                    if (renderer != null && renderer.sharedMaterial != null)
+                    {
+                        _registeredMaterial = renderer.sharedMaterial;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 選択中のオブジェクトから読み込み
+    /// </summary>
+    private void LoadMeshFromSelection()
+    {
+        var selected = Selection.activeGameObject;
+        if (selected == null)
+        {
+            // メッシュアセットが選択されている場合
+            var selectedMesh = Selection.activeObject as Mesh;
+            if (selectedMesh != null)
+            {
+                AddLoadedMesh(selectedMesh, selectedMesh.name);
+                return;
+            }
+
+            EditorUtility.DisplayDialog("Info", "GameObjectまたはMeshを選択してください", "OK");
+            return;
+        }
+
+        var meshFilters = selected.GetComponentsInChildren<MeshFilter>(true);
+        if (meshFilters.Length == 0)
+        {
+            EditorUtility.DisplayDialog("Error", "選択オブジェクトにMeshFilterが見つかりませんでした", "OK");
+            return;
+        }
+
+        foreach (var mf in meshFilters)
+        {
+            if (mf.sharedMesh != null)
+            {
+                string meshName = $"{selected.name}_{mf.sharedMesh.name}";
+                AddLoadedMesh(mf.sharedMesh, meshName);
+
+                if (_registeredMaterial == null)
+                {
+                    var renderer = mf.GetComponent<MeshRenderer>();
+                    if (renderer != null && renderer.sharedMaterial != null)
+                    {
+                        _registeredMaterial = renderer.sharedMaterial;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 読み込んだメッシュを追加（MeshDataに変換）
+    /// </summary>
+    private void AddLoadedMesh(Mesh sourceMesh, string name)
+    {
+        // Unity MeshからMeshDataに変換
+        var meshData = new MeshData(name);
+        meshData.FromUnityMesh(sourceMesh, true);
+
+        // 表示用Unity Meshを作成
+        Mesh displayMesh = meshData.ToUnityMesh();
+        displayMesh.name = name;
+
+        var entry = new MeshEntry
+        {
+            Name = name,
+            Mesh = displayMesh,
+            Data = meshData,
+            OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray()
+        };
+
+        // Undo記録
+        var beforeSnapshot = _undoController?.CaptureMeshDataSnapshot();
+
+        _meshList.Add(entry);
+        _selectedIndex = _meshList.Count - 1;
+        InitVertexOffsets();
+
+        LoadEntryToUndoController(entry);
+
+        // Undo記録（メッシュ追加）
+        if (_undoController != null && beforeSnapshot != null)
+        {
+            var afterSnapshot = _undoController.CaptureMeshDataSnapshot();
+            _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, $"Load Mesh: {name}");
+        }
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// メッシュ作成ウインドウからのコールバック（MeshData版 - 四角形を保持）
+    /// </summary>
+    private void OnMeshDataCreated(MeshData meshData, string name)
+    {
+        // MeshDataから表示用Unity Meshを生成
+        Mesh mesh = meshData.ToUnityMesh();
+        mesh.name = name;
+
+        var entry = new MeshEntry
+        {
+            Name = name,
+            Mesh = mesh,
+            Data = meshData.Clone(),
+            OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray()
+        };
+
+        _meshList.Add(entry);
+        _selectedIndex = _meshList.Count - 1;
+        InitVertexOffsets();
+
+        LoadEntryToUndoController(entry);
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// メッシュ作成ウインドウからのコールバック（従来版）
+    /// </summary>
+    private void OnMeshCreated(Mesh mesh, string name)
+    {
+        // Unity MeshからMeshDataに変換
+        var meshData = new MeshData(name);
+        meshData.FromUnityMesh(mesh, true);
+
+        // 元のMeshはそのまま表示用に使用
+        var entry = new MeshEntry
+        {
+            Name = name,
+            Mesh = mesh,
+            Data = meshData,
+            OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray()
+        };
+
+        _meshList.Add(entry);
+        _selectedIndex = _meshList.Count - 1;
+        InitVertexOffsets();
+
+        LoadEntryToUndoController(entry);
+
+        Repaint();
+    }
+
+    private void RemoveMesh(int index)
+    {
+        if (index < 0 || index >= _meshList.Count)
+            return;
+
+        var entry = _meshList[index];
+        if (entry.Mesh != null)
+        {
+            DestroyImmediate(entry.Mesh);
+        }
+
+        _meshList.RemoveAt(index);
+
+        if (_selectedIndex >= _meshList.Count)
+        {
+            _selectedIndex = _meshList.Count - 1;
+        }
+
+        if (_selectedIndex >= 0)
+        {
+            InitVertexOffsets();
+            var newEntry = _meshList[_selectedIndex];
+            LoadEntryToUndoController(newEntry);
+        }
+        else
+        {
+            _vertexOffsets = null;
+            _groupOffsets = null;
+            _undoController?.VertexEditStack.Clear();
+        }
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// 頂点オフセット初期化（MeshDataベース）
+    /// </summary>
+    private void InitVertexOffsets()
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count)
+        {
+            _vertexOffsets = null;
+            _groupOffsets = null;
+            return;
+        }
+
+        var entry = _meshList[_selectedIndex];
+        var meshData = entry.Data;
+
+        if (meshData == null)
+        {
+            _vertexOffsets = null;
+            _groupOffsets = null;
+            return;
+        }
+
+        // MeshDataのVertex数でオフセット配列を作成
+        int vertexCount = meshData.VertexCount;
+        _vertexOffsets = new Vector3[vertexCount];
+        _groupOffsets = new Vector3[vertexCount];  // Vertexと1:1
+
+        // カメラ設定
+        var bounds = meshData.CalculateBounds();
+        float radius = Mathf.Max(bounds.extents.magnitude, 0.5f);
+        _cameraDistance = radius * 3.5f;
+        _cameraTarget = bounds.center;
+    }
+
+    // ================================================================
+    // 中央ペイン：プレビュー
+    // ================================================================
+    private void DrawPreview()
+    {
+        Rect rect = GUILayoutUtility.GetRect(
+            200, 10000,
+            200, 10000,
+            GUILayout.ExpandWidth(true),
+            GUILayout.ExpandHeight(true));
+
+        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count || _preview == null)
+        {
+            EditorGUI.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));
+            EditorGUI.LabelField(rect, "Select a mesh", EditorStyles.centeredGreyMiniLabel);
+            return;
+        }
+
+        var entry = _meshList[_selectedIndex];
+        var mesh = entry.Mesh;
+
+        float dist = _cameraDistance;
+        Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, 0);
+        Vector3 camPos = _cameraTarget + rot * new Vector3(0, 0, -dist);
+
+        HandleInput(rect, entry, camPos, _cameraTarget, dist);
+
+        if (Event.current.type != EventType.Repaint)
+            return;
+
+        _preview.BeginPreview(rect, GUIStyle.none);
+
+        _preview.camera.clearFlags = CameraClearFlags.SolidColor;
+        _preview.camera.backgroundColor = new Color(0.15f, 0.15f, 0.18f, 1f);
+
+        _preview.camera.transform.position = camPos;
+        _preview.camera.transform.LookAt(_cameraTarget);
+
+        Material solidMat = GetPreviewMaterial();
+        _preview.DrawMesh(mesh, Matrix4x4.identity, solidMat, 0);
+
+        _preview.camera.Render();
+
+        Texture result = _preview.EndPreview();
+        GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
+
+        if (_showWireframe)
+        {
+            DrawWireframeOverlay(rect, entry.Data, camPos, _cameraTarget);
+        }
+
+        DrawVertexHandles(rect, entry.Data, camPos, _cameraTarget);
+    }
+
+    /// <summary>
+    /// ワイヤーフレーム描画（MeshDataベース）
+    /// </summary>
+    private void DrawWireframeOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    {
+        if (meshData == null)
+            return;
+
+        var edges = new HashSet<(int, int)>();
+
+        // 各面からエッジを抽出
+        foreach (var face in meshData.Faces)
+        {
+            for (int i = 0; i < face.VertexCount; i++)
+            {
+                int a = face.VertexIndices[i];
+                int b = face.VertexIndices[(i + 1) % face.VertexCount];
+                AddEdge(edges, a, b);
+            }
+        }
+
+        Handles.BeginGUI();
+        Handles.color = new Color(0f, 1f, 0.5f, 0.9f);
+
+        foreach (var edge in edges)
+        {
+            Vector3 p1World = meshData.Vertices[edge.Item1].Position;
+            Vector3 p2World = meshData.Vertices[edge.Item2].Position;
+
+            Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
+            Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
+
+            if (previewRect.Contains(p1) || previewRect.Contains(p2))
+            {
+                Handles.DrawLine(
+                    new Vector3(p1.x, p1.y, 0),
+                    new Vector3(p2.x, p2.y, 0));
+            }
+        }
+
+        Handles.EndGUI();
+    }
+
+    private void AddEdge(HashSet<(int, int)> edges, int a, int b)
+    {
+        if (a > b) (a, b) = (b, a);
+        edges.Add((a, b));
+    }
+
+    private Vector2 WorldToPreviewPos(Vector3 worldPos, Rect previewRect, Vector3 camPos, Vector3 lookAt)
+    {
+        Matrix4x4 view = Matrix4x4.LookAt(camPos, lookAt, Vector3.up);
+        view = view.inverse;
+        view.m20 *= -1; view.m21 *= -1; view.m22 *= -1; view.m23 *= -1;
+
+        float aspect = previewRect.width / previewRect.height;
+        Matrix4x4 proj = Matrix4x4.Perspective(_preview.cameraFieldOfView, aspect, 0.01f, 100f);
+
+        Vector4 clipPos = proj * view * new Vector4(worldPos.x, worldPos.y, worldPos.z, 1f);
+
+        if (clipPos.w <= 0)
+            return new Vector2(-1000, -1000);
+
+        Vector2 ndc = new Vector2(clipPos.x / clipPos.w, clipPos.y / clipPos.w);
+
+        float screenX = previewRect.x + (ndc.x * 0.5f + 0.5f) * previewRect.width;
+        float screenY = previewRect.y + (1f - (ndc.y * 0.5f + 0.5f)) * previewRect.height;
+
+        return new Vector2(screenX, screenY);
+    }
+
+    /// <summary>
+    /// 頂点ハンドル描画（MeshDataベース）
+    /// </summary>
+    private void DrawVertexHandles(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    {
+        if (!_showVertices || meshData == null)
+            return;
+
+        float handleSize = 8f;
+
+        for (int i = 0; i < meshData.VertexCount; i++)
+        {
+            Vector2 screenPos = WorldToPreviewPos(meshData.Vertices[i].Position, previewRect, camPos, lookAt);
+
+            if (!previewRect.Contains(screenPos))
+                continue;
+
+            Rect handleRect = new Rect(
+                screenPos.x - handleSize / 2,
+                screenPos.y - handleSize / 2,
+                handleSize,
+                handleSize);
+
+            Color col = (_dragVertexIndex == i) ? Color.yellow : Color.white;
+            EditorGUI.DrawRect(handleRect, col);
+
+            Color borderCol = (_dragVertexIndex == i) ? Color.red : Color.gray;
+            DrawRectBorder(handleRect, borderCol);
+
+            GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16), i.ToString(), EditorStyles.miniLabel);
+        }
+    }
+
+    private void DrawRectBorder(Rect rect, Color color)
+    {
+        EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 1), color);
+        EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - 1, rect.width, 1), color);
+        EditorGUI.DrawRect(new Rect(rect.x, rect.y, 1, rect.height), color);
+        EditorGUI.DrawRect(new Rect(rect.xMax - 1, rect.y, 1, rect.height), color);
+    }
+
+    // ================================================================
+    // 入力処理（MeshDataベース）
+    // ================================================================
+    private void HandleInput(Rect rect, MeshEntry entry, Vector3 camPos, Vector3 lookAt, float camDist)
+    {
+        Event e = Event.current;
+        Vector2 mousePos = e.mousePosition;
+
+        if (!rect.Contains(mousePos))
+        {
+            if (e.type == EventType.MouseUp)
+            {
+                EndVertexDrag(entry);
+            }
+            return;
+        }
+
+        // 視点移動モード
+        if (!_vertexEditMode)
+        {
+            HandleCameraRotation(e);
+            return;
+        }
+
+        // 頂点編集モード
+        var meshData = entry.Data;
+        if (meshData == null)
+            return;
+
+        float handleRadius = 10f;
+
+        // マウスダウン：頂点選択
+        if (e.type == EventType.MouseDown && e.button == 0)
+        {
+            int hitVertexIndex = FindVertexAtScreenPos(mousePos, meshData, rect, camPos, lookAt, handleRadius);
+
+            if (hitVertexIndex >= 0)
+            {
+                _dragVertexIndex = hitVertexIndex;
+                _isDraggingVertex = true;
+
+                BeginVertexDrag(entry);
+
+                e.Use();
+                return;
+            }
+        }
+
+        // マウスドラッグ
+        if (e.type == EventType.MouseDrag && e.button == 0)
+        {
+            if (_isDraggingVertex && _dragVertexIndex >= 0 && _dragVertexIndex < meshData.VertexCount)
+            {
+                Vector3 delta = ScreenDeltaToWorldDelta(e.delta, camPos, lookAt, camDist, rect);
+
+                // MeshDataの頂点を移動
+                meshData.Vertices[_dragVertexIndex].Position += delta;
+                _vertexOffsets[_dragVertexIndex] += delta;
+                _groupOffsets[_dragVertexIndex] = _vertexOffsets[_dragVertexIndex];
+
+                // Unity Meshを更新
+                SyncMeshFromData(entry);
+
+                // Undoコンテキストも更新
+                if (_undoController != null)
+                {
+                    _undoController.MeshContext.MeshData = meshData;
+                }
+
+                e.Use();
+                Repaint();
+                return;
+            }
+        }
+
+        // マウスアップ
+        if (e.type == EventType.MouseUp && e.button == 0)
+        {
+            EndVertexDrag(entry);
+            e.Use();
+        }
+    }
+
+    /// <summary>
+    /// 頂点ドラッグ開始
+    /// </summary>
+    private void BeginVertexDrag(MeshEntry entry)
+    {
+        _dragStartPositions = entry.Data.Vertices.Select(v => v.Position).ToArray();
+    }
+
+    /// <summary>
+    /// 頂点ドラッグ終了（Undo記録）
+    /// </summary>
+    private void EndVertexDrag(MeshEntry entry)
+    {
+        if (!_isDraggingVertex || _dragVertexIndex < 0)
+        {
+            _isDraggingVertex = false;
+            _dragVertexIndex = -1;
+            return;
+        }
+
+        if (_dragStartPositions != null && entry.Data != null)
+        {
+            bool hasMoved = false;
+            var currentPositions = entry.Data.Vertices.Select(v => v.Position).ToArray();
+
+            for (int i = 0; i < currentPositions.Length && i < _dragStartPositions.Length; i++)
+            {
+                if (Vector3.Distance(currentPositions[i], _dragStartPositions[i]) > 0.0001f)
+                {
+                    hasMoved = true;
+                    break;
+                }
+            }
+
+            if (hasMoved && _undoController != null)
+            {
+                var movedIndices = new int[] { _dragVertexIndex };
+                var oldPositions = new Vector3[] { _dragStartPositions[_dragVertexIndex] };
+                var newPositions = new Vector3[] { currentPositions[_dragVertexIndex] };
+
+                var record = new VertexMoveRecord(movedIndices, oldPositions, newPositions);
+                _undoController.VertexEditStack.Record(record, "Move Vertex");
+            }
+        }
+
+        _isDraggingVertex = false;
+        _dragVertexIndex = -1;
+        _dragStartPositions = null;
+    }
+
+    private void HandleCameraRotation(Event e)
+    {
+        if (e.type == EventType.MouseDown && e.button == 0)
+        {
+            BeginCameraDrag();
+        }
+
+        if (e.type == EventType.MouseDrag && e.button == 0)
+        {
+            _rotationY += e.delta.x * 0.5f;
+            _rotationX += e.delta.y * 0.5f;
+            _rotationX = Mathf.Clamp(_rotationX, -89f, 89f);
+            e.Use();
+            Repaint();
+        }
+
+        if (e.type == EventType.MouseUp && e.button == 0)
+        {
+            EndCameraDrag();
+        }
+    }
+
+    /// <summary>
+    /// スクリーン位置から頂点を検索（MeshDataベース）
+    /// </summary>
+    private int FindVertexAtScreenPos(Vector2 screenPos, MeshData meshData, Rect previewRect, Vector3 camPos, Vector3 lookAt, float radius)
+    {
+        if (meshData == null)
+            return -1;
+
+        int closestVertex = -1;
+        float closestDist = radius;
+
+        for (int i = 0; i < meshData.VertexCount; i++)
+        {
+            Vector2 vertScreenPos = WorldToPreviewPos(meshData.Vertices[i].Position, previewRect, camPos, lookAt);
+            float dist = Vector2.Distance(screenPos, vertScreenPos);
+
+            if (dist < closestDist)
+            {
+                closestDist = dist;
+                closestVertex = i;
+            }
+        }
+
+        return closestVertex;
+    }
+
+    private Vector3 ScreenDeltaToWorldDelta(Vector2 screenDelta, Vector3 camPos, Vector3 lookAt, float camDist, Rect previewRect)
+    {
+        Vector3 forward = (lookAt - camPos).normalized;
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+        Vector3 up = Vector3.Cross(forward, right).normalized;
+
+        float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
+        float worldHeightAtDist = 2f * camDist * Mathf.Tan(fovRad / 2f);
+        float pixelToWorld = worldHeightAtDist / previewRect.height;
+
+        Vector3 worldDelta = right * screenDelta.x * pixelToWorld
+                           - up * screenDelta.y * pixelToWorld;
+
+        return worldDelta;
+    }
+
+    // ================================================================
+    // 右ペイン：頂点エディタ（MeshDataベース）
+    // ================================================================
+    private void DrawVertexEditor()
+    {
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(280)))
+        {
+            EditorGUILayout.LabelField("Vertex Editor", EditorStyles.boldLabel);
+
+            if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count)
+            {
+                EditorGUILayout.HelpBox("メッシュを選択してください", MessageType.Info);
+                return;
+            }
+
+            var entry = _meshList[_selectedIndex];
+            var meshData = entry.Data;
+
+            if (meshData == null)
+            {
+                EditorGUILayout.HelpBox("MeshDataが無効です", MessageType.Warning);
+                return;
+            }
+
+            // メッシュ情報表示
+            EditorGUILayout.LabelField($"Vertices: {meshData.VertexCount}");
+            EditorGUILayout.LabelField($"Faces: {meshData.FaceCount}");
+            EditorGUILayout.LabelField($"Triangles: {meshData.TriangleCount}");
+
+            // 面タイプ内訳
+            int triCount = meshData.Faces.Count(f => f.IsTriangle);
+            int quadCount = meshData.Faces.Count(f => f.IsQuad);
+            int nGonCount = meshData.FaceCount - triCount - quadCount;
+            EditorGUILayout.LabelField($"  (Tri:{triCount}, Quad:{quadCount}, NGon:{nGonCount})", EditorStyles.miniLabel);
+
+            EditorGUILayout.Space(5);
+
+            if (GUILayout.Button("Reset to Original"))
+            {
+                var before = _undoController?.CaptureMeshDataSnapshot();
+
+                ResetMesh(entry);
+
+                if (_undoController != null && before != null)
+                {
+                    var after = _undoController.CaptureMeshDataSnapshot();
+                    _undoController.RecordTopologyChange(before, after, "Reset Mesh");
+                }
+            }
+
+            EditorGUILayout.Space(5);
+
+            // ================================================================
+            // マテリアル登録機能
+            // ================================================================
+            EditorGUILayout.LabelField("Material", EditorStyles.miniBoldLabel);
+
+            EditorGUI.BeginChangeCheck();
+            Material newMat = (Material)EditorGUILayout.ObjectField(
+                _registeredMaterial,
+                typeof(Material),
+                false);
+            if (EditorGUI.EndChangeCheck())
+            {
+                _registeredMaterial = newMat;
+            }
+
+            if (_registeredMaterial == null)
+            {
+                EditorGUILayout.HelpBox("None: デフォルト使用", MessageType.None);
+            }
+
+            EditorGUILayout.Space(5);
+
+            // ================================================================
+            // 保存機能
+            // ================================================================
+            EditorGUILayout.LabelField("Save", EditorStyles.miniBoldLabel);
+
+            if (GUILayout.Button("Save Mesh Asset..."))
+            {
+                SaveMesh(entry);
+            }
+
+            if (GUILayout.Button("Save as Prefab..."))
+            {
+                SaveAsPrefab(entry);
+            }
+
+            if (GUILayout.Button("Add to Hierarchy"))
+            {
+                AddToHierarchy(entry);
+            }
+
+            EditorGUILayout.Space(10);
+
+            // 頂点リスト
+            _vertexScroll = EditorGUILayout.BeginScrollView(_vertexScroll);
+
+            if (_vertexOffsets == null || _groupOffsets == null)
+            {
+                InitVertexOffsets();
+            }
+
+            if (_vertexOffsets == null || _groupOffsets == null)
+            {
+                EditorGUILayout.EndScrollView();
+                return;
+            }
+
+            bool changed = false;
+
+            if (Event.current.type == EventType.MouseDown && !_isSliderDragging)
+            {
+                BeginSliderDrag();
+            }
+
+            for (int i = 0; i < meshData.VertexCount; i++)
+            {
+                var vertex = meshData.Vertices[i];
+
+                EditorGUILayout.LabelField($"Vertex {i}", EditorStyles.miniBoldLabel);
+
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    Vector3 offset = i < _vertexOffsets.Length ? _vertexOffsets[i] : Vector3.zero;
+
+                    // X
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField("X", GUILayout.Width(15));
+                    float newX = EditorGUILayout.Slider(offset.x, -1f, 1f);
+                    EditorGUILayout.EndHorizontal();
+
+                    // Y
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField("Y", GUILayout.Width(15));
+                    float newY = EditorGUILayout.Slider(offset.y, -1f, 1f);
+                    EditorGUILayout.EndHorizontal();
+
+                    // Z
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField("Z", GUILayout.Width(15));
+                    float newZ = EditorGUILayout.Slider(offset.z, -1f, 1f);
+                    EditorGUILayout.EndHorizontal();
+
+                    Vector3 newOffset = new Vector3(newX, newY, newZ);
+                    if (newOffset != offset && i < _vertexOffsets.Length)
+                    {
+                        _vertexOffsets[i] = newOffset;
+                        _groupOffsets[i] = newOffset;
+
+                        // MeshDataの頂点位置を更新
+                        vertex.Position = entry.OriginalPositions[i] + newOffset;
+                        changed = true;
+                    }
+
+                    // UV/Normal情報表示
+                    EditorGUILayout.LabelField($"UVs: {vertex.UVs.Count}, Normals: {vertex.Normals.Count}", EditorStyles.miniLabel);
+                }
+
+                EditorGUILayout.Space(3);
+            }
+
+            if (changed)
+            {
+                SyncMeshFromData(entry);
+
+                if (_undoController != null)
+                {
+                    _undoController.MeshContext.MeshData = meshData;
+                }
+
+                Repaint();
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+    }
+
+    /// <summary>
+    /// スライダードラッグ開始
+    /// </summary>
+    private void BeginSliderDrag()
+    {
+        if (_isSliderDragging) return;
+        if (_vertexOffsets == null) return;
+
+        _isSliderDragging = true;
+        _sliderDragStartOffsets = (Vector3[])_vertexOffsets.Clone();
+    }
+
+    /// <summary>
+    /// スライダードラッグ終了（Undo記録）
+    /// </summary>
+    private void EndSliderDrag()
+    {
+        if (!_isSliderDragging) return;
+        _isSliderDragging = false;
+
+        if (_sliderDragStartOffsets == null || _vertexOffsets == null) return;
+        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count) return;
+
+        var entry = _meshList[_selectedIndex];
+
+        // 変更された頂点を検出
+        var changedIndices = new List<int>();
+        var oldPositions = new List<Vector3>();
+        var newPositions = new List<Vector3>();
+
+        for (int i = 0; i < _vertexOffsets.Length && i < _sliderDragStartOffsets.Length; i++)
+        {
+            if (Vector3.Distance(_vertexOffsets[i], _sliderDragStartOffsets[i]) > 0.0001f)
+            {
+                changedIndices.Add(i);
+                oldPositions.Add(entry.OriginalPositions[i] + _sliderDragStartOffsets[i]);
+                newPositions.Add(entry.OriginalPositions[i] + _vertexOffsets[i]);
+            }
+        }
+
+        if (changedIndices.Count > 0 && _undoController != null)
+        {
+            var record = new VertexMoveRecord(
+                changedIndices.ToArray(),
+                oldPositions.ToArray(),
+                newPositions.ToArray()
+            );
+            _undoController.VertexEditStack.Record(record, "Move Vertices");
+        }
+
+        _sliderDragStartOffsets = null;
+    }
+
+    /// <summary>
+    /// メッシュをリセット
+    /// </summary>
+    private void ResetMesh(MeshEntry entry)
+    {
+        if (entry.Data == null || entry.OriginalPositions == null)
+            return;
+
+        // 元の位置に戻す
+        for (int i = 0; i < entry.Data.VertexCount && i < entry.OriginalPositions.Length; i++)
+        {
+            entry.Data.Vertices[i].Position = entry.OriginalPositions[i];
+        }
+
+        SyncMeshFromData(entry);
+
+        if (_vertexOffsets != null)
+        {
+            for (int i = 0; i < _vertexOffsets.Length; i++)
+                _vertexOffsets[i] = Vector3.zero;
+        }
+
+        if (_groupOffsets != null)
+        {
+            for (int i = 0; i < _groupOffsets.Length; i++)
+                _groupOffsets[i] = Vector3.zero;
+        }
+
+        if (_undoController != null)
+        {
+            _undoController.MeshContext.MeshData = entry.Data;
+        }
+
+        Repaint();
+    }
+
+    // ================================================================
+    // 保存機能
+    // ================================================================
+
+    /// <summary>
+    /// メッシュアセットとして保存
+    /// </summary>
+    private void SaveMesh(MeshEntry entry)
+    {
+        if (entry == null || entry.Data == null)
+            return;
+
+        string defaultName = string.IsNullOrEmpty(entry.Name) ? "Mesh" : entry.Name;
+        string path = EditorUtility.SaveFilePanelInProject(
+            "Save Mesh",
+            defaultName,
+            "asset",
+            "メッシュを保存する場所を選択してください");
+
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        // MeshDataからUnity Meshを生成
+        Mesh meshToSave = entry.Data.ToUnityMesh();
+        meshToSave.name = System.IO.Path.GetFileNameWithoutExtension(path);
+
+        AssetDatabase.DeleteAsset(path);
+        AssetDatabase.CreateAsset(meshToSave, path);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        var savedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (savedMesh != null)
+        {
+            EditorGUIUtility.PingObject(savedMesh);
+            Selection.activeObject = savedMesh;
+        }
+
+        Debug.Log($"Mesh saved: {path}");
+    }
+
+    /// <summary>
+    /// プレファブとして保存
+    /// </summary>
+    private void SaveAsPrefab(MeshEntry entry)
+    {
+        if (entry == null || entry.Data == null)
+            return;
+
+        string defaultName = string.IsNullOrEmpty(entry.Name) ? "MeshObject" : entry.Name;
+        string path = EditorUtility.SaveFilePanelInProject(
+            "Save as Prefab",
+            defaultName,
+            "prefab",
+            "プレファブを保存する場所を選択してください");
+
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        // GameObjectを作成
+        GameObject go = new GameObject(entry.Name);
+        MeshFilter mf = go.AddComponent<MeshFilter>();
+        MeshRenderer mr = go.AddComponent<MeshRenderer>();
+
+        // MeshDataからUnity Meshを生成して保存
+        Mesh meshCopy = entry.Data.ToUnityMesh();
+        meshCopy.name = entry.Name;
+
+        // メッシュを同じディレクトリに保存
+        string meshPath = System.IO.Path.ChangeExtension(path, null) + "_Mesh.asset";
+        AssetDatabase.DeleteAsset(meshPath);
+        AssetDatabase.CreateAsset(meshCopy, meshPath);
+
+        mf.sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+
+        // マテリアル設定
+        mr.sharedMaterial = GetMaterialForSave();
+
+        // プレファブとして保存
+        AssetDatabase.DeleteAsset(path);
+        PrefabUtility.SaveAsPrefabAsset(go, path);
+
+        // 一時オブジェクト削除
+        DestroyImmediate(go);
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        var savedPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (savedPrefab != null)
+        {
+            EditorGUIUtility.PingObject(savedPrefab);
+            Selection.activeObject = savedPrefab;
+        }
+
+        Debug.Log($"Prefab saved: {path}");
+    }
+
+    /// <summary>
+    /// ヒエラルキーに追加
+    /// </summary>
+    private void AddToHierarchy(MeshEntry entry)
+    {
+        if (entry == null || entry.Data == null)
+            return;
+
+        // GameObjectを作成
+        GameObject go = new GameObject(entry.Name);
+        MeshFilter mf = go.AddComponent<MeshFilter>();
+        MeshRenderer mr = go.AddComponent<MeshRenderer>();
+
+        // MeshDataからUnity Meshを生成
+        Mesh meshCopy = entry.Data.ToUnityMesh();
+        meshCopy.name = entry.Name;
+        mf.sharedMesh = meshCopy;
+
+        // マテリアル設定
+        mr.sharedMaterial = GetMaterialForSave();
+
+        // 選択中のオブジェクトがあれば子として追加
+        Transform parent = null;
+        if (Selection.gameObjects.Length > 0)
+        {
+            parent = Selection.gameObjects[0].transform;
+        }
+
+        if (parent != null)
+        {
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+        }
+
+        // Undo登録（Unity標準のUndo）
+        Undo.RegisterCreatedObjectUndo(go, $"Create {entry.Name}");
+
+        // 選択
+        Selection.activeGameObject = go;
+        EditorGUIUtility.PingObject(go);
+
+        Debug.Log($"Added to hierarchy: {go.name}" + (parent != null ? $" (parent: {parent.name})" : ""));
+    }
+
+    /// <summary>
+    /// 保存用のマテリアルを取得
+    /// </summary>
+    private Material GetMaterialForSave()
+    {
+        // 登録されたマテリアルがあればそれを使用
+        if (_registeredMaterial != null)
+        {
+            return _registeredMaterial;
+        }
+
+        // なければデフォルトマテリアルを作成/取得
+        return GetOrCreateDefaultMaterial();
+    }
+
+    /// <summary>
+    /// デフォルトマテリアルを取得または作成
+    /// </summary>
+    private Material GetOrCreateDefaultMaterial()
+    {
+        // 既存のデフォルトマテリアルを探す
+        string[] guids = AssetDatabase.FindAssets("t:Material Default-Material");
+        if (guids.Length > 0)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+            Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat != null) return mat;
+        }
+
+        // URPのLitシェーダーでマテリアル作成
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+        if (shader == null)
+            shader = Shader.Find("HDRP/Lit");
+        if (shader == null)
+            shader = Shader.Find("Standard");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Color");
+
+        if (shader != null)
+        {
+            Material mat = new Material(shader);
+            mat.SetColor("_BaseColor", new Color(0.7f, 0.7f, 0.7f, 1f));
+            mat.SetColor("_Color", new Color(0.7f, 0.7f, 0.7f, 1f));
+            return mat;
+        }
+
+        return null;
+    }
+
+    // ================================================================
+    // プレビュー用マテリアル
+    // ================================================================
+    private Material _previewMaterial;
+
+    private Material GetPreviewMaterial()
+    {
+        if (_previewMaterial != null)
+            return _previewMaterial;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+        if (shader == null)
+            shader = Shader.Find("HDRP/Lit");
+        if (shader == null)
+            shader = Shader.Find("Standard");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Color");
+
+        if (shader != null)
+        {
+            _previewMaterial = new Material(shader);
+            _previewMaterial.SetColor("_BaseColor", new Color(0.7f, 0.7f, 0.7f, 1f));
+            _previewMaterial.SetColor("_Color", new Color(0.7f, 0.7f, 0.7f, 1f));
+        }
+
+        return _previewMaterial;
+    }
+}

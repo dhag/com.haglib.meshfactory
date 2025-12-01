@@ -1,0 +1,12 @@
+{
+  "name": "com.haglib.meshfactory",
+  "displayName": "MeshFactory",
+  "version": "0.1.0",
+  "unity": "6000.0",
+  "description": "ちょろっとメッシュを作るやつ。",
+  "author": {
+    "name": "Yoshihiro Hagihara",
+    "email": "dhag@iwate-u.ac.jp",
+    "url": "https://example.com"
+  }
+}

@@ -1,0 +1,764 @@
+// Assets/Editor/UndoSystem/MeshEditor/MeshUndoRecords.cs
+// メッシュエディタ専用のUndo記録クラス群
+// MeshData（Vertex/Face）ベースに対応
+
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using MeshEditor.Data;
+
+namespace MeshEditor.UndoSystem
+{
+    // ============================================================
+    // コンテキスト
+    // ============================================================
+
+    /// <summary>
+    /// メッシュ編集コンテキスト
+    /// Undo/Redo操作の対象となるデータを保持
+    /// MeshDataベースの新構造
+    /// </summary>
+    public class MeshEditContext
+    {
+        // === メッシュデータ（新構造） ===
+
+        /// <summary>メッシュデータ本体</summary>
+        public MeshData MeshData;
+
+        // === 選択状態 ===
+
+        /// <summary>選択中の頂点インデックス</summary>
+        public HashSet<int> SelectedVertices;
+
+        /// <summary>選択中の面インデックス</summary>
+        public HashSet<int> SelectedFaces;
+
+        // === 元データ参照（リセット用） ===
+
+        /// <summary>元の頂点位置（リセット用）</summary>
+        public Vector3[] OriginalPositions;
+
+        // === Unity Mesh 参照 ===
+
+        /// <summary>実際のMeshオブジェクト</summary>
+        public Mesh TargetMesh;
+
+        // === 後方互換プロパティ ===
+
+        /// <summary>頂点位置リスト（後方互換）</summary>
+        public List<Vector3> Vertices
+        {
+            get => MeshData?.Vertices.Select(v => v.Position).ToList() ?? new List<Vector3>();
+            set
+            {
+                if (MeshData == null) return;
+                for (int i = 0; i < value.Count && i < MeshData.Vertices.Count; i++)
+                {
+                    MeshData.Vertices[i].Position = value[i];
+                }
+            }
+        }
+
+        /// <summary>元の頂点位置（後方互換）</summary>
+        public Vector3[] OriginalVertices
+        {
+            get => OriginalPositions;
+            set => OriginalPositions = value;
+        }
+
+        // === コンストラクタ ===
+
+        public MeshEditContext()
+        {
+            MeshData = new MeshData();
+            SelectedVertices = new HashSet<int>();
+            SelectedFaces = new HashSet<int>();
+        }
+
+        // === メッシュ読み込み/適用 ===
+
+        /// <summary>
+        /// Meshからデータを読み込む
+        /// </summary>
+        public void LoadFromMesh(Mesh mesh, bool mergeVertices = true)
+        {
+            if (mesh == null) return;
+
+            TargetMesh = mesh;
+            MeshData = new MeshData();
+            MeshData.FromUnityMesh(mesh, mergeVertices);
+
+            // 元の位置を保存
+            OriginalPositions = MeshData.Vertices.Select(v => v.Position).ToArray();
+
+            // 選択クリア
+            SelectedVertices.Clear();
+            SelectedFaces.Clear();
+        }
+
+        /// <summary>
+        /// データをMeshに適用
+        /// </summary>
+        public void ApplyToMesh()
+        {
+            if (TargetMesh == null || MeshData == null) return;
+
+            // MeshDataをUnity Meshに変換して適用
+            var newMesh = MeshData.ToUnityMesh();
+
+            TargetMesh.Clear();
+            TargetMesh.vertices = newMesh.vertices;
+            TargetMesh.triangles = newMesh.triangles;
+            TargetMesh.uv = newMesh.uv;
+            TargetMesh.normals = newMesh.normals;
+            TargetMesh.RecalculateBounds();
+
+            // 一時メッシュを破棄
+            Object.DestroyImmediate(newMesh);
+        }
+
+        /// <summary>
+        /// 頂点位置のみをMeshに適用（高速）
+        /// </summary>
+        public void ApplyVertexPositionsToMesh()
+        {
+            if (TargetMesh == null || MeshData == null) return;
+
+            // Unity Meshに変換して頂点位置を更新
+            var newMesh = MeshData.ToUnityMesh();
+            TargetMesh.vertices = newMesh.vertices;
+            TargetMesh.RecalculateNormals();
+            TargetMesh.RecalculateBounds();
+
+            Object.DestroyImmediate(newMesh);
+        }
+
+        // === 頂点操作ヘルパー ===
+
+        /// <summary>
+        /// 頂点位置を取得
+        /// </summary>
+        public Vector3 GetVertexPosition(int index)
+        {
+            if (MeshData == null || index < 0 || index >= MeshData.VertexCount)
+                return Vector3.zero;
+            return MeshData.Vertices[index].Position;
+        }
+
+        /// <summary>
+        /// 頂点位置を設定
+        /// </summary>
+        public void SetVertexPosition(int index, Vector3 position)
+        {
+            if (MeshData == null || index < 0 || index >= MeshData.VertexCount)
+                return;
+            MeshData.Vertices[index].Position = position;
+        }
+
+        /// <summary>
+        /// 全頂点位置を配列で取得
+        /// </summary>
+        public Vector3[] GetAllPositions()
+        {
+            if (MeshData == null) return new Vector3[0];
+            return MeshData.Vertices.Select(v => v.Position).ToArray();
+        }
+
+        /// <summary>
+        /// 全頂点位置を配列で設定
+        /// </summary>
+        public void SetAllPositions(Vector3[] positions)
+        {
+            if (MeshData == null) return;
+            for (int i = 0; i < positions.Length && i < MeshData.VertexCount; i++)
+            {
+                MeshData.Vertices[i].Position = positions[i];
+            }
+        }
+
+        /// <summary>
+        /// 頂点数を取得
+        /// </summary>
+        public int VertexCount => MeshData?.VertexCount ?? 0;
+
+        /// <summary>
+        /// 面数を取得
+        /// </summary>
+        public int FaceCount => MeshData?.FaceCount ?? 0;
+    }
+
+    // ============================================================
+    // Undo記録の基底
+    // ============================================================
+
+    /// <summary>
+    /// メッシュ編集用Undo記録の基底クラス
+    /// </summary>
+    public abstract class MeshUndoRecord : IUndoRecord<MeshEditContext>
+    {
+        public UndoOperationInfo Info { get; set; }
+        public abstract void Undo(MeshEditContext context);
+        public abstract void Redo(MeshEditContext context);
+    }
+
+    // ============================================================
+    // 具体的なUndo記録クラス
+    // ============================================================
+
+    /// <summary>
+    /// 頂点移動記録（軽量）
+    /// Vertexインデックスと位置のみを保存
+    /// </summary>
+    public class VertexMoveRecord : MeshUndoRecord
+    {
+        public int[] Indices;
+        public Vector3[] OldPositions;
+        public Vector3[] NewPositions;
+
+        public VertexMoveRecord(int[] indices, Vector3[] oldPositions, Vector3[] newPositions)
+        {
+            Indices = indices;
+            OldPositions = oldPositions;
+            NewPositions = newPositions;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            for (int i = 0; i < Indices.Length; i++)
+            {
+                ctx.SetVertexPosition(Indices[i], OldPositions[i]);
+            }
+            ctx.ApplyVertexPositionsToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            for (int i = 0; i < Indices.Length; i++)
+            {
+                ctx.SetVertexPosition(Indices[i], NewPositions[i]);
+            }
+            ctx.ApplyVertexPositionsToMesh();
+        }
+    }
+
+    /// <summary>
+    /// 頂点グループ移動記録（グループ化された頂点用）
+    /// 新構造ではVertexがグループに相当
+    /// </summary>
+    public class VertexGroupMoveRecord : MeshUndoRecord
+    {
+        public List<int>[] Groups;  // グループごとの頂点インデックス
+        public Vector3[] OldOffsets;
+        public Vector3[] NewOffsets;
+        public Vector3[] OriginalPositions;  // 元の頂点位置
+
+        public VertexGroupMoveRecord(
+            List<int>[] groups,
+            Vector3[] oldOffsets,
+            Vector3[] newOffsets,
+            Vector3[] originalPositions)
+        {
+            Groups = groups;
+            OldOffsets = oldOffsets;
+            NewOffsets = newOffsets;
+            OriginalPositions = originalPositions;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            ApplyOffsets(ctx, OldOffsets);
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            ApplyOffsets(ctx, NewOffsets);
+        }
+
+        private void ApplyOffsets(MeshEditContext ctx, Vector3[] offsets)
+        {
+            for (int g = 0; g < Groups.Length; g++)
+            {
+                foreach (int vi in Groups[g])
+                {
+                    if (vi < ctx.VertexCount && vi < OriginalPositions.Length)
+                    {
+                        ctx.SetVertexPosition(vi, OriginalPositions[vi] + offsets[g]);
+                    }
+                }
+            }
+            ctx.ApplyVertexPositionsToMesh();
+        }
+    }
+
+    /// <summary>
+    /// 選択状態変更記録
+    /// </summary>
+    public class SelectionChangeRecord : MeshUndoRecord
+    {
+        public HashSet<int> OldSelectedVertices;
+        public HashSet<int> NewSelectedVertices;
+        public HashSet<int> OldSelectedFaces;
+        public HashSet<int> NewSelectedFaces;
+
+        public SelectionChangeRecord(
+            HashSet<int> oldVertices,
+            HashSet<int> newVertices,
+            HashSet<int> oldFaces = null,
+            HashSet<int> newFaces = null)
+        {
+            OldSelectedVertices = new HashSet<int>(oldVertices ?? new HashSet<int>());
+            NewSelectedVertices = new HashSet<int>(newVertices ?? new HashSet<int>());
+            OldSelectedFaces = new HashSet<int>(oldFaces ?? new HashSet<int>());
+            NewSelectedFaces = new HashSet<int>(newFaces ?? new HashSet<int>());
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            ctx.SelectedVertices = new HashSet<int>(OldSelectedVertices);
+            ctx.SelectedFaces = new HashSet<int>(OldSelectedFaces);
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            ctx.SelectedVertices = new HashSet<int>(NewSelectedVertices);
+            ctx.SelectedFaces = new HashSet<int>(NewSelectedFaces);
+        }
+    }
+
+    /// <summary>
+    /// メッシュ全体のスナップショット記録（トポロジー変更用）
+    /// MeshDataベースの新構造対応
+    /// </summary>
+    public class MeshSnapshotRecord : MeshUndoRecord
+    {
+        public MeshDataSnapshot Before;
+        public MeshDataSnapshot After;
+
+        public MeshSnapshotRecord(MeshDataSnapshot before, MeshDataSnapshot after)
+        {
+            Before = before;
+            After = after;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            Before?.ApplyTo(ctx);
+            ctx.ApplyToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            After?.ApplyTo(ctx);
+            ctx.ApplyToMesh();
+        }
+    }
+
+    /// <summary>
+    /// MeshDataのスナップショット
+    /// </summary>
+    public class MeshDataSnapshot
+    {
+        public MeshData MeshData;
+        public HashSet<int> SelectedVertices;
+        public HashSet<int> SelectedFaces;
+
+        /// <summary>
+        /// コンテキストからスナップショットを作成
+        /// </summary>
+        public static MeshDataSnapshot Capture(MeshEditContext ctx)
+        {
+            return new MeshDataSnapshot
+            {
+                MeshData = ctx.MeshData?.Clone(),
+                SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
+                SelectedFaces = new HashSet<int>(ctx.SelectedFaces)
+            };
+        }
+
+        /// <summary>
+        /// スナップショットをコンテキストに適用
+        /// </summary>
+        public void ApplyTo(MeshEditContext ctx)
+        {
+            ctx.MeshData = MeshData?.Clone();
+            ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
+            ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
+        }
+    }
+
+    // ============================================================
+    // 後方互換: MeshSnapshot（旧形式）
+    // ============================================================
+
+    /// <summary>
+    /// メッシュ状態のスナップショット（後方互換）
+    /// </summary>
+    public class MeshSnapshot
+    {
+        public Vector3[] Vertices;
+        public int[] Triangles;
+        public Vector2[] UVs;
+        public Vector3[] Normals;
+        public HashSet<int> SelectedVertices;
+        public HashSet<int> SelectedFaces;
+
+        /// <summary>
+        /// コンテキストからスナップショットを作成
+        /// </summary>
+        public static MeshSnapshot Capture(MeshEditContext ctx)
+        {
+            // MeshDataから Unity 形式のデータを取得
+            if (ctx.MeshData == null)
+            {
+                return new MeshSnapshot
+                {
+                    Vertices = new Vector3[0],
+                    Triangles = new int[0],
+                    UVs = new Vector2[0],
+                    Normals = new Vector3[0],
+                    SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
+                    SelectedFaces = new HashSet<int>(ctx.SelectedFaces)
+                };
+            }
+
+            var mesh = ctx.MeshData.ToUnityMesh();
+            var snapshot = new MeshSnapshot
+            {
+                Vertices = mesh.vertices,
+                Triangles = mesh.triangles,
+                UVs = mesh.uv,
+                Normals = mesh.normals,
+                SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
+                SelectedFaces = new HashSet<int>(ctx.SelectedFaces)
+            };
+            Object.DestroyImmediate(mesh);
+            return snapshot;
+        }
+
+        /// <summary>
+        /// スナップショットをコンテキストに適用
+        /// </summary>
+        public void ApplyTo(MeshEditContext ctx)
+        {
+            // 一時的なMeshを作成してMeshDataに変換
+            var tempMesh = new Mesh
+            {
+                vertices = Vertices,
+                triangles = Triangles,
+                uv = UVs,
+                normals = Normals
+            };
+
+            ctx.MeshData = new MeshData();
+            ctx.MeshData.FromUnityMesh(tempMesh, true);
+            ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
+            ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
+
+            Object.DestroyImmediate(tempMesh);
+        }
+    }
+
+    // ============================================================
+    // 頂点UV/法線変更記録（新機能）
+    // ============================================================
+
+    /// <summary>
+    /// 頂点UV変更記録
+    /// </summary>
+    public class VertexUVChangeRecord : MeshUndoRecord
+    {
+        public int VertexIndex;
+        public int UVIndex;
+        public Vector2 OldUV;
+        public Vector2 NewUV;
+
+        public VertexUVChangeRecord(int vertexIndex, int uvIndex, Vector2 oldUV, Vector2 newUV)
+        {
+            VertexIndex = vertexIndex;
+            UVIndex = uvIndex;
+            OldUV = oldUV;
+            NewUV = newUV;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null && VertexIndex < ctx.MeshData.VertexCount)
+            {
+                var vertex = ctx.MeshData.Vertices[VertexIndex];
+                if (UVIndex < vertex.UVs.Count)
+                    vertex.UVs[UVIndex] = OldUV;
+            }
+            ctx.ApplyToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null && VertexIndex < ctx.MeshData.VertexCount)
+            {
+                var vertex = ctx.MeshData.Vertices[VertexIndex];
+                if (UVIndex < vertex.UVs.Count)
+                    vertex.UVs[UVIndex] = NewUV;
+            }
+            ctx.ApplyToMesh();
+        }
+    }
+
+    /// <summary>
+    /// 面追加記録
+    /// </summary>
+    public class FaceAddRecord : MeshUndoRecord
+    {
+        public Face AddedFace;
+        public int FaceIndex;
+
+        public FaceAddRecord(Face face, int index)
+        {
+            AddedFace = face.Clone();
+            FaceIndex = index;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null && FaceIndex < ctx.MeshData.FaceCount)
+            {
+                ctx.MeshData.Faces.RemoveAt(FaceIndex);
+            }
+            ctx.ApplyToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null)
+            {
+                ctx.MeshData.Faces.Insert(FaceIndex, AddedFace.Clone());
+            }
+            ctx.ApplyToMesh();
+        }
+    }
+
+    /// <summary>
+    /// 面削除記録
+    /// </summary>
+    public class FaceDeleteRecord : MeshUndoRecord
+    {
+        public Face DeletedFace;
+        public int FaceIndex;
+
+        public FaceDeleteRecord(Face face, int index)
+        {
+            DeletedFace = face.Clone();
+            FaceIndex = index;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null)
+            {
+                ctx.MeshData.Faces.Insert(FaceIndex, DeletedFace.Clone());
+            }
+            ctx.ApplyToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null && FaceIndex < ctx.MeshData.FaceCount)
+            {
+                ctx.MeshData.Faces.RemoveAt(FaceIndex);
+            }
+            ctx.ApplyToMesh();
+        }
+    }
+
+    /// <summary>
+    /// 頂点追加記録
+    /// </summary>
+    public class VertexAddRecord : MeshUndoRecord
+    {
+        public Vertex AddedVertex;
+        public int VertexIndex;
+
+        public VertexAddRecord(Vertex vertex, int index)
+        {
+            AddedVertex = vertex.Clone();
+            VertexIndex = index;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null && VertexIndex < ctx.MeshData.VertexCount)
+            {
+                ctx.MeshData.Vertices.RemoveAt(VertexIndex);
+                // 面のインデックスを調整
+                AdjustFaceIndicesAfterVertexRemoval(ctx.MeshData, VertexIndex);
+            }
+            ctx.ApplyToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData != null)
+            {
+                ctx.MeshData.Vertices.Insert(VertexIndex, AddedVertex.Clone());
+                // 面のインデックスを調整
+                AdjustFaceIndicesAfterVertexInsertion(ctx.MeshData, VertexIndex);
+            }
+            ctx.ApplyToMesh();
+        }
+
+        private void AdjustFaceIndicesAfterVertexRemoval(MeshData meshData, int removedIndex)
+        {
+            foreach (var face in meshData.Faces)
+            {
+                for (int i = 0; i < face.VertexIndices.Count; i++)
+                {
+                    if (face.VertexIndices[i] > removedIndex)
+                        face.VertexIndices[i]--;
+                }
+            }
+        }
+
+        private void AdjustFaceIndicesAfterVertexInsertion(MeshData meshData, int insertedIndex)
+        {
+            foreach (var face in meshData.Faces)
+            {
+                for (int i = 0; i < face.VertexIndices.Count; i++)
+                {
+                    if (face.VertexIndices[i] >= insertedIndex)
+                        face.VertexIndices[i]++;
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // エディタ状態（カメラ、表示、モード統合）
+    // ============================================================
+
+    /// <summary>
+    /// エディタ状態コンテキスト（カメラ、表示設定、編集モード）
+    /// </summary>
+    public class EditorStateContext
+    {
+        // カメラ
+        public float RotationX = 20f;
+        public float RotationY = 0f;
+        public float CameraDistance = 2f;
+        public Vector3 CameraTarget = Vector3.zero;
+
+        // 表示設定
+        public bool ShowWireframe = true;
+        public bool ShowVertices = true;
+
+        // 編集モード
+        public bool VertexEditMode = false;
+
+        /// <summary>
+        /// スナップショットを作成
+        /// </summary>
+        public EditorStateSnapshot Capture()
+        {
+            return new EditorStateSnapshot
+            {
+                RotationX = RotationX,
+                RotationY = RotationY,
+                CameraDistance = CameraDistance,
+                CameraTarget = CameraTarget,
+                ShowWireframe = ShowWireframe,
+                ShowVertices = ShowVertices,
+                VertexEditMode = VertexEditMode
+            };
+        }
+
+        /// <summary>
+        /// スナップショットから復元
+        /// </summary>
+        public void ApplySnapshot(EditorStateSnapshot snapshot)
+        {
+            RotationX = snapshot.RotationX;
+            RotationY = snapshot.RotationY;
+            CameraDistance = snapshot.CameraDistance;
+            CameraTarget = snapshot.CameraTarget;
+            ShowWireframe = snapshot.ShowWireframe;
+            ShowVertices = snapshot.ShowVertices;
+            VertexEditMode = snapshot.VertexEditMode;
+        }
+    }
+
+    /// <summary>
+    /// エディタ状態のスナップショット
+    /// </summary>
+    public struct EditorStateSnapshot
+    {
+        public float RotationX, RotationY, CameraDistance;
+        public Vector3 CameraTarget;
+        public bool ShowWireframe, ShowVertices, VertexEditMode;
+
+        public bool IsDifferentFrom(EditorStateSnapshot other)
+        {
+            return !Mathf.Approximately(RotationX, other.RotationX) ||
+                   !Mathf.Approximately(RotationY, other.RotationY) ||
+                   !Mathf.Approximately(CameraDistance, other.CameraDistance) ||
+                   Vector3.Distance(CameraTarget, other.CameraTarget) > 0.0001f ||
+                   ShowWireframe != other.ShowWireframe ||
+                   ShowVertices != other.ShowVertices ||
+                   VertexEditMode != other.VertexEditMode;
+        }
+    }
+
+    /// <summary>
+    /// エディタ状態変更記録（汎用）
+    /// </summary>
+    public class EditorStateChangeRecord : IUndoRecord<EditorStateContext>
+    {
+        public UndoOperationInfo Info { get; set; }
+        public EditorStateSnapshot Before;
+        public EditorStateSnapshot After;
+
+        public EditorStateChangeRecord(EditorStateSnapshot before, EditorStateSnapshot after)
+        {
+            Before = before;
+            After = after;
+        }
+
+        public void Undo(EditorStateContext ctx) => ctx.ApplySnapshot(Before);
+        public void Redo(EditorStateContext ctx) => ctx.ApplySnapshot(After);
+    }
+
+    // ============================================================
+    // 後方互換用（既存コードとの互換性維持）
+    // ============================================================
+
+    /// <summary>
+    /// 表示設定コンテキスト（後方互換用エイリアス）
+    /// </summary>
+    public class ViewContext : EditorStateContext { }
+
+    /// <summary>
+    /// 表示設定変更記録（後方互換用）
+    /// </summary>
+    public class ViewChangeRecord : IUndoRecord<EditorStateContext>
+    {
+        public UndoOperationInfo Info { get; set; }
+
+        public float OldRotationX, NewRotationX;
+        public float OldRotationY, NewRotationY;
+        public float OldCameraDistance, NewCameraDistance;
+        public Vector3 OldCameraTarget, NewCameraTarget;
+
+        public void Undo(EditorStateContext ctx)
+        {
+            ctx.RotationX = OldRotationX;
+            ctx.RotationY = OldRotationY;
+            ctx.CameraDistance = OldCameraDistance;
+            ctx.CameraTarget = OldCameraTarget;
+        }
+
+        public void Redo(EditorStateContext ctx)
+        {
+            ctx.RotationX = NewRotationX;
+            ctx.RotationY = NewRotationY;
+            ctx.CameraDistance = NewCameraDistance;
+            ctx.CameraTarget = NewCameraTarget;
+        }
+    }
+}
