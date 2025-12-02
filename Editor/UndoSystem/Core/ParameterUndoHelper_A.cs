@@ -1,4 +1,4 @@
-// Assets/Editor/UndoSystem/Core/ParameterUndoHelper.cs
+// Assets/Editor/UndoSystem/Core/ParameterUndoHelper_A.cs
 // パラメータ編集のUndo/Redoを簡単に実装するためのヘルパークラス
 
 using System;
@@ -9,11 +9,9 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// パラメータ編集用Undoヘルパー
     /// EditorWindowのパラメータ変更を簡単にUndo対応にする
-    /// スタックはUndoManagerで永続保持され、ウィンドウを閉じても履歴が残る
-    /// 再度開いた際は閉じる前の状態が復元される
     /// </summary>
     /// <typeparam name="TParams">パラメータの型（クラスまたは構造体）</typeparam>
-    public class ParameterUndoHelper<TParams> where TParams : IEquatable<TParams>
+    public class ParameterUndoHelper_A<TParams> where TParams : IEquatable<TParams>
     {
         private readonly string _stackId;
         private readonly string _displayName;
@@ -25,10 +23,6 @@ namespace MeshFactory.UndoSystem
         private ParamsContext _context;
         private TParams _editStartParams;
         private bool _isDragging = false;
-
-        // イベントハンドラ（解除用に保持）
-        private Action<UndoOperationInfo> _undoHandler;
-        private Action<UndoOperationInfo> _redoHandler;
 
         // 内部コンテキスト
         private class ParamsContext
@@ -55,7 +49,7 @@ namespace MeshFactory.UndoSystem
         /// <param name="captureParams">現在のパラメータを取得する関数</param>
         /// <param name="applyParams">パラメータを適用する関数</param>
         /// <param name="onUndoRedo">Undo/Redo実行後のコールバック（Repaint等）</param>
-        public ParameterUndoHelper(
+        public ParameterUndoHelper_A(
             string stackId,
             string displayName,
             Func<TParams> captureParams,
@@ -73,36 +67,13 @@ namespace MeshFactory.UndoSystem
 
         private void Initialize()
         {
-            // 既存スタックを探す
-            var existingNode = UndoManager.Instance.FindById(_stackId);
-            if (existingNode is UndoStack<ParamsContext> existingStack && existingStack.Context != null)
-            {
-                // 前回閉じた時の状態を復元
-                var lastState = existingStack.Context.Current;
-                if (lastState != null && !lastState.Equals(default(TParams)))
-                {
-                    _applyParams(lastState);
-                    _onUndoRedo?.Invoke();
-                }
+            _context = new ParamsContext { Current = _captureParams() };
+            _undoStack = new UndoStack<ParamsContext>(_stackId, _displayName, _context);
+            _undoStack.OnUndoPerformed += OnUndoRedoPerformed;
+            _undoStack.OnRedoPerformed += OnUndoRedoPerformed;
 
-                // コンテキストを更新（現在の状態をキャプチャ）
-                _context = new ParamsContext { Current = _captureParams() };
-                _undoStack = existingStack;
-                _undoStack.Context = _context;
-            }
-            else
-            {
-                // 新規作成
-                _context = new ParamsContext { Current = _captureParams() };
-                _undoStack = new UndoStack<ParamsContext>(_stackId, _displayName, _context);
-                UndoManager.Instance.AddChild(_undoStack);
-            }
-
-            // イベントハンドラを登録（解除用に保持）
-            _undoHandler = OnUndoRedoPerformed;
-            _redoHandler = OnUndoRedoPerformed;
-            _undoStack.OnUndoPerformed += _undoHandler;
-            _undoStack.OnRedoPerformed += _redoHandler;
+            // グローバルマネージャーに登録
+            UndoManager.Instance.AddChild(_undoStack);
         }
 
         private void OnUndoRedoPerformed(UndoOperationInfo info)
@@ -113,22 +84,14 @@ namespace MeshFactory.UndoSystem
 
         /// <summary>
         /// クリーンアップ（OnDisableで呼ぶ）
-        /// スタックは削除せず、Contextも残す（次回復元用）
         /// </summary>
         public void Dispose()
         {
             if (_undoStack != null)
             {
-                // イベントハンドラを解除
-                _undoStack.OnUndoPerformed -= _undoHandler;
-                _undoStack.OnRedoPerformed -= _redoHandler;
-
-                // Contextは残す（次回Open時に復元するため）
-                // _undoStack.Context = default;  ← しない
+                UndoManager.Instance.RemoveChild(_undoStack);
                 _undoStack = null;
             }
-            _undoHandler = null;
-            _redoHandler = null;
         }
 
         /// <summary>
@@ -142,16 +105,6 @@ namespace MeshFactory.UndoSystem
         public bool CanRedo => _undoStack?.CanRedo ?? false;
 
         /// <summary>
-        /// Undo履歴数
-        /// </summary>
-        public int UndoCount => _undoStack?.UndoCount ?? 0;
-
-        /// <summary>
-        /// Redo履歴数
-        /// </summary>
-        public int RedoCount => _undoStack?.RedoCount ?? 0;
-
-        /// <summary>
         /// Undoを実行
         /// </summary>
         public void PerformUndo() => _undoStack?.PerformUndo();
@@ -160,11 +113,6 @@ namespace MeshFactory.UndoSystem
         /// Redoを実行
         /// </summary>
         public void PerformRedo() => _undoStack?.PerformRedo();
-
-        /// <summary>
-        /// 履歴をクリア
-        /// </summary>
-        public void ClearHistory() => _undoStack?.Clear();
 
         /// <summary>
         /// OnGUIの最初で呼ぶ - イベント処理とショートカット
@@ -265,26 +213,6 @@ namespace MeshFactory.UndoSystem
             using (new UnityEditor.EditorGUI.DisabledScope(!CanRedo))
             {
                 if (GUILayout.Button("Redo", GUILayout.Width(60)))
-                    PerformRedo();
-            }
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-        }
-
-        /// <summary>
-        /// 履歴情報付きUndo/Redoボタンを描画
-        /// </summary>
-        public void DrawUndoRedoButtonsWithInfo()
-        {
-            GUILayout.BeginHorizontal();
-            using (new UnityEditor.EditorGUI.DisabledScope(!CanUndo))
-            {
-                if (GUILayout.Button($"Undo ({UndoCount})", GUILayout.Width(80)))
-                    PerformUndo();
-            }
-            using (new UnityEditor.EditorGUI.DisabledScope(!CanRedo))
-            {
-                if (GUILayout.Button($"Redo ({RedoCount})", GUILayout.Width(80)))
                     PerformRedo();
             }
             GUILayout.FlexibleSpace();

@@ -12,8 +12,8 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using MeshEditor.UndoSystem;
-using MeshEditor.Data;
+using MeshFactory.UndoSystem;
+using MeshFactory.Data;
 
 public class CubeMeshCreatorWindow : EditorWindow
 {
@@ -31,6 +31,7 @@ public class CubeMeshCreatorWindow : EditorWindow
         public Vector3Int Subdivisions;
         public Vector3 Pivot;
         public float RotationX, RotationY;
+        public bool LinkTopBottom;  // Top/Bottom連動フラグ
 
         public static CubeParams Default => new CubeParams
         {
@@ -45,7 +46,8 @@ public class CubeMeshCreatorWindow : EditorWindow
             Subdivisions = Vector3Int.one,
             Pivot = Vector3.zero,
             RotationX = 20f,
-            RotationY = 30f
+            RotationY = 30f,
+            LinkTopBottom = false
         };
 
         public bool Equals(CubeParams o) =>
@@ -60,7 +62,8 @@ public class CubeMeshCreatorWindow : EditorWindow
             Subdivisions == o.Subdivisions &&
             Pivot == o.Pivot &&
             Mathf.Approximately(RotationX, o.RotationX) &&
-            Mathf.Approximately(RotationY, o.RotationY);
+            Mathf.Approximately(RotationY, o.RotationY) &&
+            LinkTopBottom == o.LinkTopBottom;
 
         public override bool Equals(object obj) => obj is CubeParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;
@@ -171,19 +174,50 @@ public class CubeMeshCreatorWindow : EditorWindow
         _params.MeshName = EditorGUILayout.TextField("Name", _params.MeshName);
         EditorGUILayout.Space(5);
 
-        EditorGUILayout.LabelField("Size Top", EditorStyles.miniBoldLabel);
-        using (new EditorGUI.IndentLevelScope())
+        // Top/Bottom連動チェックボックス
+        bool prevLink = _params.LinkTopBottom;
+        _params.LinkTopBottom = EditorGUILayout.Toggle("Link Top/Bottom Size", _params.LinkTopBottom);
+
+        // 連動ONに切り替わった瞬間、Top優先でBottomを同期
+        if (_params.LinkTopBottom && !prevLink)
         {
-            _params.WidthTop = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);
-            _params.DepthTop = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);
+            _params.WidthBottom = _params.WidthTop;
+            _params.DepthBottom = _params.DepthTop;
         }
 
         EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("Size Bottom", EditorStyles.miniBoldLabel);
-        using (new EditorGUI.IndentLevelScope())
+
+        if (_params.LinkTopBottom)
         {
-            _params.WidthBottom = EditorGUILayout.Slider("Width (X)", _params.WidthBottom, 0.1f, 10f);
-            _params.DepthBottom = EditorGUILayout.Slider("Depth (Z)", _params.DepthBottom, 0.1f, 10f);
+            // 連動モード: Size（共通）
+            EditorGUILayout.LabelField("Size", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                float newWidth = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);
+                float newDepth = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);
+
+                // Top/Bottom両方に適用
+                _params.WidthTop = _params.WidthBottom = newWidth;
+                _params.DepthTop = _params.DepthBottom = newDepth;
+            }
+        }
+        else
+        {
+            // 独立モード: Size Top / Size Bottom
+            EditorGUILayout.LabelField("Size Top", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                _params.WidthTop = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);
+                _params.DepthTop = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);
+            }
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Size Bottom", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                _params.WidthBottom = EditorGUILayout.Slider("Width (X)", _params.WidthBottom, 0.1f, 10f);
+                _params.DepthBottom = EditorGUILayout.Slider("Depth (Z)", _params.DepthBottom, 0.1f, 10f);
+            }
         }
 
         EditorGUILayout.Space(5);
@@ -245,7 +279,7 @@ public class CubeMeshCreatorWindow : EditorWindow
         }
 
         Event e = Event.current;
-        if (rect.Contains(e.mousePosition) && e.type == EventType.MouseDrag && e.button == 0)
+        if (rect.Contains(e.mousePosition) && e.type == EventType.MouseDrag && e.button == 1)
         {
             _params.RotationY += e.delta.x * 0.5f;
             _params.RotationX += e.delta.y * 0.5f;

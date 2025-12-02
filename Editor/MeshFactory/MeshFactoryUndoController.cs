@@ -5,9 +5,10 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using MeshEditor.Data;
+using MeshFactory.Data;
+using MeshFactory.Tools;
 
-namespace MeshEditor.UndoSystem
+namespace MeshFactory.UndoSystem
 {
     /// <summary>
     /// メッシュエディタ用Undoコントローラー
@@ -20,11 +21,13 @@ namespace MeshEditor.UndoSystem
         private UndoGroup _mainGroup;
         private UndoStack<MeshEditContext> _vertexEditStack;
         private UndoStack<EditorStateContext> _editorStateStack;
+        private UndoStack<WorkPlane> _workPlaneStack;
         private UndoGroup _subWindowGroup;
 
         // === コンテキスト ===
         private MeshEditContext _meshContext;
         private EditorStateContext _editorStateContext;
+        private WorkPlane _workPlane;
 
         // === 状態追跡（変更検出用） ===
         private Vector3[] _lastVertexPositions;
@@ -35,9 +38,14 @@ namespace MeshEditor.UndoSystem
         private bool _isEditorStateDragging = false;
         private EditorStateSnapshot _editorStateStartSnapshot;
 
+        // WorkPlaneドラッグ用
+        private bool _isWorkPlaneDragging = false;
+        private WorkPlaneSnapshot _workPlaneStartSnapshot;
+
         // === プロパティ ===
         public MeshEditContext MeshContext => _meshContext;
         public EditorStateContext EditorState => _editorStateContext;
+        public WorkPlane WorkPlane => _workPlane;
 
         /// <summary>MeshDataへの直接アクセス</summary>
         public MeshData MeshData => _meshContext?.MeshData;
@@ -51,6 +59,7 @@ namespace MeshEditor.UndoSystem
         public UndoGroup MainGroup => _mainGroup;
         public UndoStack<MeshEditContext> VertexEditStack => _vertexEditStack;
         public UndoStack<EditorStateContext> EditorStateStack => _editorStateStack;
+        public UndoStack<WorkPlane> WorkPlaneStack => _workPlaneStack;
         public UndoGroup SubWindowGroup => _subWindowGroup;
 
         // === イベント ===
@@ -61,7 +70,7 @@ namespace MeshEditor.UndoSystem
         {
             // メイングループ作成
             _mainGroup = new UndoGroup(windowId, "Mesh Editor");
-            _mainGroup.ResolutionPolicy = UndoResolutionPolicy.FocusThenTimestamp;
+            _mainGroup.ResolutionPolicy = UndoResolutionPolicy.TimestampOnly;
 
             // 頂点編集スタック
             _meshContext = new MeshEditContext();
@@ -81,6 +90,21 @@ namespace MeshEditor.UndoSystem
             );
             _mainGroup.AddChild(_editorStateStack);
 
+            // WorkPlaneスタック
+            _workPlane = new WorkPlane();
+            _workPlaneStack = new UndoStack<WorkPlane>(
+                $"{windowId}/WorkPlane",
+                "Work Plane",
+                _workPlane
+            );
+            _mainGroup.AddChild(_workPlaneStack);
+
+            // MeshContextにWorkPlane参照を設定（選択連動Undo用）
+            _meshContext.WorkPlane = _workPlane;
+
+            // EditorStateContextにWorkPlane参照を設定（カメラ連動Undo用）
+            _editorStateContext.WorkPlane = _workPlane;
+
             // サブウインドウグループ
             _subWindowGroup = new UndoGroup($"{windowId}/SubWindows", "Sub Windows");
             _mainGroup.AddChild(_subWindowGroup);
@@ -90,6 +114,8 @@ namespace MeshEditor.UndoSystem
             _vertexEditStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
             _editorStateStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
             _editorStateStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
+            _workPlaneStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
+            _workPlaneStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
 
             // グローバルマネージャーに登録
             UndoManager.Instance.AddChild(_mainGroup);
@@ -210,6 +236,7 @@ namespace MeshEditor.UndoSystem
             var currentSnapshot = _editorStateContext.Capture();
             if (currentSnapshot.IsDifferentFrom(_editorStateStartSnapshot))
             {
+                _editorStateStack.EndGroup();  // 独立した操作として記録
                 var record = new EditorStateChangeRecord(_editorStateStartSnapshot, currentSnapshot);
                 _editorStateStack.Record(record, description);
             }
@@ -226,6 +253,67 @@ namespace MeshEditor.UndoSystem
                 BeginEditorStateDrag();
             }
             EndEditorStateDrag(description);
+        }
+
+        // === WorkPlaneの記録 ===
+
+        /// <summary>
+        /// WorkPlaneにフォーカス
+        /// </summary>
+        public void FocusWorkPlane()
+        {
+            _mainGroup.FocusedChildId = _workPlaneStack.Id;
+            UndoManager.Instance.FocusedChildId = _mainGroup.Id;
+        }
+
+        /// <summary>
+        /// WorkPlaneドラッグ開始
+        /// </summary>
+        public void BeginWorkPlaneDrag()
+        {
+            if (_isWorkPlaneDragging) return;
+            _isWorkPlaneDragging = true;
+            _workPlaneStartSnapshot = _workPlane.CreateSnapshot();
+        }
+
+        /// <summary>
+        /// WorkPlaneドラッグ終了（変更があれば記録）
+        /// </summary>
+        public void EndWorkPlaneDrag(string description = "Change WorkPlane")
+        {
+            if (!_isWorkPlaneDragging) return;
+            _isWorkPlaneDragging = false;
+
+            var currentSnapshot = _workPlane.CreateSnapshot();
+            if (currentSnapshot.IsDifferentFrom(_workPlaneStartSnapshot))
+            {
+                var record = new WorkPlaneChangeRecord(_workPlaneStartSnapshot, currentSnapshot, description);
+                _workPlaneStack.Record(record, description);
+            }
+        }
+
+        /// <summary>
+        /// WorkPlane変更を即座に記録
+        /// </summary>
+        public void RecordWorkPlaneChange(string description = "Change WorkPlane")
+        {
+            if (!_isWorkPlaneDragging)
+            {
+                BeginWorkPlaneDrag();
+            }
+            EndWorkPlaneDrag(description);
+        }
+
+        /// <summary>
+        /// WorkPlane変更を記録（スナップショット指定）
+        /// </summary>
+        public void RecordWorkPlaneChange(WorkPlaneSnapshot before, WorkPlaneSnapshot after, string description = null)
+        {
+            if (!before.IsDifferentFrom(after)) return;
+
+            var record = new WorkPlaneChangeRecord(before, after, description);
+            _workPlaneStack.Record(record, record.Description);
+            FocusWorkPlane();
         }
 
         // === 頂点編集操作の記録 ===
@@ -302,6 +390,7 @@ namespace MeshEditor.UndoSystem
             Vector3[] newOffsets,
             Vector3[] originalVertices)
         {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
             var record = new VertexGroupMoveRecord(
                 groups,
                 (Vector3[])oldOffsets.Clone(),
@@ -321,7 +410,28 @@ namespace MeshEditor.UndoSystem
             HashSet<int> oldFaces = null,
             HashSet<int> newFaces = null)
         {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
             var record = new SelectionChangeRecord(oldVertices, newVertices, oldFaces, newFaces);
+            _vertexEditStack.Record(record, "Change Selection");
+        }
+
+        /// <summary>
+        /// 選択状態変更を記録（WorkPlane連動）
+        /// AutoUpdate有効時に選択と一緒にWorkPlane原点もUndo/Redoされる
+        /// </summary>
+        public void RecordSelectionChangeWithWorkPlane(
+            HashSet<int> oldVertices,
+            HashSet<int> newVertices,
+            WorkPlaneSnapshot? oldWorkPlane,
+            WorkPlaneSnapshot? newWorkPlane,
+            HashSet<int> oldFaces = null,
+            HashSet<int> newFaces = null)
+        {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
+            var record = new SelectionChangeRecord(
+                oldVertices, newVertices,
+                oldWorkPlane, newWorkPlane,
+                oldFaces, newFaces);
             _vertexEditStack.Record(record, "Change Selection");
         }
 
@@ -340,6 +450,7 @@ namespace MeshEditor.UndoSystem
         /// </summary>
         public void RecordTopologyChange(MeshDataSnapshot before, MeshDataSnapshot after, string description = "Topology Change")
         {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
             var record = new MeshSnapshotRecord(before, after);
             _vertexEditStack.Record(record, description);
             FocusVertexEdit();
@@ -358,6 +469,7 @@ namespace MeshEditor.UndoSystem
         /// </summary>
         public void RecordTopologyChange(MeshSnapshot before, MeshSnapshot after, string description = "Topology Change")
         {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
             // 旧形式のスナップショットを新形式に変換して記録
             var beforeData = new MeshDataSnapshot();
             before.ApplyTo(_meshContext);
@@ -378,6 +490,7 @@ namespace MeshEditor.UndoSystem
         /// </summary>
         public void RecordFaceAdd(Face face, int index)
         {
+            _vertexEditStack.EndGroup();  // グループをリセットして独立した操作に
             var record = new FaceAddRecord(face, index);
             _vertexEditStack.Record(record, "Add Face");
             FocusVertexEdit();
@@ -388,6 +501,7 @@ namespace MeshEditor.UndoSystem
         /// </summary>
         public void RecordFaceDelete(Face face, int index)
         {
+            _vertexEditStack.EndGroup();  // グループをリセットして独立した操作に
             var record = new FaceDeleteRecord(face, index);
             _vertexEditStack.Record(record, "Delete Face");
             FocusVertexEdit();
@@ -398,8 +512,69 @@ namespace MeshEditor.UndoSystem
         /// </summary>
         public void RecordVertexAdd(Vertex vertex, int index)
         {
+            _vertexEditStack.EndGroup();  // グループをリセットして独立した操作に
             var record = new VertexAddRecord(vertex, index);
             _vertexEditStack.Record(record, "Add Vertex");
+            FocusVertexEdit();
+        }
+
+        /// <summary>
+        /// 面追加操作を記録（頂点と面をまとめて1つの操作として）
+        /// </summary>
+        public void RecordAddFaceOperation(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices)
+        {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
+            
+            var record = new AddFaceOperationRecord(face, faceIndex, addedVertices);
+            string desc;
+            if (face != null)
+            {
+                desc = addedVertices.Count > 0 
+                    ? $"Add Face (+{addedVertices.Count} vertices)" 
+                    : "Add Face";
+            }
+            else
+            {
+                desc = $"Add {addedVertices.Count} Vertices";
+            }
+            _vertexEditStack.Record(record, desc);
+            FocusVertexEdit();
+        }
+
+        /// <summary>
+        /// ナイフ切断操作を記録
+        /// </summary>
+        public void RecordKnifeCut(
+            int originalFaceIndex,
+            Face originalFace,
+            Face newFace1,
+            int newFace2Index,
+            Face newFace2,
+            List<(int Index, Vertex Vertex)> addedVertices)
+        {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
+            
+            var record = new KnifeCutOperationRecord(
+                originalFaceIndex,
+                originalFace,
+                newFace1,
+                newFace2Index,
+                newFace2,
+                addedVertices
+            );
+            _vertexEditStack.Record(record, "Knife Cut");
+            FocusVertexEdit();
+        }
+
+        /// <summary>
+        /// 頂点削除操作を記録（スナップショット方式）
+        /// </summary>
+        public void RecordDeleteVertices(MeshDataSnapshot before, MeshDataSnapshot after)
+        {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
+            
+            var record = new MeshSnapshotRecord(before, after);
+            _vertexEditStack.Record(record, "Delete Vertices");
             FocusVertexEdit();
         }
 
@@ -433,6 +608,40 @@ namespace MeshEditor.UndoSystem
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
             var record = new EditorStateChangeRecord(before, after);
+            _editorStateStack.Record(record, "Change View");
+        }
+
+        /// <summary>
+        /// カメラ変更を記録（WorkPlane連動）
+        /// CameraParallelモードでカメラ姿勢に連動してWorkPlane軸もUndo/Redoされる
+        /// </summary>
+        public void RecordViewChangeWithWorkPlane(
+            float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
+            float newRotX, float newRotY, float newDist, Vector3 newTarget,
+            WorkPlaneSnapshot? oldWorkPlane,
+            WorkPlaneSnapshot? newWorkPlane)
+        {
+            var before = new EditorStateSnapshot
+            {
+                RotationX = oldRotX,
+                RotationY = oldRotY,
+                CameraDistance = oldDist,
+                CameraTarget = oldTarget,
+                ShowWireframe = _editorStateContext.ShowWireframe,
+                ShowVertices = _editorStateContext.ShowVertices,
+                VertexEditMode = _editorStateContext.VertexEditMode
+            };
+            var after = new EditorStateSnapshot
+            {
+                RotationX = newRotX,
+                RotationY = newRotY,
+                CameraDistance = newDist,
+                CameraTarget = newTarget,
+                ShowWireframe = _editorStateContext.ShowWireframe,
+                ShowVertices = _editorStateContext.ShowVertices,
+                VertexEditMode = _editorStateContext.VertexEditMode
+            };
+            var record = new EditorStateChangeRecord(before, after, oldWorkPlane, newWorkPlane);
             _editorStateStack.Record(record, "Change View");
         }
 
@@ -529,6 +738,7 @@ namespace MeshEditor.UndoSystem
                    $"  MeshData: {meshInfo}\n" +
                    $"  Vertex: {_vertexEditStack.GetDebugInfo()}\n" +
                    $"  EditorState: {_editorStateStack.GetDebugInfo()}\n" +
+                   $"  WorkPlane: {_workPlaneStack.GetDebugInfo()}\n" +
                    $"  SubWindows: {_subWindowGroup.Children.Count}";
         }
     }

@@ -4,7 +4,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace MeshEditor.UndoSystem
+namespace MeshFactory.UndoSystem
 {
     /// <summary>
     /// Undo操作のメタ情報
@@ -76,8 +76,15 @@ namespace MeshEditor.UndoSystem
         /// <summary>このノードまたは子孫にRedo可能な操作があるか</summary>
         bool CanRedo { get; }
         
-        /// <summary>最新の操作情報（調停用）</summary>
+        /// <summary>最新の操作情報（Undo調停用）</summary>
         UndoOperationInfo LatestOperation { get; }
+        
+        /// <summary>最古のRedo操作情報（Redo調停用）</summary>
+        /// <summary>
+        /// 次にRedoされる操作の情報
+        /// Redoスタックは末尾から取り出すため、末尾の要素を返す
+        /// </summary>
+        UndoOperationInfo NextRedoOperation { get; }
         
         /// <summary>このスコープ内でUndo（子を含む）</summary>
         bool PerformUndo();
@@ -158,7 +165,7 @@ namespace MeshEditor.UndoSystem
         FocusPriority,
         
         /// <summary>最新タイムスタンプの操作を優先</summary>
-        TimestampPriority,
+        TimestampOnly,
         
         /// <summary>フォーカス優先、空ならタイムスタンプ</summary>
         FocusThenTimestamp

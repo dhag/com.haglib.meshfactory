@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MeshEditor.UndoSystem
+namespace MeshFactory.UndoSystem
 {
     /// <summary>
     /// グローバルUndoマネージャー
@@ -27,6 +27,7 @@ namespace MeshEditor.UndoSystem
         public bool CanUndo => _root.CanUndo;
         public bool CanRedo => _root.CanRedo;
         public UndoOperationInfo LatestOperation => _root.LatestOperation;
+        public UndoOperationInfo NextRedoOperation => _root.NextRedoOperation;
 
         // === プロパティ: IUndoGroup ===
         public IReadOnlyList<IUndoNode> Children => _root.Children;

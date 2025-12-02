@@ -4,7 +4,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace MeshEditor.UndoSystem
+namespace MeshFactory.UndoSystem
 {
     /// <summary>
     /// 汎用Undoスタック
@@ -29,6 +29,13 @@ namespace MeshEditor.UndoSystem
         
         public UndoOperationInfo LatestOperation => 
             _undoStack.Count > 0 ? _undoStack[^1].Info : null;
+
+        /// <summary>
+        /// 次にRedoされる操作の情報
+        /// Redoスタックは末尾から取り出すため、末尾の要素を返す
+        /// </summary>
+        public UndoOperationInfo NextRedoOperation => 
+            _redoStack.Count > 0 ? _redoStack[^1].Info : null;
 
         // === プロパティ: IUndoStack ===
         public TContext Context { get; set; }

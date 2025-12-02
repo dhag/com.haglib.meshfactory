@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace MeshEditor.UndoSystem
+namespace MeshFactory.UndoSystem
 {
     /// <summary>
     /// Undoノードのグループ
@@ -33,6 +33,21 @@ namespace MeshEditor.UndoSystem
                     .Select(c => c.LatestOperation)
                     .Where(op => op != null)
                     .OrderByDescending(op => op.Timestamp)
+                    .FirstOrDefault();
+            }
+        }
+
+        /// <summary>
+        /// 次にRedoされる操作の情報（子ノードの中で最も古いタイムスタンプを持つもの）
+        /// </summary>
+        public UndoOperationInfo NextRedoOperation
+        {
+            get
+            {
+                return _children
+                    .Select(c => c.NextRedoOperation)
+                    .Where(op => op != null)
+                    .OrderBy(op => op.Timestamp)
                     .FirstOrDefault();
             }
         }
@@ -175,7 +190,7 @@ namespace MeshEditor.UndoSystem
                 case UndoResolutionPolicy.FocusPriority:
                     return ResolveFocusPriority(n => n.CanUndo);
 
-                case UndoResolutionPolicy.TimestampPriority:
+                case UndoResolutionPolicy.TimestampOnly:
                     return ResolveTimestampPriority(n => n.CanUndo);
 
                 case UndoResolutionPolicy.FocusThenTimestamp:
@@ -196,7 +211,7 @@ namespace MeshEditor.UndoSystem
                 case UndoResolutionPolicy.FocusPriority:
                     return ResolveFocusPriority(n => n.CanRedo);
 
-                case UndoResolutionPolicy.TimestampPriority:
+                case UndoResolutionPolicy.TimestampOnly:
                     return ResolveTimestampPriorityForRedo();
 
                 case UndoResolutionPolicy.FocusThenTimestamp:
@@ -229,10 +244,11 @@ namespace MeshEditor.UndoSystem
 
         private IUndoNode ResolveTimestampPriorityForRedo()
         {
-            // Redo: 最も古いRedo操作を持つノードを優先（Undoの逆順）
-            // 実装上はCanRedoがtrueのノードから選ぶ
+            // Redo: 次にRedoされる操作の中で最も古いタイムスタンプを持つノードを優先（元の実行順でRedo）
             return _children
                 .Where(c => c.CanRedo)
+                .Where(c => c.NextRedoOperation != null)
+                .OrderBy(c => c.NextRedoOperation.Timestamp)
                 .FirstOrDefault();
         }
 

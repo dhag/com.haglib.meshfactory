@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-namespace MeshEditor.Data
+namespace MeshFactory.Data
 {
     // ============================================================
     // Vertex クラス

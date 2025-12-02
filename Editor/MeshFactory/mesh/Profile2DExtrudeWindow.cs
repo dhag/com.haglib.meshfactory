@@ -1,7 +1,16 @@
-// Assets/Editor/MeshCreators/PatchCreatorWindow.cs
+// Assets/Editor/MeshCreators/Profile2DExtrudeWindow.cs
 // CSV で読み込んだ 2D 閉曲線群から
-// Poly2Tri を用いて三角パッチメッシュを生成するサブウインドウ
+// Poly2Tri を用いて押し出しメッシュを生成するサブウインドウ
 // 穴あきポリゴンにも対応、手動編集機能付き
+//
+// 角処理（セグメント数で制御）:
+//   0 = 角処理なし
+//   1 = ベベル（直線面取り）
+//   2以上 = ラウンド（円弧丸め）
+//
+// 角処理モード:
+//   通常（デフォルト）: 面が縮小、角処理は内→外へ広がる
+//   Outward: 面は元のサイズを維持、角処理は外→内へ削る
 
 using System;
 using System.Collections.Generic;
@@ -10,11 +19,79 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using MeshEditor.Data;
+using MeshFactory.Data;
+using MeshFactory.UndoSystem;
 using Poly2Tri;
 
-public class PatchCreatorWindow : EditorWindow
+public class Profile2DExtrudeWindow : EditorWindow
 {
+    // ================================================================
+    // Undo用スナップショット構造体
+    // ================================================================
+    private struct Profile2DSnapshot : IEquatable<Profile2DSnapshot>
+    {
+        public string MeshName;
+        public string CsvPath;
+        public float Scale;
+        public Vector2 Offset;
+        public bool FlipY;
+        public float Thickness;
+        public int SegmentsFront, SegmentsBack;
+        public float EdgeSizeFront, EdgeSizeBack;
+        public bool EdgeInward;
+        public LoopData[] Loops;
+        public int SelectedLoopIndex;
+        public int SelectedPointIndex;
+        public float RotationX, RotationY;
+
+        [Serializable]
+        public struct LoopData
+        {
+            public Vector2[] Points;
+            public bool IsHole;
+        }
+
+        public bool Equals(Profile2DSnapshot o)
+        {
+            if (MeshName != o.MeshName) return false;
+            if (CsvPath != o.CsvPath) return false;
+            if (!Mathf.Approximately(Scale, o.Scale)) return false;
+            if (Offset != o.Offset) return false;
+            if (FlipY != o.FlipY) return false;
+            if (!Mathf.Approximately(Thickness, o.Thickness)) return false;
+            if (SegmentsFront != o.SegmentsFront || SegmentsBack != o.SegmentsBack) return false;
+            if (!Mathf.Approximately(EdgeSizeFront, o.EdgeSizeFront)) return false;
+            if (!Mathf.Approximately(EdgeSizeBack, o.EdgeSizeBack)) return false;
+            if (EdgeInward != o.EdgeInward) return false;
+            if (SelectedLoopIndex != o.SelectedLoopIndex) return false;
+            if (SelectedPointIndex != o.SelectedPointIndex) return false;
+            if (!Mathf.Approximately(RotationX, o.RotationX)) return false;
+            if (!Mathf.Approximately(RotationY, o.RotationY)) return false;
+
+            // ループ比較
+            if (Loops == null && o.Loops == null) return true;
+            if (Loops == null || o.Loops == null) return false;
+            if (Loops.Length != o.Loops.Length) return false;
+            for (int i = 0; i < Loops.Length; i++)
+            {
+                if (Loops[i].IsHole != o.Loops[i].IsHole) return false;
+                if (Loops[i].Points == null && o.Loops[i].Points == null) continue;
+                if (Loops[i].Points == null || o.Loops[i].Points == null) return false;
+                if (Loops[i].Points.Length != o.Loops[i].Points.Length) return false;
+                for (int j = 0; j < Loops[i].Points.Length; j++)
+                {
+                    if (!Mathf.Approximately(Loops[i].Points[j].x, o.Loops[i].Points[j].x) ||
+                        !Mathf.Approximately(Loops[i].Points[j].y, o.Loops[i].Points[j].y))
+                        return false;
+                }
+            }
+            return true;
+        }
+
+        public override bool Equals(object obj) => obj is Profile2DSnapshot s && Equals(s);
+        public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;
+    }
+
     // メッシュ生成完了時のコールバック
     private Action<MeshData, string> _onMeshDataCreated;
 
@@ -27,14 +104,17 @@ public class PatchCreatorWindow : EditorWindow
     }
 
     // パラメータ
-    [SerializeField] private string _meshName = "CsvPatch";
+    [SerializeField] private string _meshName = "Profile2DExtrude";
     [SerializeField] private string _csvPath = "";
     [SerializeField] private float _scale = 1.0f;
     [SerializeField] private Vector2 _offset = Vector2.zero;
     [SerializeField] private bool _flipY = false;
-    [SerializeField] private float _thickness = 0f; // 厚み（0なら平面）
-    [SerializeField] private float _bevelFront = 0f; // 表面の角落とし
-    [SerializeField] private float _bevelBack = 0f;  // 裏面の角落とし
+    [SerializeField] private float _thickness = 0f;         // 厚み（0なら平面）
+    [SerializeField] private int _segmentsFront = 0;        // 表面の角処理セグメント数
+    [SerializeField] private int _segmentsBack = 0;         // 裏面の角処理セグメント数
+    [SerializeField] private float _edgeSizeFront = 0.1f;   // 表面の角処理サイズ
+    [SerializeField] private float _edgeSizeBack = 0.1f;    // 裏面の角処理サイズ
+    [SerializeField] private bool _edgeInward = false;      // false=通常（面が縮小）, true=外向き（面は元のサイズ）
 
     // 読み込んだループ
     [SerializeField] private List<Loop> _loops = new List<Loop>();
@@ -59,15 +139,21 @@ public class PatchCreatorWindow : EditorWindow
     // スクロール位置
     private Vector2 _leftScrollPos = Vector2.zero;
 
+    // Undo
+    private ParameterUndoHelper<Profile2DSnapshot> _undoHelper;
+
+    // SessionState永続化キー
+    private const string SESSION_STATE_KEY = "Profile2DExtrudeWindow_State";
+
     //======================================================================
     // エントリポイント
     //======================================================================
 
-    public static PatchCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static Profile2DExtrudeWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<PatchCreatorWindow>(
+        var window = GetWindow<Profile2DExtrudeWindow>(
             utility: true,
-            title: "CSV 2D Patch (Poly2Tri)",
+            title: "2D Profile Extrude",
             focus: true);
 
         window.minSize = new Vector2(800, 600);
@@ -88,6 +174,8 @@ public class PatchCreatorWindow : EditorWindow
     private void OnEnable()
     {
         InitPreview();
+        InitUndo();
+        LoadState();
         if (_loops.Count == 0)
         {
             InitializeDefaultLoops();
@@ -97,7 +185,216 @@ public class PatchCreatorWindow : EditorWindow
 
     private void OnDisable()
     {
+        SaveState();
         CleanupPreview();
+        _undoHelper?.Dispose();
+    }
+
+    private void InitUndo()
+    {
+        _undoHelper = new ParameterUndoHelper<Profile2DSnapshot>(
+            "Profile2DExtrude",
+            "Profile2D Parameters",
+            () => CaptureSnapshot(),
+            (s) => { ApplySnapshot(s); UpdatePreviewMesh(); },
+            () => Repaint()
+        );
+    }
+
+    private Profile2DSnapshot CaptureSnapshot()
+    {
+        var loopData = new Profile2DSnapshot.LoopData[_loops.Count];
+        for (int i = 0; i < _loops.Count; i++)
+        {
+            loopData[i] = new Profile2DSnapshot.LoopData
+            {
+                Points = _loops[i].Points.ToArray(),
+                IsHole = _loops[i].IsHole
+            };
+        }
+
+        return new Profile2DSnapshot
+        {
+            MeshName = _meshName,
+            CsvPath = _csvPath,
+            Scale = _scale,
+            Offset = _offset,
+            FlipY = _flipY,
+            Thickness = _thickness,
+            SegmentsFront = _segmentsFront,
+            SegmentsBack = _segmentsBack,
+            EdgeSizeFront = _edgeSizeFront,
+            EdgeSizeBack = _edgeSizeBack,
+            EdgeInward = _edgeInward,
+            Loops = loopData,
+            SelectedLoopIndex = _selectedLoopIndex,
+            SelectedPointIndex = _selectedPointIndex,
+            RotationX = _rotationX,
+            RotationY = _rotationY
+        };
+    }
+
+    private void ApplySnapshot(Profile2DSnapshot s)
+    {
+        _meshName = s.MeshName;
+        _csvPath = s.CsvPath;
+        _scale = s.Scale;
+        _offset = s.Offset;
+        _flipY = s.FlipY;
+        _thickness = s.Thickness;
+        _segmentsFront = s.SegmentsFront;
+        _segmentsBack = s.SegmentsBack;
+        _edgeSizeFront = s.EdgeSizeFront;
+        _edgeSizeBack = s.EdgeSizeBack;
+        _edgeInward = s.EdgeInward;
+        _selectedLoopIndex = s.SelectedLoopIndex;
+        _selectedPointIndex = s.SelectedPointIndex;
+        _rotationX = s.RotationX;
+        _rotationY = s.RotationY;
+
+        _loops.Clear();
+        if (s.Loops != null)
+        {
+            foreach (var ld in s.Loops)
+            {
+                var loop = new Loop
+                {
+                    IsHole = ld.IsHole,
+                    Points = ld.Points != null ? new List<Vector2>(ld.Points) : new List<Vector2>()
+                };
+                _loops.Add(loop);
+            }
+        }
+    }
+
+    private void SaveState()
+    {
+        try
+        {
+            var snapshot = CaptureSnapshot();
+            string json = JsonUtility.ToJson(new Profile2DStateWrapper(snapshot));
+            SessionState.SetString(SESSION_STATE_KEY, json);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Profile2DExtrudeWindow: Failed to save state: {e.Message}");
+        }
+    }
+
+    private void LoadState()
+    {
+        try
+        {
+            string json = SessionState.GetString(SESSION_STATE_KEY, "");
+            if (!string.IsNullOrEmpty(json))
+            {
+                var wrapper = JsonUtility.FromJson<Profile2DStateWrapper>(json);
+                if (wrapper != null)
+                {
+                    ApplySnapshot(wrapper.ToSnapshot());
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Profile2DExtrudeWindow: Failed to load state: {e.Message}");
+        }
+    }
+
+    // JsonUtility用のシリアライズ可能なラッパークラス
+    [Serializable]
+    private class Profile2DStateWrapper
+    {
+        public string MeshName;
+        public string CsvPath;
+        public float Scale;
+        public Vector2 Offset;
+        public bool FlipY;
+        public float Thickness;
+        public int SegmentsFront, SegmentsBack;
+        public float EdgeSizeFront, EdgeSizeBack;
+        public bool EdgeInward;
+        public LoopWrapper[] Loops;
+        public int SelectedLoopIndex;
+        public int SelectedPointIndex;
+        public float RotationX, RotationY;
+
+        [Serializable]
+        public class LoopWrapper
+        {
+            public Vector2[] Points;
+            public bool IsHole;
+        }
+
+        public Profile2DStateWrapper() { }
+
+        public Profile2DStateWrapper(Profile2DSnapshot s)
+        {
+            MeshName = s.MeshName;
+            CsvPath = s.CsvPath;
+            Scale = s.Scale;
+            Offset = s.Offset;
+            FlipY = s.FlipY;
+            Thickness = s.Thickness;
+            SegmentsFront = s.SegmentsFront;
+            SegmentsBack = s.SegmentsBack;
+            EdgeSizeFront = s.EdgeSizeFront;
+            EdgeSizeBack = s.EdgeSizeBack;
+            EdgeInward = s.EdgeInward;
+            SelectedLoopIndex = s.SelectedLoopIndex;
+            SelectedPointIndex = s.SelectedPointIndex;
+            RotationX = s.RotationX;
+            RotationY = s.RotationY;
+
+            if (s.Loops != null)
+            {
+                Loops = new LoopWrapper[s.Loops.Length];
+                for (int i = 0; i < s.Loops.Length; i++)
+                {
+                    Loops[i] = new LoopWrapper
+                    {
+                        Points = s.Loops[i].Points,
+                        IsHole = s.Loops[i].IsHole
+                    };
+                }
+            }
+        }
+
+        public Profile2DSnapshot ToSnapshot()
+        {
+            var loopData = new Profile2DSnapshot.LoopData[Loops?.Length ?? 0];
+            if (Loops != null)
+            {
+                for (int i = 0; i < Loops.Length; i++)
+                {
+                    loopData[i] = new Profile2DSnapshot.LoopData
+                    {
+                        Points = Loops[i].Points,
+                        IsHole = Loops[i].IsHole
+                    };
+                }
+            }
+
+            return new Profile2DSnapshot
+            {
+                MeshName = MeshName,
+                CsvPath = CsvPath,
+                Scale = Scale,
+                Offset = Offset,
+                FlipY = FlipY,
+                Thickness = Thickness,
+                SegmentsFront = SegmentsFront,
+                SegmentsBack = SegmentsBack,
+                EdgeSizeFront = EdgeSizeFront,
+                EdgeSizeBack = EdgeSizeBack,
+                EdgeInward = EdgeInward,
+                Loops = loopData,
+                SelectedLoopIndex = SelectedLoopIndex,
+                SelectedPointIndex = SelectedPointIndex,
+                RotationX = RotationX,
+                RotationY = RotationY
+            };
+        }
     }
 
     private void InitPreview()
@@ -173,6 +470,8 @@ public class PatchCreatorWindow : EditorWindow
 
     private void OnGUI()
     {
+        _undoHelper?.HandleGUIEvents(Event.current);
+
         EditorGUILayout.Space(10);
 
         EditorGUILayout.BeginHorizontal();
@@ -205,7 +504,9 @@ public class PatchCreatorWindow : EditorWindow
 
     private void DrawParameters()
     {
-        EditorGUILayout.LabelField("CSV Patch Parameters", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("2D Profile Extrude Parameters", EditorStyles.boldLabel);
+
+        _undoHelper?.DrawUndoRedoButtons();
         EditorGUILayout.Space(5);
 
         EditorGUI.BeginChangeCheck();
@@ -232,6 +533,7 @@ public class PatchCreatorWindow : EditorWindow
                 {
                     _csvPath = path;
                     LoadCsv(_csvPath);
+                    _undoHelper?.RecordImmediate("Load CSV");
                     UpdatePreviewMesh();
                 }
             }
@@ -244,12 +546,36 @@ public class PatchCreatorWindow : EditorWindow
         _flipY = EditorGUILayout.Toggle("Flip Y", _flipY);
         _thickness = EditorGUILayout.Slider("Thickness", _thickness, 0f, 2f);
 
+        // 厚みがある場合のみ角処理を表示
         if (_thickness > 0.001f)
         {
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Edge (0=None, 1=Bevel, 2+=Round)", EditorStyles.miniBoldLabel);
+
             using (new EditorGUI.IndentLevelScope())
             {
-                _bevelFront = EditorGUILayout.Slider("Bevel Front", _bevelFront, 0f, 0.5f);
-                _bevelBack = EditorGUILayout.Slider("Bevel Back", _bevelBack, 0f, 0.5f);
+                // 表面
+                _segmentsFront = EditorGUILayout.IntSlider("Front Segments", _segmentsFront, 0, 16);
+                if (_segmentsFront > 0)
+                {
+                    _edgeSizeFront = EditorGUILayout.Slider("  Size", _edgeSizeFront, 0.01f, 0.5f);
+                }
+
+                EditorGUILayout.Space(3);
+
+                // 裏面
+                _segmentsBack = EditorGUILayout.IntSlider("Back Segments", _segmentsBack, 0, 16);
+                if (_segmentsBack > 0)
+                {
+                    _edgeSizeBack = EditorGUILayout.Slider("  Size", _edgeSizeBack, 0.01f, 0.5f);
+                }
+
+                // 角処理モード
+                if (_segmentsFront > 0 || _segmentsBack > 0)
+                {
+                    EditorGUILayout.Space(3);
+                    _edgeInward = EditorGUILayout.Toggle("Outward (Keep Face Size)", _edgeInward);
+                }
             }
         }
 
@@ -275,6 +601,7 @@ public class PatchCreatorWindow : EditorWindow
                 newLoop.IsHole = _loops.Count > 0; // 2番目以降はデフォルトで穴
                 _loops.Add(newLoop);
                 _selectedLoopIndex = _loops.Count - 1;
+                _undoHelper?.RecordImmediate("Add Loop");
                 UpdatePreviewMesh();
             }
 
@@ -284,6 +611,7 @@ public class PatchCreatorWindow : EditorWindow
                 _loops.RemoveAt(_selectedLoopIndex);
                 _selectedLoopIndex = Mathf.Clamp(_selectedLoopIndex, 0, _loops.Count - 1);
                 _selectedPointIndex = -1;
+                _undoHelper?.RecordImmediate("Remove Loop");
                 UpdatePreviewMesh();
             }
             GUI.enabled = true;
@@ -315,6 +643,7 @@ public class PatchCreatorWindow : EditorWindow
                 if (EditorGUI.EndChangeCheck())
                 {
                     _loops[i].IsHole = isHole;
+                    _undoHelper?.RecordImmediate("Toggle Hole");
                     UpdatePreviewMesh();
                 }
             }
@@ -352,6 +681,7 @@ public class PatchCreatorWindow : EditorWindow
 
                     loop.Points.Insert(insertIndex, newPoint);
                     _selectedPointIndex = insertIndex;
+                    _undoHelper?.RecordImmediate("Add Point");
                     UpdatePreviewMesh();
                 }
 
@@ -360,6 +690,7 @@ public class PatchCreatorWindow : EditorWindow
                 {
                     loop.Points.RemoveAt(_selectedPointIndex);
                     _selectedPointIndex = Mathf.Clamp(_selectedPointIndex, 0, loop.Points.Count - 1);
+                    _undoHelper?.RecordImmediate("Remove Point");
                     UpdatePreviewMesh();
                 }
                 GUI.enabled = true;
@@ -373,6 +704,7 @@ public class PatchCreatorWindow : EditorWindow
                 if (EditorGUI.EndChangeCheck())
                 {
                     loop.Points[_selectedPointIndex] = newPos;
+                    _undoHelper?.RecordImmediate("Edit Point");
                     UpdatePreviewMesh();
                 }
             }
@@ -546,6 +878,7 @@ public class PatchCreatorWindow : EditorWindow
             case EventType.MouseUp:
                 if (_isDragging && e.button == 0)
                 {
+                    _undoHelper?.RecordImmediate("Move Profile Point");
                     _isDragging = false;
                     _dragPointIndex = -1;
                     e.Use();
@@ -602,7 +935,7 @@ public class PatchCreatorWindow : EditorWindow
         Event e = Event.current;
         if (rect.Contains(e.mousePosition))
         {
-            if (e.type == EventType.MouseDrag && e.button == 0)
+            if (e.type == EventType.MouseDrag && e.button == 1)
             {
                 _rotationY += e.delta.x * 0.5f;
                 _rotationX += e.delta.y * 0.5f;
@@ -652,6 +985,7 @@ public class PatchCreatorWindow : EditorWindow
         if (GUILayout.Button("Reload CSV", GUILayout.Height(30)))
         {
             LoadCsv(_csvPath);
+            _undoHelper?.RecordImmediate("Reload CSV");
             UpdatePreviewMesh();
         }
         GUI.enabled = true;
@@ -659,6 +993,7 @@ public class PatchCreatorWindow : EditorWindow
         if (GUILayout.Button("Reset to Default", GUILayout.Height(30)))
         {
             InitializeDefaultLoops();
+            _undoHelper?.RecordImmediate("Reset to Default");
             UpdatePreviewMesh();
         }
 
@@ -681,8 +1016,9 @@ public class PatchCreatorWindow : EditorWindow
         {
             EditorGUILayout.Space(5);
             int triCount = _previewMeshData.Faces.Count(f => f.IsTriangle);
+            int quadCount = _previewMeshData.Faces.Count(f => f.IsQuad);
             EditorGUILayout.HelpBox(
-                $"Vertices: {_previewMeshData.VertexCount}, Triangles: {triCount}, Loops: {_loops.Count}",
+                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount} (Tri:{triCount}, Quad:{quadCount}), Loops: {_loops.Count}",
                 MessageType.None);
         }
     }
@@ -828,18 +1164,33 @@ public class PatchCreatorWindow : EditorWindow
             {
                 float halfThick = _thickness * 0.5f;
 
-                // 角落とし適用した座標を計算
-                var frontLoops = ApplyBevel(transformedLoops, isHoleFlags, _bevelFront);
-                var backLoops = ApplyBevel(transformedLoops, isHoleFlags, _bevelBack);
+                // 角処理適用した座標を計算（オフセットされた輪郭）
+                float frontOffset = _segmentsFront > 0 ? _edgeSizeFront : 0f;
+                float backOffset = _segmentsBack > 0 ? _edgeSizeBack : 0f;
 
-                // 表面（Z = -halfThick）
-                GenerateFlatFace(md, frontLoops, isHoleFlags, -halfThick, Vector3.back, false);
+                var offsetFrontLoops = ApplyEdgeOffset(transformedLoops, isHoleFlags, frontOffset);
+                var offsetBackLoops = ApplyEdgeOffset(transformedLoops, isHoleFlags, backOffset);
 
-                // 裏面（Z = +halfThick）
-                GenerateFlatFace(md, backLoops, isHoleFlags, halfThick, Vector3.forward, true);
-
-                // 側面を生成
-                GenerateSideFaces(md, transformedLoops, frontLoops, backLoops, isHoleFlags, halfThick);
+                if (_edgeInward)
+                {
+                    // Outwardモード: 表裏両方縮小、角処理は両方とも小→大→小
+                    // 表面（Z = -halfThick）- オフセットされた輪郭（縮小）
+                    GenerateFlatFace(md, offsetFrontLoops, isHoleFlags, -halfThick, Vector3.back, false);
+                    // 裏面（Z = +halfThick）- オフセットされた輪郭（縮小）
+                    GenerateFlatFace(md, offsetBackLoops, isHoleFlags, halfThick, Vector3.forward, true);
+                    // 側面を生成（表裏両方縮小）
+                    GenerateSideFacesOutward(md, transformedLoops, offsetFrontLoops, offsetBackLoops, isHoleFlags, halfThick);
+                }
+                else
+                {
+                    // 通常モード（デフォルト）: 表裏両方縮小、凹カーブ
+                    // 表面（Z = -halfThick）- オフセットされた輪郭（縮小）
+                    GenerateFlatFace(md, offsetFrontLoops, isHoleFlags, -halfThick, Vector3.back, false);
+                    // 裏面（Z = +halfThick）- オフセットされた輪郭（縮小）
+                    GenerateFlatFace(md, offsetBackLoops, isHoleFlags, halfThick, Vector3.forward, true);
+                    // 側面を生成（凹カーブ）
+                    GenerateSideFacesNormal(md, transformedLoops, offsetFrontLoops, offsetBackLoops, isHoleFlags, halfThick);
+                }
             }
 
             return md;
@@ -851,10 +1202,10 @@ public class PatchCreatorWindow : EditorWindow
         }
     }
 
-    // 角落としを適用（外側は縮小、穴は拡大）
-    private List<List<Vector2>> ApplyBevel(List<List<Vector2>> loops, List<bool> isHoleFlags, float bevel)
+    // 角処理のオフセットを適用（外側は縮小、穴は拡大）
+    private List<List<Vector2>> ApplyEdgeOffset(List<List<Vector2>> loops, List<bool> isHoleFlags, float offset)
     {
-        if (bevel <= 0.001f)
+        if (offset <= 0.001f)
             return loops;
 
         var result = new List<List<Vector2>>();
@@ -871,25 +1222,29 @@ public class PatchCreatorWindow : EditorWindow
                 int next = (i + 1) % loop.Count;
 
                 Vector2 p = loop[i];
-                Vector2 toPrev = (loop[prev] - p).normalized;
-                Vector2 toNext = (loop[next] - p).normalized;
 
-                // 内向き法線（2つのエッジの角の二等分線方向）
-                Vector2 bisector = (toPrev + toNext).normalized;
+                // エッジの方向ベクトル
+                Vector2 edge1 = (p - loop[prev]).normalized;  // prev→p
+                Vector2 edge2 = (loop[next] - p).normalized;  // p→next
 
-                // bisectorが0ベクトルの場合（直線）
-                if (bisector.sqrMagnitude < 0.001f)
+                // 各エッジの法線（反時計回りループの場合、右手側が外側）
+                Vector2 normal1 = new Vector2(edge1.y, -edge1.x);  // 右90度回転
+                Vector2 normal2 = new Vector2(edge2.y, -edge2.x);
+
+                // 法線の平均（内向き）
+                Vector2 avgNormal = (normal1 + normal2).normalized;
+
+                // avgNormalが0ベクトルの場合（直線）
+                if (avgNormal.sqrMagnitude < 0.001f)
                 {
-                    // エッジに垂直な方向
-                    Vector2 edge = toNext;
-                    bisector = new Vector2(-edge.y, edge.x);
+                    avgNormal = normal1;
                 }
 
-                // 外側ループは内側へ、穴は外側へ
-                float direction = isHole ? -1f : 1f;
-                Vector2 offset = bisector * bevel * direction;
+                // 外側ループは内側へ縮小（負方向）、穴は外側へ拡大（正方向）
+                float direction = isHole ? 1f : -1f;
+                Vector2 offsetVec = avgNormal * offset * direction;
 
-                newLoop.Add(p + offset);
+                newLoop.Add(p + offsetVec);
             }
 
             result.Add(newLoop);
@@ -963,16 +1318,16 @@ public class PatchCreatorWindow : EditorWindow
         }
     }
 
-    // 側面を生成
-    private void GenerateSideFaces(MeshData md, List<List<Vector2>> baseLoops,
-                                    List<List<Vector2>> frontLoops, List<List<Vector2>> backLoops,
-                                    List<bool> isHoleFlags, float halfThick)
+    // 側面を生成（Outwardモード: 外→内へ削る）
+    private void GenerateSideFacesOutward(MeshData md, List<List<Vector2>> baseLoops,
+                                          List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
+                                          List<bool> isHoleFlags, float halfThick)
     {
         for (int li = 0; li < baseLoops.Count; li++)
         {
             var baseLoop = baseLoops[li];
-            var frontLoop = frontLoops[li];
-            var backLoop = backLoops[li];
+            var offsetFront = offsetFrontLoops[li];
+            var offsetBack = offsetBackLoops[li];
             bool isHole = isHoleFlags[li];
 
             int n = baseLoop.Count;
@@ -981,51 +1336,35 @@ public class PatchCreatorWindow : EditorWindow
             {
                 int next = (i + 1) % n;
 
-                // 角落としがある場合は3段階
-                // 表面エッジ → ベース → 裏面エッジ
-                bool hasFrontBevel = _bevelFront > 0.001f;
-                bool hasBackBevel = _bevelBack > 0.001f;
-
                 // 法線計算（ベースループのエッジから）
                 Vector2 edge = baseLoop[next] - baseLoop[i];
-                Vector3 normal = new Vector3(edge.y, -edge.x, 0).normalized;
+                Vector3 sideNormal = new Vector3(edge.y, -edge.x, 0).normalized;
 
                 // 外側ループは外向き、穴は内向き
                 if (isHole)
-                    normal = -normal;
+                    sideNormal = -sideNormal;
 
-                // 表面の角落とし部分
-                if (hasFrontBevel)
+                // 表面の角処理部分（内→外へ広がる、凸）
+                if (_segmentsFront > 0)
                 {
-                    Vector3 v0 = new Vector3(frontLoop[i].x, frontLoop[i].y, -halfThick);
-                    Vector3 v1 = new Vector3(frontLoop[next].x, frontLoop[next].y, -halfThick);
-                    Vector3 v2 = new Vector3(baseLoop[next].x, baseLoop[next].y, -halfThick);
-                    Vector3 v3 = new Vector3(baseLoop[i].x, baseLoop[i].y, -halfThick);
-
-                    // 斜め法線
-                    Vector3 bevelNormal = (normal + Vector3.back).normalized;
-
-                    int idx = md.VertexCount;
-                    md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), bevelNormal));
-                    md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), bevelNormal));
-                    md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), bevelNormal));
-                    md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), bevelNormal));
-
-                    if (isHole)
-                        md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
-                    else
-                        md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
+                    // offset（面側、Z=-halfThick）からbase（側面側、Z=-halfThick+edgeSize）へ
+                    GenerateEdgeFaces(md,
+                        offsetFront[i], offsetFront[next],     // 内側（面、小さい）
+                        baseLoop[i], baseLoop[next],           // 外側（側面、大きい）
+                        -halfThick, -halfThick + _edgeSizeFront,
+                        sideNormal, Vector3.back,
+                        _segmentsFront, isHole, concave: false, isBackFace: false);
                 }
 
                 // メイン側面
                 {
-                    float frontZ = -halfThick;
-                    float backZ = halfThick;
+                    float frontZ = _segmentsFront > 0 ? -halfThick + _edgeSizeFront : -halfThick;
+                    float backZ = _segmentsBack > 0 ? halfThick - _edgeSizeBack : halfThick;
 
-                    Vector2 frontPt0 = hasFrontBevel ? baseLoop[i] : frontLoop[i];
-                    Vector2 frontPt1 = hasFrontBevel ? baseLoop[next] : frontLoop[next];
-                    Vector2 backPt0 = hasBackBevel ? baseLoop[i] : backLoop[i];
-                    Vector2 backPt1 = hasBackBevel ? baseLoop[next] : backLoop[next];
+                    Vector2 frontPt0 = _segmentsFront > 0 ? baseLoop[i] : offsetFront[i];
+                    Vector2 frontPt1 = _segmentsFront > 0 ? baseLoop[next] : offsetFront[next];
+                    Vector2 backPt0 = _segmentsBack > 0 ? baseLoop[i] : offsetBack[i];
+                    Vector2 backPt1 = _segmentsBack > 0 ? baseLoop[next] : offsetBack[next];
 
                     Vector3 v0 = new Vector3(frontPt0.x, frontPt0.y, frontZ);
                     Vector3 v1 = new Vector3(frontPt1.x, frontPt1.y, frontZ);
@@ -1033,10 +1372,10 @@ public class PatchCreatorWindow : EditorWindow
                     Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ);
 
                     int idx = md.VertexCount;
-                    md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), normal));
-                    md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), normal));
-                    md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), normal));
-                    md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), normal));
+                    md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), sideNormal));
+                    md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), sideNormal));
+                    md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), sideNormal));
+                    md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), sideNormal));
 
                     if (isHole)
                         md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
@@ -1044,28 +1383,214 @@ public class PatchCreatorWindow : EditorWindow
                         md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
                 }
 
-                // 裏面の角落とし部分
-                if (hasBackBevel)
+                // 裏面の角処理部分（凹、表面のチェックなしと同じ形状）
+                if (_segmentsBack > 0)
                 {
-                    Vector3 v0 = new Vector3(baseLoop[i].x, baseLoop[i].y, halfThick);
-                    Vector3 v1 = new Vector3(baseLoop[next].x, baseLoop[next].y, halfThick);
-                    Vector3 v2 = new Vector3(backLoop[next].x, backLoop[next].y, halfThick);
-                    Vector3 v3 = new Vector3(backLoop[i].x, backLoop[i].y, halfThick);
+                    // base（側面側、Z=halfThick-edgeSize）からoffset（面側、Z=halfThick）へ
+                    GenerateEdgeFaces(md,
+                        baseLoop[i], baseLoop[next],           // 外側（側面、大きい）
+                        offsetBack[i], offsetBack[next],       // 内側（面、小さい）
+                        halfThick - _edgeSizeBack, halfThick,
+                        sideNormal, Vector3.forward,
+                        _segmentsBack, isHole, concave: true, isBackFace: true);
+                }
+            }
+        }
+    }
 
-                    // 斜め法線
-                    Vector3 bevelNormal = (normal + Vector3.forward).normalized;
+    // 側面を生成（通常モード: 内→外へ広がる）
+    private void GenerateSideFacesNormal(MeshData md, List<List<Vector2>> baseLoops,
+                                          List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
+                                          List<bool> isHoleFlags, float halfThick)
+    {
+        for (int li = 0; li < baseLoops.Count; li++)
+        {
+            var baseLoop = baseLoops[li];
+            var offsetFront = offsetFrontLoops[li];
+            var offsetBack = offsetBackLoops[li];
+            bool isHole = isHoleFlags[li];
+
+            int n = baseLoop.Count;
+
+            for (int i = 0; i < n; i++)
+            {
+                int next = (i + 1) % n;
+
+                // 法線計算（ベースループのエッジから）
+                Vector2 edge = baseLoop[next] - baseLoop[i];
+                Vector3 sideNormal = new Vector3(edge.y, -edge.x, 0).normalized;
+
+                // 外側ループは外向き、穴は内向き
+                if (isHole)
+                    sideNormal = -sideNormal;
+
+                // 表面の角処理部分（内→外へ広がる、凹）
+                if (_segmentsFront > 0)
+                {
+                    // offset（面側、Z=-halfThick）からbase（側面側、Z=-halfThick+edgeSize）へ
+                    GenerateEdgeFaces(md,
+                        offsetFront[i], offsetFront[next],     // 内側（面）
+                        baseLoop[i], baseLoop[next],           // 外側（側面）
+                        -halfThick, -halfThick + _edgeSizeFront,
+                        sideNormal, Vector3.back,
+                        _segmentsFront, isHole, concave: true, isBackFace: false);
+                }
+
+                // メイン側面
+                {
+                    float frontZ = _segmentsFront > 0 ? -halfThick + _edgeSizeFront : -halfThick;
+                    float backZ = _segmentsBack > 0 ? halfThick - _edgeSizeBack : halfThick;
+
+                    Vector2 frontPt0 = _segmentsFront > 0 ? baseLoop[i] : offsetFront[i];
+                    Vector2 frontPt1 = _segmentsFront > 0 ? baseLoop[next] : offsetFront[next];
+                    Vector2 backPt0 = _segmentsBack > 0 ? baseLoop[i] : offsetBack[i];
+                    Vector2 backPt1 = _segmentsBack > 0 ? baseLoop[next] : offsetBack[next];
+
+                    Vector3 v0 = new Vector3(frontPt0.x, frontPt0.y, frontZ);
+                    Vector3 v1 = new Vector3(frontPt1.x, frontPt1.y, frontZ);
+                    Vector3 v2 = new Vector3(backPt1.x, backPt1.y, backZ);
+                    Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ);
 
                     int idx = md.VertexCount;
-                    md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), bevelNormal));
-                    md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), bevelNormal));
-                    md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), bevelNormal));
-                    md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), bevelNormal));
+                    md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), sideNormal));
+                    md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), sideNormal));
+                    md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), sideNormal));
+                    md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), sideNormal));
 
                     if (isHole)
                         md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
                     else
                         md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
                 }
+
+                // 裏面の角処理部分（凸、base → offset へ縮小）
+                if (_segmentsBack > 0)
+                {
+                    // base（側面側）からoffset（面側）へ
+                    GenerateEdgeFaces(md,
+                        baseLoop[i], baseLoop[next],           // 外側（側面、大きい）
+                        offsetBack[i], offsetBack[next],       // 内側（面、小さい）
+                        halfThick - _edgeSizeBack, halfThick,
+                        sideNormal, Vector3.forward,
+                        _segmentsBack, isHole, concave: false, isBackFace: true);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 角処理の面を生成
+    /// セグメント数=1: ベベル（直線）
+    /// セグメント数>=2: ラウンド（円弧）
+    /// </summary>
+    /// <param name="concave">true=凹（内側にへこむ）, false=凸（外側に膨らむ）</param>
+    /// <param name="isBackFace">true=裏面の角処理（法線とwindingを反転）</param>
+    private void GenerateEdgeFaces(MeshData md,
+        Vector2 outer0, Vector2 outer1,  // 外側（面側）の2点
+        Vector2 inner0, Vector2 inner1,  // 内側（側面側）の2点
+        float outerZ, float innerZ,      // Z座標
+        Vector3 sideNormal,              // 側面の法線
+        Vector3 faceNormal,              // 面の法線（前面or背面）
+        int segments,
+        bool isHole,
+        bool concave = false,
+        bool isBackFace = false)
+    {
+        if (segments == 1)
+        {
+            // ベベル: 1枚の斜め面
+            Vector3 v0 = new Vector3(outer0.x, outer0.y, outerZ);
+            Vector3 v1 = new Vector3(outer1.x, outer1.y, outerZ);
+            Vector3 v2 = new Vector3(inner1.x, inner1.y, innerZ);
+            Vector3 v3 = new Vector3(inner0.x, inner0.y, innerZ);
+
+            Vector3 bevelNormal = (sideNormal + faceNormal).normalized;
+
+            int idx = md.VertexCount;
+            md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), bevelNormal));
+            md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), bevelNormal));
+            md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), bevelNormal));
+            md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), bevelNormal));
+
+            // winding を調整
+            bool flipWinding = isHole;
+            if (flipWinding)
+                md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
+            else
+                md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
+        }
+        else
+        {
+            // ラウンド: 円弧状に分割
+            // outer→innerへ、法線がfaceNormal→sideNormalへ回転
+            for (int s = 0; s < segments; s++)
+            {
+                float t0 = (float)s / segments;
+                float t1 = (float)(s + 1) / segments;
+
+                // 角度（0→π/2）
+                float angle0 = t0 * Mathf.PI * 0.5f;
+                float angle1 = t1 * Mathf.PI * 0.5f;
+
+                float xyLerp0, xyLerp1, zLerp0, zLerp1;
+
+                if (concave)
+                {
+                    // 凹: XYとZの補間を入れ替え
+                    xyLerp0 = Mathf.Sin(angle0);
+                    xyLerp1 = Mathf.Sin(angle1);
+                    zLerp0 = 1f - Mathf.Cos(angle0);
+                    zLerp1 = 1f - Mathf.Cos(angle1);
+                }
+                else
+                {
+                    // 凸（デフォルト）
+                    xyLerp0 = 1f - Mathf.Cos(angle0);
+                    xyLerp1 = 1f - Mathf.Cos(angle1);
+                    zLerp0 = Mathf.Sin(angle0);
+                    zLerp1 = Mathf.Sin(angle1);
+                }
+
+                // 2D位置を補間（円弧に沿って）
+                Vector2 p0_0 = Vector2.Lerp(outer0, inner0, xyLerp0);
+                Vector2 p0_1 = Vector2.Lerp(outer1, inner1, xyLerp0);
+                Vector2 p1_0 = Vector2.Lerp(outer0, inner0, xyLerp1);
+                Vector2 p1_1 = Vector2.Lerp(outer1, inner1, xyLerp1);
+
+                // Z座標の補間（円弧に沿って）
+                float z0 = Mathf.Lerp(outerZ, innerZ, zLerp0);
+                float z1 = Mathf.Lerp(outerZ, innerZ, zLerp1);
+
+                // 法線（表面: faceNormal→sideNormal、裏面: sideNormal→faceNormal）
+                Vector3 n0, n1;
+                if (isBackFace)
+                {
+                    n0 = Vector3.Slerp(sideNormal, faceNormal, t0).normalized;
+                    n1 = Vector3.Slerp(sideNormal, faceNormal, t1).normalized;
+                }
+                else
+                {
+                    n0 = Vector3.Slerp(faceNormal, sideNormal, t0).normalized;
+                    n1 = Vector3.Slerp(faceNormal, sideNormal, t1).normalized;
+                }
+
+                Vector3 v0 = new Vector3(p0_0.x, p0_0.y, z0);
+                Vector3 v1 = new Vector3(p0_1.x, p0_1.y, z0);
+                Vector3 v2 = new Vector3(p1_1.x, p1_1.y, z1);
+                Vector3 v3 = new Vector3(p1_0.x, p1_0.y, z1);
+
+                int idx = md.VertexCount;
+                md.Vertices.Add(new Vertex(v0, new Vector2(0, t0), n0));
+                md.Vertices.Add(new Vertex(v1, new Vector2(1, t0), n0));
+                md.Vertices.Add(new Vertex(v2, new Vector2(1, t1), n1));
+                md.Vertices.Add(new Vertex(v3, new Vector2(0, t1), n1));
+
+                // winding を調整
+                bool flipWinding = isHole;
+                if (flipWinding)
+                    md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
+                else
+                    md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
             }
         }
     }
@@ -1093,7 +1618,7 @@ public class PatchCreatorWindow : EditorWindow
         if (meshData == null)
         {
             EditorUtility.DisplayDialog(
-                "CSV Patch",
+                "2D Profile Extrude",
                 "メッシュ生成に失敗しました。入力データを確認してください。",
                 "OK");
             return;

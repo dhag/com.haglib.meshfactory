@@ -11,8 +11,8 @@ using System;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using MeshEditor.UndoSystem;
-using MeshEditor.Data;
+using MeshFactory.UndoSystem;
+using MeshFactory.Data;
 
 public class SphereMeshCreatorWindow : EditorWindow
 {
@@ -231,7 +231,7 @@ public class SphereMeshCreatorWindow : EditorWindow
         Event e = Event.current;
         if (rect.Contains(e.mousePosition))
         {
-            if (e.type == EventType.MouseDrag && e.button == 0)
+            if (e.type == EventType.MouseDrag && e.button == 1)
             {
                 _params.RotationY += e.delta.x * 0.5f;
                 _params.RotationX += e.delta.y * 0.5f;

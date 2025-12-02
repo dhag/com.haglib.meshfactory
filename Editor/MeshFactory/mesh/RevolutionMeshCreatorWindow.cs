@@ -13,8 +13,8 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using MeshEditor.UndoSystem;
-using MeshEditor.Data;
+using MeshFactory.UndoSystem;
+using MeshFactory.Data;
 
 public class RevolutionMeshCreatorWindow : EditorWindow
 {
@@ -169,6 +169,9 @@ public class RevolutionMeshCreatorWindow : EditorWindow
     // Undo
     private ParameterUndoHelper<RevolutionSnapshot> _undoHelper;
 
+    // SessionState永続化キー
+    private const string SESSION_STATE_KEY = "RevolutionMeshCreatorWindow_State";
+
     // ================================================================
     // ウインドウ初期化
     // ================================================================
@@ -178,7 +181,11 @@ public class RevolutionMeshCreatorWindow : EditorWindow
         window.minSize = new Vector2(750, 650);
         window.maxSize = new Vector2(1000, 900);
         window._onMeshDataCreated = onMeshDataCreated;
-        window.InitializeDefaultProfile();
+        // 永続化された状態がなければデフォルトプロファイルを初期化
+        if (window._profile.Count == 0)
+        {
+            window.InitializeDefaultProfile();
+        }
         window.UpdatePreviewMesh();
         return window;
     }
@@ -187,6 +194,7 @@ public class RevolutionMeshCreatorWindow : EditorWindow
     {
         InitPreview();
         InitUndo();
+        LoadState();
         if (_profile.Count == 0)
         {
             InitializeDefaultProfile();
@@ -196,8 +204,130 @@ public class RevolutionMeshCreatorWindow : EditorWindow
 
     private void OnDisable()
     {
+        SaveState();
         CleanupPreview();
         _undoHelper?.Dispose();
+    }
+
+    private void SaveState()
+    {
+        try
+        {
+            var snapshot = CaptureSnapshot();
+            string json = JsonUtility.ToJson(new RevolutionStateWrapper(snapshot));
+            SessionState.SetString(SESSION_STATE_KEY, json);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"RevolutionMeshCreatorWindow: Failed to save state: {e.Message}");
+        }
+    }
+
+    private void LoadState()
+    {
+        try
+        {
+            string json = SessionState.GetString(SESSION_STATE_KEY, "");
+            if (!string.IsNullOrEmpty(json))
+            {
+                var wrapper = JsonUtility.FromJson<RevolutionStateWrapper>(json);
+                if (wrapper != null)
+                {
+                    ApplySnapshot(wrapper.ToSnapshot());
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"RevolutionMeshCreatorWindow: Failed to load state: {e.Message}");
+        }
+    }
+
+    // JsonUtility用のシリアライズ可能なラッパークラス
+    [Serializable]
+    private class RevolutionStateWrapper
+    {
+        public string MeshName;
+        public int RadialSegments;
+        public bool CloseTop, CloseBottom, CloseLoop, Spiral;
+        public int SpiralTurns;
+        public float SpiralPitch;
+        public Vector3 Pivot;
+        public bool FlipY, FlipZ;
+        public float RotationX, RotationY;
+        public Vector2[] Profile;
+        public int SelectedPointIndex;
+        public int CurrentPreset;
+        public float DonutMajorRadius, DonutMinorRadius;
+        public int DonutTubeSegments;
+        public float PipeInnerRadius, PipeOuterRadius, PipeHeight;
+        public float PipeInnerCornerRadius, PipeOuterCornerRadius;
+        public int PipeInnerCornerSegments, PipeOuterCornerSegments;
+
+        public RevolutionStateWrapper() { }
+
+        public RevolutionStateWrapper(RevolutionSnapshot s)
+        {
+            MeshName = s.MeshName;
+            RadialSegments = s.RadialSegments;
+            CloseTop = s.CloseTop;
+            CloseBottom = s.CloseBottom;
+            CloseLoop = s.CloseLoop;
+            Spiral = s.Spiral;
+            SpiralTurns = s.SpiralTurns;
+            SpiralPitch = s.SpiralPitch;
+            Pivot = s.Pivot;
+            FlipY = s.FlipY;
+            FlipZ = s.FlipZ;
+            RotationX = s.RotationX;
+            RotationY = s.RotationY;
+            Profile = s.Profile;
+            SelectedPointIndex = s.SelectedPointIndex;
+            CurrentPreset = s.CurrentPreset;
+            DonutMajorRadius = s.DonutMajorRadius;
+            DonutMinorRadius = s.DonutMinorRadius;
+            DonutTubeSegments = s.DonutTubeSegments;
+            PipeInnerRadius = s.PipeInnerRadius;
+            PipeOuterRadius = s.PipeOuterRadius;
+            PipeHeight = s.PipeHeight;
+            PipeInnerCornerRadius = s.PipeInnerCornerRadius;
+            PipeOuterCornerRadius = s.PipeOuterCornerRadius;
+            PipeInnerCornerSegments = s.PipeInnerCornerSegments;
+            PipeOuterCornerSegments = s.PipeOuterCornerSegments;
+        }
+
+        public RevolutionSnapshot ToSnapshot()
+        {
+            return new RevolutionSnapshot
+            {
+                MeshName = MeshName,
+                RadialSegments = RadialSegments,
+                CloseTop = CloseTop,
+                CloseBottom = CloseBottom,
+                CloseLoop = CloseLoop,
+                Spiral = Spiral,
+                SpiralTurns = SpiralTurns,
+                SpiralPitch = SpiralPitch,
+                Pivot = Pivot,
+                FlipY = FlipY,
+                FlipZ = FlipZ,
+                RotationX = RotationX,
+                RotationY = RotationY,
+                Profile = Profile,
+                SelectedPointIndex = SelectedPointIndex,
+                CurrentPreset = CurrentPreset,
+                DonutMajorRadius = DonutMajorRadius,
+                DonutMinorRadius = DonutMinorRadius,
+                DonutTubeSegments = DonutTubeSegments,
+                PipeInnerRadius = PipeInnerRadius,
+                PipeOuterRadius = PipeOuterRadius,
+                PipeHeight = PipeHeight,
+                PipeInnerCornerRadius = PipeInnerCornerRadius,
+                PipeOuterCornerRadius = PipeOuterCornerRadius,
+                PipeInnerCornerSegments = PipeInnerCornerSegments,
+                PipeOuterCornerSegments = PipeOuterCornerSegments,
+            };
+        }
     }
 
     private void InitUndo()
@@ -1187,7 +1317,7 @@ public class RevolutionMeshCreatorWindow : EditorWindow
         Event e = Event.current;
         if (rect.Contains(e.mousePosition))
         {
-            if (e.type == EventType.MouseDrag && e.button == 0)
+            if (e.type == EventType.MouseDrag && e.button == 1)
             {
                 _rotationY += e.delta.x * 0.5f;
                 _rotationX += e.delta.y * 0.5f;

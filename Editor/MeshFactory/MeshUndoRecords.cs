@@ -5,9 +5,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using MeshEditor.Data;
+using MeshFactory.Data;
+using MeshFactory.Tools;
 
-namespace MeshEditor.UndoSystem
+namespace MeshFactory.UndoSystem
 {
     // ============================================================
     // コンテキスト
@@ -42,6 +43,11 @@ namespace MeshEditor.UndoSystem
 
         /// <summary>実際のMeshオブジェクト</summary>
         public Mesh TargetMesh;
+
+        // === WorkPlane参照（選択連動Undo用） ===
+
+        /// <summary>WorkPlane参照（選択と連動してUndo/Redoするため）</summary>
+        public WorkPlane WorkPlane;
 
         // === 後方互換プロパティ ===
 
@@ -291,7 +297,7 @@ namespace MeshEditor.UndoSystem
     }
 
     /// <summary>
-    /// 選択状態変更記録
+    /// 選択状態変更記録（WorkPlane原点連動対応）
     /// </summary>
     public class SelectionChangeRecord : MeshUndoRecord
     {
@@ -299,6 +305,10 @@ namespace MeshEditor.UndoSystem
         public HashSet<int> NewSelectedVertices;
         public HashSet<int> OldSelectedFaces;
         public HashSet<int> NewSelectedFaces;
+
+        // WorkPlane連動（AutoUpdate有効時のみ使用）
+        public WorkPlaneSnapshot? OldWorkPlaneSnapshot;
+        public WorkPlaneSnapshot? NewWorkPlaneSnapshot;
 
         public SelectionChangeRecord(
             HashSet<int> oldVertices,
@@ -310,18 +320,48 @@ namespace MeshEditor.UndoSystem
             NewSelectedVertices = new HashSet<int>(newVertices ?? new HashSet<int>());
             OldSelectedFaces = new HashSet<int>(oldFaces ?? new HashSet<int>());
             NewSelectedFaces = new HashSet<int>(newFaces ?? new HashSet<int>());
+            OldWorkPlaneSnapshot = null;
+            NewWorkPlaneSnapshot = null;
+        }
+
+        /// <summary>
+        /// WorkPlane連動付きコンストラクタ
+        /// </summary>
+        public SelectionChangeRecord(
+            HashSet<int> oldVertices,
+            HashSet<int> newVertices,
+            WorkPlaneSnapshot? oldWorkPlane,
+            WorkPlaneSnapshot? newWorkPlane,
+            HashSet<int> oldFaces = null,
+            HashSet<int> newFaces = null)
+            : this(oldVertices, newVertices, oldFaces, newFaces)
+        {
+            OldWorkPlaneSnapshot = oldWorkPlane;
+            NewWorkPlaneSnapshot = newWorkPlane;
         }
 
         public override void Undo(MeshEditContext ctx)
         {
             ctx.SelectedVertices = new HashSet<int>(OldSelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(OldSelectedFaces);
+
+            // WorkPlane連動復元
+            if (OldWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)
+            {
+                ctx.WorkPlane.ApplySnapshot(OldWorkPlaneSnapshot.Value);
+            }
         }
 
         public override void Redo(MeshEditContext ctx)
         {
             ctx.SelectedVertices = new HashSet<int>(NewSelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(NewSelectedFaces);
+
+            // WorkPlane連動復元
+            if (NewWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)
+            {
+                ctx.WorkPlane.ApplySnapshot(NewWorkPlaneSnapshot.Value);
+            }
         }
     }
 
@@ -652,6 +692,12 @@ namespace MeshEditor.UndoSystem
         // 編集モード
         public bool VertexEditMode = false;
 
+        // 現在のツール
+        public string CurrentToolName = "Select";
+
+        // WorkPlane参照（カメラ連動Undo用）
+        public WorkPlane WorkPlane;
+
         /// <summary>
         /// スナップショットを作成
         /// </summary>
@@ -665,7 +711,8 @@ namespace MeshEditor.UndoSystem
                 CameraTarget = CameraTarget,
                 ShowWireframe = ShowWireframe,
                 ShowVertices = ShowVertices,
-                VertexEditMode = VertexEditMode
+                VertexEditMode = VertexEditMode,
+                CurrentToolName = CurrentToolName
             };
         }
 
@@ -681,6 +728,7 @@ namespace MeshEditor.UndoSystem
             ShowWireframe = snapshot.ShowWireframe;
             ShowVertices = snapshot.ShowVertices;
             VertexEditMode = snapshot.VertexEditMode;
+            CurrentToolName = snapshot.CurrentToolName;
         }
     }
 
@@ -692,6 +740,7 @@ namespace MeshEditor.UndoSystem
         public float RotationX, RotationY, CameraDistance;
         public Vector3 CameraTarget;
         public bool ShowWireframe, ShowVertices, VertexEditMode;
+        public string CurrentToolName;
 
         public bool IsDifferentFrom(EditorStateSnapshot other)
         {
@@ -701,12 +750,13 @@ namespace MeshEditor.UndoSystem
                    Vector3.Distance(CameraTarget, other.CameraTarget) > 0.0001f ||
                    ShowWireframe != other.ShowWireframe ||
                    ShowVertices != other.ShowVertices ||
-                   VertexEditMode != other.VertexEditMode;
+                   VertexEditMode != other.VertexEditMode ||
+                   CurrentToolName != other.CurrentToolName;
         }
     }
 
     /// <summary>
-    /// エディタ状態変更記録（汎用）
+    /// エディタ状態変更記録（WorkPlane連動対応）
     /// </summary>
     public class EditorStateChangeRecord : IUndoRecord<EditorStateContext>
     {
@@ -714,14 +764,53 @@ namespace MeshEditor.UndoSystem
         public EditorStateSnapshot Before;
         public EditorStateSnapshot After;
 
+        // WorkPlane連動（カメラ変更時の軸更新用）
+        public WorkPlaneSnapshot? OldWorkPlaneSnapshot;
+        public WorkPlaneSnapshot? NewWorkPlaneSnapshot;
+
         public EditorStateChangeRecord(EditorStateSnapshot before, EditorStateSnapshot after)
         {
             Before = before;
             After = after;
+            OldWorkPlaneSnapshot = null;
+            NewWorkPlaneSnapshot = null;
         }
 
-        public void Undo(EditorStateContext ctx) => ctx.ApplySnapshot(Before);
-        public void Redo(EditorStateContext ctx) => ctx.ApplySnapshot(After);
+        /// <summary>
+        /// WorkPlane連動付きコンストラクタ
+        /// </summary>
+        public EditorStateChangeRecord(
+            EditorStateSnapshot before,
+            EditorStateSnapshot after,
+            WorkPlaneSnapshot? oldWorkPlane,
+            WorkPlaneSnapshot? newWorkPlane)
+            : this(before, after)
+        {
+            OldWorkPlaneSnapshot = oldWorkPlane;
+            NewWorkPlaneSnapshot = newWorkPlane;
+        }
+
+        public void Undo(EditorStateContext ctx)
+        {
+            ctx.ApplySnapshot(Before);
+
+            // WorkPlane連動復元
+            if (OldWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)
+            {
+                ctx.WorkPlane.ApplySnapshot(OldWorkPlaneSnapshot.Value);
+            }
+        }
+
+        public void Redo(EditorStateContext ctx)
+        {
+            ctx.ApplySnapshot(After);
+
+            // WorkPlane連動復元
+            if (NewWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)
+            {
+                ctx.WorkPlane.ApplySnapshot(NewWorkPlaneSnapshot.Value);
+            }
+        }
     }
 
     // ============================================================
@@ -759,6 +848,231 @@ namespace MeshEditor.UndoSystem
             ctx.RotationY = NewRotationY;
             ctx.CameraDistance = NewCameraDistance;
             ctx.CameraTarget = NewCameraTarget;
+        }
+    }
+
+    // ============================================================
+    // 面追加操作記録（頂点と面をまとめて1つの操作として扱う）
+    // ============================================================
+
+    /// <summary>
+    /// 面追加操作記録
+    /// 新規頂点と面の追加を1つの操作としてまとめる
+    /// </summary>
+    public class AddFaceOperationRecord : MeshUndoRecord
+    {
+        /// <summary>追加した頂点のリスト（インデックス, 頂点データ）</summary>
+        public List<(int Index, Vertex Vertex)> AddedVertices = new List<(int, Vertex)>();
+
+        /// <summary>追加した面（nullの場合は頂点のみ追加）</summary>
+        public Face AddedFace;
+
+        /// <summary>面のインデックス（-1の場合は面なし）</summary>
+        public int FaceIndex;
+
+        public AddFaceOperationRecord(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices)
+        {
+            AddedFace = face?.Clone();
+            FaceIndex = faceIndex;
+
+            // 頂点をクローン
+            foreach (var (idx, vtx) in addedVertices)
+            {
+                AddedVertices.Add((idx, vtx.Clone()));
+            }
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData == null) return;
+
+            // 面を削除
+            if (AddedFace != null && FaceIndex >= 0 && FaceIndex < ctx.MeshData.FaceCount)
+            {
+                ctx.MeshData.Faces.RemoveAt(FaceIndex);
+            }
+
+            // 頂点を削除（逆順で削除してインデックスを維持）
+            var sortedVertices = AddedVertices.OrderByDescending(v => v.Index).ToList();
+            foreach (var (idx, _) in sortedVertices)
+            {
+                if (idx < ctx.MeshData.VertexCount)
+                {
+                    ctx.MeshData.Vertices.RemoveAt(idx);
+                    // 面のインデックスを調整
+                    AdjustFaceIndicesAfterVertexRemoval(ctx.MeshData, idx);
+                }
+            }
+
+            ctx.ApplyToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData == null) return;
+
+            // 頂点を追加（昇順で追加、範囲外なら末尾に追加）
+            var sortedVertices = AddedVertices.OrderBy(v => v.Index).ToList();
+            foreach (var (idx, vtx) in sortedVertices)
+            {
+                if (idx >= ctx.MeshData.Vertices.Count)
+                {
+                    // インデックスが範囲外なら末尾に追加
+                    ctx.MeshData.Vertices.Add(vtx.Clone());
+                }
+                else
+                {
+                    ctx.MeshData.Vertices.Insert(idx, vtx.Clone());
+                }
+                // 面のインデックスを調整
+                AdjustFaceIndicesAfterVertexInsertion(ctx.MeshData, idx);
+            }
+
+            // 面を追加（範囲外なら末尾に追加）
+            if (AddedFace != null && FaceIndex >= 0)
+            {
+                if (FaceIndex >= ctx.MeshData.Faces.Count)
+                {
+                    ctx.MeshData.Faces.Add(AddedFace.Clone());
+                }
+                else
+                {
+                    ctx.MeshData.Faces.Insert(FaceIndex, AddedFace.Clone());
+                }
+            }
+
+            ctx.ApplyToMesh();
+        }
+
+        private void AdjustFaceIndicesAfterVertexRemoval(MeshData meshData, int removedIndex)
+        {
+            foreach (var face in meshData.Faces)
+            {
+                for (int i = 0; i < face.VertexIndices.Count; i++)
+                {
+                    if (face.VertexIndices[i] > removedIndex)
+                        face.VertexIndices[i]--;
+                }
+            }
+        }
+
+        private void AdjustFaceIndicesAfterVertexInsertion(MeshData meshData, int insertedIndex)
+        {
+            foreach (var face in meshData.Faces)
+            {
+                for (int i = 0; i < face.VertexIndices.Count; i++)
+                {
+                    if (face.VertexIndices[i] >= insertedIndex)
+                        face.VertexIndices[i]++;
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // KnifeCutOperationRecord - ナイフ切断操作
+    // ============================================================
+
+    /// <summary>
+    /// ナイフ切断操作の記録
+    /// </summary>
+    public class KnifeCutOperationRecord : MeshUndoRecord
+    {
+        /// <summary>切断された面のインデックス</summary>
+        public int OriginalFaceIndex;
+
+        /// <summary>元の面データ</summary>
+        public Face OriginalFace;
+
+        /// <summary>分割後の面1（元の位置に配置）</summary>
+        public Face NewFace1;
+
+        /// <summary>分割後の面2のインデックス</summary>
+        public int NewFace2Index;
+
+        /// <summary>分割後の面2</summary>
+        public Face NewFace2;
+
+        /// <summary>追加された頂点リスト（インデックスと頂点データ）</summary>
+        public List<(int Index, Vertex Vertex)> AddedVertices = new List<(int, Vertex)>();
+
+        public KnifeCutOperationRecord(
+            int originalFaceIndex,
+            Face originalFace,
+            Face newFace1,
+            int newFace2Index,
+            Face newFace2,
+            List<(int Index, Vertex Vertex)> addedVertices)
+        {
+            OriginalFaceIndex = originalFaceIndex;
+            OriginalFace = originalFace?.Clone();
+            NewFace1 = newFace1?.Clone();
+            NewFace2Index = newFace2Index;
+            NewFace2 = newFace2?.Clone();
+
+            foreach (var (idx, vtx) in addedVertices)
+            {
+                AddedVertices.Add((idx, vtx.Clone()));
+            }
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData == null) return;
+
+            // 分割後の面2を削除（末尾から）
+            if (NewFace2Index >= 0 && NewFace2Index < ctx.MeshData.FaceCount)
+            {
+                ctx.MeshData.Faces.RemoveAt(NewFace2Index);
+            }
+
+            // 元の面を復元
+            if (OriginalFaceIndex >= 0 && OriginalFaceIndex < ctx.MeshData.FaceCount && OriginalFace != null)
+            {
+                ctx.MeshData.Faces[OriginalFaceIndex] = OriginalFace.Clone();
+            }
+
+            // 追加された頂点を削除（逆順で、末尾から）
+            // Note: Knife Cutで追加される頂点は常に末尾に追加されるため、
+            // 他の面のインデックスには影響しない。AdjustFaceIndicesは不要。
+            var sortedVertices = AddedVertices.OrderByDescending(v => v.Index).ToList();
+            foreach (var (idx, _) in sortedVertices)
+            {
+                if (idx < ctx.MeshData.VertexCount)
+                {
+                    ctx.MeshData.Vertices.RemoveAt(idx);
+                }
+            }
+
+            ctx.ApplyToMesh();
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            if (ctx.MeshData == null) return;
+
+            // 頂点を追加（末尾に追加）
+            // Note: Knife Cutで追加される頂点は常に末尾に追加されるため、
+            // 記録時のインデックス順に末尾に追加すれば正しい状態に戻る。
+            var sortedVertices = AddedVertices.OrderBy(v => v.Index).ToList();
+            foreach (var (_, vtx) in sortedVertices)
+            {
+                ctx.MeshData.Vertices.Add(vtx.Clone());
+            }
+
+            // 面を更新
+            if (OriginalFaceIndex >= 0 && OriginalFaceIndex < ctx.MeshData.FaceCount && NewFace1 != null)
+            {
+                ctx.MeshData.Faces[OriginalFaceIndex] = NewFace1.Clone();
+            }
+
+            // 面2を追加（末尾に）
+            if (NewFace2 != null)
+            {
+                ctx.MeshData.Faces.Add(NewFace2.Clone());
+            }
+
+            ctx.ApplyToMesh();
         }
     }
 }
