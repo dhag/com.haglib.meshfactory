@@ -140,6 +140,13 @@ public class Profile2DExtrudeWindow : EditorWindow
     // スクロール位置
     private Vector2 _leftScrollPos = Vector2.zero;
 
+    // スプリッター（ペイン幅調整）
+    private float _leftPaneWidth = 320f;
+    private const float MIN_LEFT_PANE_WIDTH = 250f;
+    private const float MAX_LEFT_PANE_WIDTH = 500f;
+    private const float SPLITTER_WIDTH = 6f;
+    private bool _isDraggingSplitter = false;
+
     // Undo
     private ParameterUndoHelper<Profile2DSnapshot> _undoHelper;
 
@@ -479,7 +486,7 @@ public class Profile2DExtrudeWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
 
         // 左側：パラメータ、ループリスト、3Dプレビュー（スクロール可能）
-        using (new EditorGUILayout.VerticalScope(GUILayout.Width(320)))
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(_leftPaneWidth)))
         {
             _leftScrollPos = EditorGUILayout.BeginScrollView(_leftScrollPos, GUILayout.ExpandHeight(true));
             DrawParameters();
@@ -490,7 +497,8 @@ public class Profile2DExtrudeWindow : EditorWindow
             EditorGUILayout.EndScrollView();
         }
 
-        EditorGUILayout.Space(10);
+        // スプリッター
+        DrawSplitter();
 
         // 右側：2Dエディタ（大きく）
         using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true)))
@@ -502,6 +510,52 @@ public class Profile2DExtrudeWindow : EditorWindow
 
         EditorGUILayout.Space(10);
         DrawButtons();
+    }
+
+    private void DrawSplitter()
+    {
+        // スプリッター領域を確保
+        Rect splitterRect = GUILayoutUtility.GetRect(SPLITTER_WIDTH, SPLITTER_WIDTH, GUILayout.ExpandHeight(true));
+        
+        // スプリッターの見た目
+        EditorGUI.DrawRect(splitterRect, new Color(0.1f, 0.1f, 0.1f, 1f));
+        // 中央に細い線
+        Rect lineRect = new Rect(splitterRect.x + 2, splitterRect.y, 2, splitterRect.height);
+        EditorGUI.DrawRect(lineRect, new Color(0.3f, 0.3f, 0.3f, 1f));
+
+        // カーソルをリサイズカーソルに
+        EditorGUIUtility.AddCursorRect(splitterRect, MouseCursor.ResizeHorizontal);
+
+        // ドラッグ処理
+        Event e = Event.current;
+        switch (e.type)
+        {
+            case EventType.MouseDown:
+                if (splitterRect.Contains(e.mousePosition) && e.button == 0)
+                {
+                    _isDraggingSplitter = true;
+                    e.Use();
+                }
+                break;
+
+            case EventType.MouseDrag:
+                if (_isDraggingSplitter)
+                {
+                    _leftPaneWidth += e.delta.x;
+                    _leftPaneWidth = Mathf.Clamp(_leftPaneWidth, MIN_LEFT_PANE_WIDTH, MAX_LEFT_PANE_WIDTH);
+                    e.Use();
+                    Repaint();
+                }
+                break;
+
+            case EventType.MouseUp:
+                if (_isDraggingSplitter)
+                {
+                    _isDraggingSplitter = false;
+                    e.Use();
+                }
+                break;
+        }
     }
 
     private void DrawParameters()

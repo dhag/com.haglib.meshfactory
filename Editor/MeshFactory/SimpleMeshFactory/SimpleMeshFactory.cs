@@ -70,6 +70,21 @@ public partial class SimpleMeshFactory : EditorWindow
     private Vector2 _vertexScroll;
 
     // ================================================================
+    // スプリッター（ペイン幅調整）
+    // ================================================================
+    private float _leftPaneWidth = 350f;
+    private float _rightPaneWidth = 280f;
+    private const float MIN_PANE_WIDTH = 200f;
+    private const float MAX_PANE_WIDTH = 500f;
+    private const float SPLITTER_WIDTH = 6f;
+    private bool _isDraggingLeftSplitter = false;
+    private bool _isDraggingRightSplitter = false;
+
+    // 各ペインの幅を外部から参照できるようにするプロパティ
+    public float LeftPaneWidth => _leftPaneWidth;
+    public float RightPaneWidth => _rightPaneWidth;
+
+    // ================================================================
     // デフォルトマテリアル（新規メッシュ作成時に適用）
     // ================================================================
     private List<Material> _defaultMaterials = new List<Material> { null };
@@ -175,7 +190,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private EdgeExtrudeTool _extrudeTool;
     private FaceExtrudeTool _faceExtrudeTool;
     private EdgeBevelTool _edgeBevelTool;
-    private LineExtrudeTool _lineExtrudeTool;  // ← Tool用に追加(1/5)5か所の1つはGUTボタン
+    private LineExtrudeTool _lineExtrudeTool;
     private ToolContext _toolContext;
 
     // ツール設定（シリアライズ対象）
@@ -216,12 +231,12 @@ public partial class SimpleMeshFactory : EditorWindow
     private float _cameraStartDistance;
     private Vector3 _cameraStartTarget;
     private WorkPlaneSnapshot? _cameraStartWorkPlaneSnapshot;
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
 
     private SelectionSnapshot _lastSelectionSnapshot;  // Undo用スナップショット
     // ================================================================
@@ -346,7 +361,7 @@ public partial class SimpleMeshFactory : EditorWindow
         _extrudeTool = new EdgeExtrudeTool();
         _faceExtrudeTool = new FaceExtrudeTool();
         _edgeBevelTool = new EdgeBevelTool();
-        _lineExtrudeTool = new LineExtrudeTool();  // ← 追加(2)
+        _lineExtrudeTool = new LineExtrudeTool();
         _currentTool = _selectTool;
 
         // MoveToolに保存された設定を反映
@@ -459,8 +474,8 @@ public partial class SimpleMeshFactory : EditorWindow
         {
             _edgeBevelTool.OnSelectionChanged(_toolContext);
         }
-        
-         // LineExtrudeToolの選択更新  ← 追加(3)
+
+        // LineExtrudeToolの選択更新
         if (_currentTool == _lineExtrudeTool)
         {
             _lineExtrudeTool.OnSelectionChanged();
@@ -478,10 +493,10 @@ public partial class SimpleMeshFactory : EditorWindow
             DestroyImmediate(_previewMaterial);
             _previewMaterial = null;
         }
-        
+
         // ★ミラーリソースのクリーンアップ
         CleanupMirrorResources();
-        
+
 
 
         // WorkPlane UIイベントハンドラ解除
@@ -662,7 +677,7 @@ public partial class SimpleMeshFactory : EditorWindow
             case "Bevel":
                 newTool = _edgeBevelTool;
                 break;
-            case "Line Extrude":  // ← 追加(4)
+            case "Line Ext":
                 newTool = _lineExtrudeTool;
                 break;
             default:
@@ -757,6 +772,9 @@ public partial class SimpleMeshFactory : EditorWindow
             {
                 EndCameraDrag();
             }
+            // スプリッタードラッグ終了
+            _isDraggingLeftSplitter = false;
+            _isDraggingRightSplitter = false;
         }
 
         HandleScrollWheel();
@@ -766,13 +784,61 @@ public partial class SimpleMeshFactory : EditorWindow
         // 左ペイン：メッシュリスト
         DrawMeshList();
 
+        // 左スプリッター
+        DrawSplitter(ref _isDraggingLeftSplitter, ref _leftPaneWidth, 1f);
+
         // 中央ペイン：プレビュー
         DrawPreview();
+
+        // 右スプリッター
+        DrawSplitter(ref _isDraggingRightSplitter, ref _rightPaneWidth, -1f);
 
         // 右ペイン：頂点編集
         DrawVertexEditor();
 
         EditorGUILayout.EndHorizontal();
+    }
+
+    /// <summary>
+    /// スプリッター描画とドラッグ処理
+    /// </summary>
+    /// <param name="isDragging">ドラッグ中フラグ</param>
+    /// <param name="paneWidth">調整対象のペイン幅</param>
+    /// <param name="direction">1f=右方向にドラッグで幅増加, -1f=左方向にドラッグで幅増加</param>
+    private void DrawSplitter(ref bool isDragging, ref float paneWidth, float direction)
+    {
+        Rect splitterRect = GUILayoutUtility.GetRect(SPLITTER_WIDTH, SPLITTER_WIDTH, GUILayout.ExpandHeight(true));
+
+        // スプリッターの見た目
+        EditorGUI.DrawRect(splitterRect, new Color(0.1f, 0.1f, 0.1f, 1f));
+        Rect lineRect = new Rect(splitterRect.x + 2, splitterRect.y, 2, splitterRect.height);
+        EditorGUI.DrawRect(lineRect, new Color(0.3f, 0.3f, 0.3f, 1f));
+
+        // カーソルをリサイズカーソルに
+        EditorGUIUtility.AddCursorRect(splitterRect, MouseCursor.ResizeHorizontal);
+
+        // ドラッグ処理
+        Event e = Event.current;
+        switch (e.type)
+        {
+            case EventType.MouseDown:
+                if (splitterRect.Contains(e.mousePosition) && e.button == 0)
+                {
+                    isDragging = true;
+                    e.Use();
+                }
+                break;
+
+            case EventType.MouseDrag:
+                if (isDragging)
+                {
+                    paneWidth += e.delta.x * direction;
+                    paneWidth = Mathf.Clamp(paneWidth, MIN_PANE_WIDTH, MAX_PANE_WIDTH);
+                    e.Use();
+                    Repaint();
+                }
+                break;
+        }
     }
 
     private void HandleScrollWheel()

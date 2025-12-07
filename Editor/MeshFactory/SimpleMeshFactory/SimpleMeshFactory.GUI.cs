@@ -14,7 +14,7 @@ public partial class SimpleMeshFactory
     // ================================================================
     private void DrawMeshList()
     {
-        using (new EditorGUILayout.VerticalScope(GUILayout.Width(350)))
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(_leftPaneWidth)))
         {
             EditorGUILayout.LabelField("Mesh Factory", EditorStyles.boldLabel);
 
@@ -154,7 +154,7 @@ public partial class SimpleMeshFactory
 
                 // Create Mesh
                 EditorGUILayout.LabelField("Create Mesh", EditorStyles.miniBoldLabel);
-                
+
                 // ★追加モードUI
                 EditorGUILayout.BeginHorizontal();
                 EditorGUI.BeginChangeCheck();
@@ -163,7 +163,7 @@ public partial class SimpleMeshFactory
                 {
                     // 設定変更
                 }
-                
+
                 // 追加先がない場合は警告
                 if (_addToCurrentMesh && (_selectedIndex < 0 || _selectedIndex >= _meshList.Count))
                 {
@@ -180,7 +180,7 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.Space(3);
-                
+
                 // 生成用のボタン（+ Cube... など）
                 if (GUILayout.Button("+ Cube..."))
                 {
@@ -336,8 +336,7 @@ public partial class SimpleMeshFactory
                     using (new EditorGUILayout.HorizontalScope())
                     {
                         DrawToolButton(_edgeBevelTool, "Bevel");
-                        DrawToolButton(_lineExtrudeTool, "Line Ext");  // ← 追加(5)
-
+                        DrawToolButton(_lineExtrudeTool, "Line Ext");
                     }
 
                     // 現在のツールの設定UI

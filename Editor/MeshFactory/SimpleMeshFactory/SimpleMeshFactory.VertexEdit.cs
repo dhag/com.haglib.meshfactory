@@ -17,7 +17,7 @@ public partial class SimpleMeshFactory
     // ================================================================
     private void DrawVertexEditor()
     {
-        using (new EditorGUILayout.VerticalScope(GUILayout.Width(280)))
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(_rightPaneWidth)))
         {
             EditorGUILayout.LabelField("Vertex Editor", EditorStyles.boldLabel);
 
