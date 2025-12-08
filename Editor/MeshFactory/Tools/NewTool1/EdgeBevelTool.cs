@@ -15,6 +15,10 @@ namespace MeshFactory.Tools
     public class EdgeBevelTool : IEditTool
     {
         public string Name => "Bevel";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 状態 ===
         private enum BevelState { Idle, PendingAction, Beveling }

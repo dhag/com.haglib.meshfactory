@@ -17,6 +17,10 @@ namespace MeshFactory.Tools
     public class FlipFaceTool : IEditTool
     {
         public string Name => "Flip";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // 最後に反転した面の数（情報表示用）
         private int _lastFlippedCount = 0;

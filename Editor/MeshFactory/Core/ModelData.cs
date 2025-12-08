@@ -340,6 +340,7 @@ namespace MeshFactory.Serialization
         /// <summary>選択中のメッシュインデックス</summary>
         public int selectedMeshIndex;
 
+        //ナイフツールの固有設定
         /// <summary>ナイフツールのモード</summary>
         public string knifeMode;
 
@@ -362,6 +363,7 @@ namespace MeshFactory.Serialization
                 vertexEditMode = true,
                 currentToolName = "Select",
                 selectedMeshIndex = -1,
+                //ナイフツールの固有設定
                 knifeMode = "Cut",
                 knifeEdgeSelect = false,
                 knifeChainMode = false

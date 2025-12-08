@@ -736,6 +736,11 @@ namespace MeshFactory.UndoSystem
     // エディタ状態（カメラ、表示、モード統合）
     // ============================================================
 
+    // ============================================================
+    // エディタ状態（カメラ、表示、モード統合）
+    // IToolSettings対応版
+    // ============================================================
+
     /// <summary>
     /// エディタ状態コンテキスト（カメラ、表示設定、編集モード）
     /// </summary>
@@ -758,9 +763,11 @@ namespace MeshFactory.UndoSystem
         public string CurrentToolName = "Select";
 
         // ツール設定
-        public KnifeMode KnifeMode = KnifeMode.Cut;
-        public bool KnifeEdgeSelect = false;
-        public bool KnifeChainMode = false;
+        //ナイフツールの固有設定（既存）
+        public KnifeProperty knifeProperty = new KnifeProperty();
+
+        // 汎用ツール設定ストレージ（新規追加）
+        public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();
 
         // WorkPlane参照（カメラ連動Undo用）
         public WorkPlane WorkPlane;
@@ -770,7 +777,7 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public EditorStateSnapshot Capture()
         {
-            return new EditorStateSnapshot
+            var snapshot = new EditorStateSnapshot
             {
                 RotationX = RotationX,
                 RotationY = RotationY,
@@ -780,10 +787,18 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = ShowVertices,
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
-                KnifeMode = KnifeMode,
-                KnifeEdgeSelect = KnifeEdgeSelect,
-                KnifeChainMode = KnifeChainMode
             };
+
+            // KnifeProperty（既存）
+            snapshot.knifeProperty = new KnifeProperty();
+            snapshot.knifeProperty.Mode = knifeProperty.Mode;
+            snapshot.knifeProperty.EdgeSelect = knifeProperty.EdgeSelect;
+            snapshot.knifeProperty.ChainMode = knifeProperty.ChainMode;
+
+            // ToolSettings（新規）
+            snapshot.ToolSettings = ToolSettings?.Clone();
+
+            return snapshot;
         }
 
         /// <summary>
@@ -799,9 +814,19 @@ namespace MeshFactory.UndoSystem
             ShowVertices = snapshot.ShowVertices;
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
-            KnifeMode = snapshot.KnifeMode;
-            KnifeEdgeSelect = snapshot.KnifeEdgeSelect;
-            KnifeChainMode = snapshot.KnifeChainMode;
+
+            // KnifeProperty（既存）
+            knifeProperty.Mode = snapshot.knifeProperty.Mode;
+            knifeProperty.EdgeSelect = snapshot.knifeProperty.EdgeSelect;
+            knifeProperty.ChainMode = snapshot.knifeProperty.ChainMode;
+
+            // ToolSettings（新規）
+            if (snapshot.ToolSettings != null)
+            {
+                if (ToolSettings == null)
+                    ToolSettings = new ToolSettingsStorage();
+                ToolSettings.CopyFrom(snapshot.ToolSettings);
+            }
         }
     }
 
@@ -814,23 +839,53 @@ namespace MeshFactory.UndoSystem
         public Vector3 CameraTarget;
         public bool ShowWireframe, ShowVertices, VertexEditMode;
         public string CurrentToolName;
-        public KnifeMode KnifeMode;
-        public bool KnifeEdgeSelect;
-        public bool KnifeChainMode;
+
+        // ナイフツール設定（既存）
+        public KnifeProperty knifeProperty;
+
+        // 汎用ツール設定（新規追加）
+        public ToolSettingsStorage ToolSettings;
 
         public bool IsDifferentFrom(EditorStateSnapshot other)
         {
-            return !Mathf.Approximately(RotationX, other.RotationX) ||
-                   !Mathf.Approximately(RotationY, other.RotationY) ||
-                   !Mathf.Approximately(CameraDistance, other.CameraDistance) ||
-                   Vector3.Distance(CameraTarget, other.CameraTarget) > 0.0001f ||
-                   ShowWireframe != other.ShowWireframe ||
-                   ShowVertices != other.ShowVertices ||
-                   VertexEditMode != other.VertexEditMode ||
-                   CurrentToolName != other.CurrentToolName ||
-                   KnifeMode != other.KnifeMode ||
-                   KnifeEdgeSelect != other.KnifeEdgeSelect ||
-                   KnifeChainMode != other.KnifeChainMode;
+            // 基本プロパティ
+            if (!Mathf.Approximately(RotationX, other.RotationX) ||
+                !Mathf.Approximately(RotationY, other.RotationY) ||
+                !Mathf.Approximately(CameraDistance, other.CameraDistance) ||
+                Vector3.Distance(CameraTarget, other.CameraTarget) > 0.0001f ||
+                ShowWireframe != other.ShowWireframe ||
+                ShowVertices != other.ShowVertices ||
+                VertexEditMode != other.VertexEditMode ||
+                CurrentToolName != other.CurrentToolName)
+            {
+                return true;
+            }
+
+            // KnifeProperty（既存）
+            if (knifeProperty != null && other.knifeProperty != null)
+            {
+                if (knifeProperty.Mode != other.knifeProperty.Mode ||
+                    knifeProperty.EdgeSelect != other.knifeProperty.EdgeSelect ||
+                    knifeProperty.ChainMode != other.knifeProperty.ChainMode)
+                {
+                    return true;
+                }
+            }
+
+            // ToolSettings（新規）
+            if (ToolSettings != null && other.ToolSettings != null)
+            {
+                if (ToolSettings.IsDifferentFrom(other.ToolSettings))
+                    return true;
+            }
+            else if ((ToolSettings != null && ToolSettings.Count > 0) ||
+                     (other.ToolSettings != null && other.ToolSettings.Count > 0))
+            {
+                // 片方だけ設定がある場合は差異あり
+                return true;
+            }
+
+            return false;
         }
     }
 
@@ -1051,6 +1106,7 @@ namespace MeshFactory.UndoSystem
     // ============================================================
     // KnifeCutOperationRecord - ナイフ切断操作
     // ============================================================
+    //ナイフツールの固有設定---------------
 
     /// <summary>
     /// ナイフ切断操作の記録

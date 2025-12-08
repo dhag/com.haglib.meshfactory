@@ -1,5 +1,6 @@
 // Tools/IEditTool.cs
 // 編集ツールの共通インターフェース
+// IToolSettings対応版
 
 using UnityEngine;
 
@@ -12,6 +13,12 @@ namespace MeshFactory.Tools
     {
         /// <summary>ツール名</summary>
         string Name { get; }
+
+        /// <summary>
+        /// ツール設定（Undo対応）
+        /// 設定を持たないツールはnullを返す
+        /// </summary>
+        IToolSettings Settings { get; }
 
         /// <summary>
         /// マウスダウン処理

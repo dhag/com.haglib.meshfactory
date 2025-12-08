@@ -635,6 +635,8 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
+            before.knifeProperty = _editorStateContext.knifeProperty;
+
             var after = new EditorStateSnapshot
             {
                 RotationX = newRotX,
@@ -645,6 +647,8 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
+            after.knifeProperty = _editorStateContext.knifeProperty;
+
             var record = new EditorStateChangeRecord(before, after);
             _editorStateStack.Record(record, "Change View");
         }
@@ -669,6 +673,8 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
+            before.knifeProperty = _editorStateContext.knifeProperty;
+
             var after = new EditorStateSnapshot
             {
                 RotationX = newRotX,
@@ -679,6 +685,8 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
+            after.knifeProperty = _editorStateContext.knifeProperty;
+
             var record = new EditorStateChangeRecord(before, after, oldWorkPlane, newWorkPlane);
             _editorStateStack.Record(record, "Change View");
         }

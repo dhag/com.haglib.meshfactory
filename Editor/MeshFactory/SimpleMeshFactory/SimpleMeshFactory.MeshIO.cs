@@ -721,9 +721,13 @@ public partial class SimpleMeshFactory
             vertexEditMode = _vertexEditMode,
             currentToolName = _currentTool?.Name ?? "Select",
             selectedMeshIndex = _selectedIndex,
-            knifeMode = _knifeTool?.Mode.ToString() ?? "Cut",
-            knifeEdgeSelect = _knifeTool?.EdgeSelect ?? false,
-            knifeChainMode = _knifeTool?.ChainMode ?? false
+            //ナイフツールの固有設定
+            //------------------------
+            knifeMode = _knifeTool?.knifeProperty.Mode.ToString() ?? "Cut",
+            knifeEdgeSelect = _knifeTool?.knifeProperty.EdgeSelect ?? false,
+            knifeChainMode = _knifeTool?.knifeProperty.ChainMode ?? false
+            //------------------------
+
         };
 
         // エクスポート
@@ -817,21 +821,24 @@ public partial class SimpleMeshFactory
             }
 
             // KnifeToolの設定を復元
+            //ナイフツールの固有設定
             if (_knifeTool != null)
             {
                 if (!string.IsNullOrEmpty(state.knifeMode) &&
                     System.Enum.TryParse<KnifeMode>(state.knifeMode, out var knifeMode))
                 {
-                    _knifeTool.Mode = knifeMode;
+                    _knifeTool.knifeProperty.Mode = knifeMode;
                 }
-                _knifeTool.EdgeSelect = state.knifeEdgeSelect;
-                _knifeTool.ChainMode = state.knifeChainMode;
+                _knifeTool.knifeProperty.EdgeSelect = state.knifeEdgeSelect;
+                _knifeTool.knifeProperty.ChainMode = state.knifeChainMode;
 
                 if (_undoController != null)
                 {
-                    _undoController.EditorState.KnifeMode = _knifeTool.Mode;
-                    _undoController.EditorState.KnifeEdgeSelect = _knifeTool.EdgeSelect;
-                    _undoController.EditorState.KnifeChainMode = _knifeTool.ChainMode;
+                    //------------------------
+                    _undoController.EditorState.knifeProperty.Mode = _knifeTool.knifeProperty.Mode;
+                    _undoController.EditorState.knifeProperty.EdgeSelect = _knifeTool.knifeProperty.EdgeSelect;
+                    _undoController.EditorState.knifeProperty.ChainMode = _knifeTool.knifeProperty.ChainMode;
+                    //------------------------
                 }
             }
         }

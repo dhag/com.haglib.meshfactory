@@ -17,7 +17,7 @@ namespace MeshFactory.Tools
 
         private bool HandleVertexDragMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (_chainMode && !_autoChain && _firstVertexWorldPos.HasValue)
+            if (knifeProperty._chainMode && !knifeProperty._autoChain && _firstVertexWorldPos.HasValue)
             {
                 _isDragging = true;
                 _targetEdgeWorldPos = null;
@@ -65,12 +65,12 @@ namespace MeshFactory.Tools
                 {
                     float cutRatio = GetVertexCutRatio(ctx, _currentScreenPos, targetEdge.Value.edgeWorldPos);
 
-                    if (_chainMode && _autoChain)
+                    if (knifeProperty._chainMode && knifeProperty._autoChain)
                     {
                         ExecuteVertexChainCut(ctx, _firstVertexWorldPos.Value, targetEdge.Value.faceIndex, targetEdge.Value.edgeWorldPos, cutRatio);
                         _firstVertexWorldPos = null;
                     }
-                    else if (_chainMode && !_autoChain)
+                    else if (knifeProperty._chainMode && !knifeProperty._autoChain)
                     {
                         var cutPos = Vector3.Lerp(targetEdge.Value.edgeWorldPos.Item1, targetEdge.Value.edgeWorldPos.Item2, cutRatio);
                         ExecuteVertexCut(ctx, _firstVertexWorldPos.Value, targetEdge.Value.faceIndex, targetEdge.Value.edgeWorldPos, cutRatio);
@@ -131,7 +131,7 @@ namespace MeshFactory.Tools
                     }
                 }
             }
-            else if (_chainMode && !_autoChain && _firstVertexWorldPos.HasValue)
+            else if (knifeProperty._chainMode && !knifeProperty._autoChain && _firstVertexWorldPos.HasValue)
             {
                 var sp = ctx.WorldToScreenPos(_firstVertexWorldPos.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 Handles.color = Color.yellow;
@@ -189,12 +189,12 @@ namespace MeshFactory.Tools
                 {
                     float cutRatio = GetVertexCutRatio(ctx, mousePos, targetEdge.Value.edgeWorldPos);
 
-                    if (_chainMode && _autoChain)
+                    if (knifeProperty._chainMode && knifeProperty._autoChain)
                     {
                         ExecuteVertexChainCut(ctx, _firstVertexWorldPos.Value, targetEdge.Value.faceIndex, targetEdge.Value.edgeWorldPos, cutRatio);
                         _firstVertexWorldPos = null;
                     }
-                    else if (_chainMode && !_autoChain)
+                    else if (knifeProperty._chainMode && !knifeProperty._autoChain)
                     {
                         var cutPos = Vector3.Lerp(targetEdge.Value.edgeWorldPos.Item1, targetEdge.Value.edgeWorldPos.Item2, cutRatio);
                         ExecuteVertexCut(ctx, _firstVertexWorldPos.Value, targetEdge.Value.faceIndex, targetEdge.Value.edgeWorldPos, cutRatio);

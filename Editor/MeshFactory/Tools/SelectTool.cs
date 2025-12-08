@@ -1,5 +1,6 @@
 // Tools/SelectTool.cs
 // 選択専用ツール
+// IToolSettings対応版（設定なし）
 
 using UnityEditor;
 using UnityEngine;
@@ -12,6 +13,11 @@ namespace MeshFactory.Tools
     public class SelectTool : IEditTool
     {
         public string Name => "Select";
+
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {

@@ -47,11 +47,11 @@ namespace MeshFactory.Tools
             _currentScreenPos = _isShiftHeld ? SnapToAxis(_startScreenPos, mousePos) : mousePos;
             UpdateIntersections(ctx);
 
-            if (_chainMode)
+            if (knifeProperty._chainMode)
             {
-                if (_autoChain && _intersections.Count >= 2)
+                if (knifeProperty._autoChain && _intersections.Count >= 2)
                     ExecuteAutoDragChainCut(ctx);
-                else if (!_autoChain && _chainTargets.Count > 0)
+                else if (!knifeProperty._autoChain && _chainTargets.Count > 0)
                     ExecuteChainDragCut(ctx);
             }
             else if (_intersections.Count >= 2)
@@ -69,7 +69,7 @@ namespace MeshFactory.Tools
         private void DrawDragCutGizmo(ToolContext ctx)
         {
             if (_isDragging) DrawWire(ctx);
-            if (_chainMode && _chainTargets.Count > 0)
+            if (knifeProperty._chainMode && _chainTargets.Count > 0)
             {
                 DrawChainIntersections(ctx);
                 DrawChainTargetFaces(ctx);
@@ -167,7 +167,7 @@ namespace MeshFactory.Tools
                     return false;
                 }
 
-                if (_chainMode && _autoChain)
+                if (knifeProperty._chainMode && knifeProperty._autoChain)
                     ExecuteEdgeSelectAutoChainCut(ctx, _firstEdgeWorldPos.Value, secondEdgePos, _firstCutRatio, _cutRatio);
                 else
                     ExecuteEdgeSelectSingleCut(ctx, _firstEdgeWorldPos.Value, secondEdgePos, _firstCutRatio, _cutRatio);

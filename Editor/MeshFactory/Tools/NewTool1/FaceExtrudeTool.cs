@@ -19,6 +19,10 @@ namespace MeshFactory.Tools
     public class FaceExtrudeTool : IEditTool
     {
         public string Name => "Push";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 状態 ===
         private enum ExtrudeState

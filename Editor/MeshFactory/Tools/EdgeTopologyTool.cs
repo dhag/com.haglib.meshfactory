@@ -30,6 +30,10 @@ namespace MeshFactory.Tools
     public class EdgeTopologyTool : IEditTool
     {
         public string Name => "EdgeTopo";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 設定 ===
         private EdgeTopoMode _mode = EdgeTopoMode.Flip;

@@ -17,6 +17,10 @@ namespace MeshFactory.Tools
     public class MergeVerticesTool : IEditTool
     {
         public string Name => "Merge";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 設定 ===
         private float _threshold = 0.001f;

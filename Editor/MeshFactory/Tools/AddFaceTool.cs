@@ -56,6 +56,10 @@ namespace MeshFactory.Tools
     public class AddFaceTool : IEditTool
     {
         public string Name => "Add Face";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 設定 ===
         private AddFaceMode _mode = AddFaceMode.Quad;  // デフォルトは四角形

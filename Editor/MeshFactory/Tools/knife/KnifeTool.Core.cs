@@ -87,7 +87,7 @@ namespace MeshFactory.Tools
 
             if (ctx.MeshData == null || ctx.MeshData.FaceCount == 0) return;
 
-            if (_chainMode && _mode == KnifeMode.Cut)
+            if (knifeProperty._chainMode && knifeProperty._mode == KnifeMode.Cut)
             {
                 for (int faceIdx = 0; faceIdx < ctx.MeshData.FaceCount; faceIdx++)
                 {

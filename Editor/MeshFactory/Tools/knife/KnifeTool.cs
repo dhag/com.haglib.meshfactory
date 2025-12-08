@@ -23,21 +23,59 @@ namespace MeshFactory.Tools
         Erase
     }
 
+
+    public class KnifeProperty
+    {
+        public KnifeMode _mode = KnifeMode.Cut;
+        public bool _edgeSelect = false;   // true: 2辺/2点指定, false: ドラッグ//-----
+        public bool _chainMode = true;     //コメント間違い？？ 常にtrue（互換性のため残す）//-----
+        public bool _autoChain = true;     //コメント間違い？？ true: 自動連続, false: 手動連続//-----
+
+        // ================================================================
+        // プロパティ
+        // ================================================================
+
+        public KnifeMode Mode
+        {
+            get => _mode;
+            set => _mode = value;
+        }
+
+        public bool EdgeSelect
+        {
+            get => _edgeSelect;
+            set => _edgeSelect = value;
+        }
+
+        public bool ChainMode
+        {
+            get => _chainMode;
+            set => _chainMode = value;
+        }
+
+
+
+    }
+
     /// <summary>
     /// ナイフツール
     /// </summary>
     public partial class KnifeTool : IEditTool
     {
         public string Name => "Knife";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // ================================================================
         // 設定
         // ================================================================
 
-        private KnifeMode _mode = KnifeMode.Cut;
-        private bool _edgeSelect = false;   // true: 2辺/2点指定, false: ドラッグ
-        private bool _chainMode = true;     // 常にtrue（互換性のため残す）
-        private bool _autoChain = true;     // true: 自動連続, false: 手動連続
+        //private KnifeMode _mode = KnifeMode.Cut;
+        //private bool _edgeSelect = false;   // true: 2辺/2点指定, false: ドラッグ//-----
+        //private bool _chainMode = true;     //コメント間違い？？ 常にtrue（互換性のため残す）//-----
+        //private bool _autoChain = true;     //コメント間違い？？ true: 自動連続, false: 手動連続//-----
 
         // ================================================================
         // ドラッグ状態
@@ -122,15 +160,15 @@ namespace MeshFactory.Tools
         {
             if (ctx.MeshData == null) return false;
 
-            switch (_mode)
+            switch (knifeProperty._mode)
             {
                 case KnifeMode.Cut:
-                    return _edgeSelect 
+                    return knifeProperty._edgeSelect 
                         ? HandleEdgeSelectMouseDown(ctx, mousePos)
                         : HandleDragCutMouseDown(ctx, mousePos);
 
                 case KnifeMode.Vertex:
-                    return _edgeSelect
+                    return knifeProperty._edgeSelect
                         ? HandleVertexEdgeSelectMouseDown(ctx, mousePos)
                         : HandleVertexDragMouseDown(ctx, mousePos);
 
@@ -145,15 +183,15 @@ namespace MeshFactory.Tools
         {
             if (ctx.MeshData == null) return false;
 
-            switch (_mode)
+            switch (knifeProperty._mode)
             {
                 case KnifeMode.Cut:
-                    return _edgeSelect
+                    return knifeProperty._edgeSelect
                         ? HandleEdgeSelectMouseDrag(ctx, mousePos)
                         : HandleDragCutMouseDrag(ctx, mousePos);
 
                 case KnifeMode.Vertex:
-                    return _edgeSelect
+                    return knifeProperty._edgeSelect
                         ? HandleVertexEdgeSelectMouseDrag(ctx, mousePos)
                         : HandleVertexDragMouseDrag(ctx, mousePos);
 
@@ -172,13 +210,13 @@ namespace MeshFactory.Tools
                 return false;
             }
 
-            switch (_mode)
+            switch (knifeProperty._mode)
             {
                 case KnifeMode.Cut:
-                    return _edgeSelect ? false : HandleDragCutMouseUp(ctx, mousePos);
+                    return knifeProperty._edgeSelect ? false : HandleDragCutMouseUp(ctx, mousePos);
 
                 case KnifeMode.Vertex:
-                    return _edgeSelect ? false : HandleVertexDragMouseUp(ctx, mousePos);
+                    return knifeProperty._edgeSelect ? false : HandleVertexDragMouseUp(ctx, mousePos);
 
                 case KnifeMode.Erase:
                     return false;
@@ -191,15 +229,15 @@ namespace MeshFactory.Tools
         {
             if (ctx.MeshData == null) return;
 
-            switch (_mode)
+            switch (knifeProperty._mode)
             {
                 case KnifeMode.Cut:
-                    if (_edgeSelect) DrawEdgeSelectGizmo(ctx);
+                    if (knifeProperty._edgeSelect) DrawEdgeSelectGizmo(ctx);
                     else DrawDragCutGizmo(ctx);
                     break;
 
                 case KnifeMode.Vertex:
-                    if (_edgeSelect) DrawVertexEdgeSelectGizmo(ctx);
+                    if (knifeProperty._edgeSelect) DrawVertexEdgeSelectGizmo(ctx);
                     else DrawVertexDragGizmo(ctx);
                     break;
 
@@ -214,27 +252,27 @@ namespace MeshFactory.Tools
             EditorGUILayout.LabelField("Knife Tool", EditorStyles.boldLabel);
 
             // モード選択
-            int currentIndex = Array.IndexOf(ModeValues, _mode);
+            int currentIndex = Array.IndexOf(ModeValues, knifeProperty._mode);
             int newIndex = GUILayout.SelectionGrid(currentIndex, ModeNames, 3);
             if (newIndex != currentIndex && newIndex >= 0 && newIndex < ModeValues.Length)
             {
-                _mode = ModeValues[newIndex];
+                knifeProperty._mode = ModeValues[newIndex];
                 Reset();
             }
 
             EditorGUILayout.Space(5);
 
             // オプション
-            if (_mode != KnifeMode.Erase)
+            if (knifeProperty._mode != KnifeMode.Erase)
             {
-                _edgeSelect = EditorGUILayout.ToggleLeft("Edge Select (click 2 points)", _edgeSelect);
-                _autoChain = EditorGUILayout.ToggleLeft("Auto (continuous)", _autoChain);
+                knifeProperty._edgeSelect = EditorGUILayout.ToggleLeft("Edge Select (click 2 points)", knifeProperty._edgeSelect);
+                knifeProperty._autoChain = EditorGUILayout.ToggleLeft("Auto (continuous)", knifeProperty._autoChain);
             }
 
             EditorGUILayout.Space(5);
 
             // Cut + EdgeSelect用
-            if (_edgeSelect && _mode == KnifeMode.Cut)
+            if (knifeProperty._edgeSelect && knifeProperty._mode == KnifeMode.Cut)
             {
                 _edgeBisectMode = EditorGUILayout.ToggleLeft("Bisect (center)", _edgeBisectMode);
                 if (_edgeBisectMode)
@@ -244,15 +282,15 @@ namespace MeshFactory.Tools
             }
 
             // Vertex用
-            if (_mode == KnifeMode.Vertex)
+            if (knifeProperty._mode == KnifeMode.Vertex)
             {
                 _vertexBisectMode = EditorGUILayout.ToggleLeft("Bisect (center)", _vertexBisectMode);
             }
 
             // 選択状態表示
-            if (_edgeSelect)
+            if (knifeProperty._edgeSelect)
             {
-                if (_mode == KnifeMode.Cut && _firstEdgeWorldPos.HasValue)
+                if (knifeProperty._mode == KnifeMode.Cut && _firstEdgeWorldPos.HasValue)
                 {
                     EditorGUILayout.LabelField("First edge selected");
                     if (_beltEdgePositions.Count > 0)
@@ -260,7 +298,7 @@ namespace MeshFactory.Tools
                         EditorGUILayout.LabelField($"Edges to cut: {_beltEdgePositions.Count}");
                     }
                 }
-                else if (_mode == KnifeMode.Vertex && _firstVertexWorldPos.HasValue)
+                else if (knifeProperty._mode == KnifeMode.Vertex && _firstVertexWorldPos.HasValue)
                 {
                     EditorGUILayout.LabelField("Vertex selected");
                 }
@@ -278,15 +316,15 @@ namespace MeshFactory.Tools
 
         private string GetHelpText()
         {
-            switch (_mode)
+            switch (knifeProperty._mode)
             {
                 case KnifeMode.Cut:
-                    return _edgeSelect
+                    return knifeProperty._edgeSelect
                         ? "Click 2 edges to cut faces.\nESC: Cancel"
                         : "Drag to cut faces.\nShift: Snap to axis";
 
                 case KnifeMode.Vertex:
-                    return _edgeSelect
+                    return knifeProperty._edgeSelect
                         ? "Click vertex, then edge.\nESC: Cancel"
                         : "Drag from vertex to cut.\nShift: Snap to axis";
 
@@ -320,7 +358,7 @@ namespace MeshFactory.Tools
         // ================================================================
         // プロパティ
         // ================================================================
-
+       /*
         public KnifeMode Mode
         {
             get => _mode;
@@ -332,17 +370,31 @@ namespace MeshFactory.Tools
             get => _edgeSelect;
             set => _edgeSelect = value;
         }
-
-        public bool AutoChain
-        {
-            get => _autoChain;
-            set => _autoChain = value;
-        }
-
+ 
         public bool ChainMode
         {
             get => _chainMode;
             set => _chainMode = value;
         }
+        */
+
+        KnifeProperty _knifeProperty = new KnifeProperty();
+
+
+        public KnifeProperty knifeProperty
+        {
+            get => _knifeProperty;
+            set
+            {
+                _knifeProperty.Mode = value.Mode;
+                _knifeProperty.EdgeSelect = value.EdgeSelect;
+                _knifeProperty.ChainMode = value.ChainMode;
+            }
+        }
+
     }
+
+
 }
+
+

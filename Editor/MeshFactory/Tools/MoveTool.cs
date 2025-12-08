@@ -2,6 +2,7 @@
 // 頂点移動ツール（マグネット、軸ドラッグ含む）
 // 改善版: 正確な軸方向表示、中央ドラッグ対応
 // Edge/Face/Line選択時も移動可能
+// IToolSettings対応版
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,7 +22,40 @@ namespace MeshFactory.Tools
     {
         public string Name => "Move";
 
-        // === 状態 ===
+        // ================================================================
+        // 設定（IToolSettings対応）
+        // ================================================================
+
+        private MoveSettings _settings = new MoveSettings();
+
+        /// <summary>
+        /// ツール設定（Undo対応）
+        /// </summary>
+        public IToolSettings Settings => _settings;
+
+        // 設定へのショートカットプロパティ（後方互換 + 内部使用）
+        public bool UseMagnet
+        {
+            get => _settings.UseMagnet;
+            set => _settings.UseMagnet = value;
+        }
+
+        public float MagnetRadius
+        {
+            get => _settings.MagnetRadius;
+            set => _settings.MagnetRadius = value;
+        }
+
+        public FalloffType MagnetFalloff
+        {
+            get => _settings.MagnetFalloff;
+            set => _settings.MagnetFalloff = value;
+        }
+
+        // ================================================================
+        // 状態
+        // ================================================================
+
         private enum MoveState
         {
             Idle,
@@ -67,11 +101,6 @@ namespace MeshFactory.Tools
         private VertexPair _pendingEdgePair;
         private int _pendingFaceIndex = -1;
         private int _pendingLineIndex = -1;
-
-        // マグネット設定（外部から設定可能）
-        public bool UseMagnet { get; set; } = false;
-        public float MagnetRadius { get; set; } = 0.5f;
-        public FalloffType MagnetFalloff { get; set; } = FalloffType.Smooth;
 
         // ギズモ設定
         private Vector2 _gizmoScreenOffset = new Vector2(60, -60);  // 重心からのスクリーンオフセット（右上）
@@ -349,15 +378,17 @@ namespace MeshFactory.Tools
         public void DrawSettingsUI()
         {
             EditorGUILayout.LabelField("Magnet", EditorStyles.miniBoldLabel);
-            UseMagnet = EditorGUILayout.Toggle("Enable", UseMagnet);
 
-            using (new EditorGUI.DisabledScope(!UseMagnet))
+            // MoveSettingsを直接編集（Undo検出はGUI_Tools側で行う）
+            _settings.UseMagnet = EditorGUILayout.Toggle("Enable", _settings.UseMagnet);
+
+            using (new EditorGUI.DisabledScope(!_settings.UseMagnet))
             {
-                MagnetRadius = EditorGUILayout.Slider("Radius", MagnetRadius, 0.01f, 2f);
-                MagnetFalloff = (FalloffType)EditorGUILayout.EnumPopup("Falloff", MagnetFalloff);
+                _settings.MagnetRadius = EditorGUILayout.Slider("Radius", _settings.MagnetRadius, 0.01f, 2f);
+                _settings.MagnetFalloff = (FalloffType)EditorGUILayout.EnumPopup("Falloff", _settings.MagnetFalloff);
             }
 
-            // ギズモ設定
+            // ギズモ設定（Undo対象外）
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField("Gizmo", EditorStyles.miniBoldLabel);
             _gizmoScreenOffset.x = EditorGUILayout.Slider("Offset X", _gizmoScreenOffset.x, -100f, 100f);
@@ -609,24 +640,35 @@ namespace MeshFactory.Tools
             _state = MoveState.AxisDragging;
         }
 
-        private void MoveVerticesAlongAxis(Vector2 mousePos, ToolContext ctx)
+        private void MoveVerticesAlongAxis(Vector2 currentScreenPos, ToolContext ctx)
         {
-            if (_currentTransform == null || _draggingAxis == AxisType.None)
+            if (_currentTransform == null || ctx.MeshData == null)
                 return;
 
-            Vector3 axisDirection = GetAxisDirection(_draggingAxis);
+            // スクリーン上での移動量を計算
+            Vector2 screenDelta = currentScreenPos - _lastAxisDragScreenPos;
+            if (screenDelta.sqrMagnitude < 0.001f)
+                return;
 
-            // 選択頂点の重心を基準に軸方向を計算
-            Vector2 originScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Vector3 axisEnd = _selectionCenter + axisDirection * 0.3f;
-            Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            // ワールド座標での軸方向
+            Vector3 axisDir = GetAxisDirection(_draggingAxis);
 
-            Vector2 axisScreenDir = (axisEndScreen - originScreen).normalized;
-            Vector2 mouseDelta = mousePos - _lastAxisDragScreenPos;
-            float screenMovement = Vector2.Dot(mouseDelta, axisScreenDir);
-            float worldMovement = screenMovement * ctx.CameraDistance * 0.002f;
+            // 軸方向のスクリーン投影
+            Vector3 axisScreenDir = GetAxisScreenDirection(ctx, axisDir);
+            Vector2 axisScreenDir2D = new Vector2(axisScreenDir.x, axisScreenDir.y);
 
-            Vector3 worldDelta = axisDirection * worldMovement;
+            if (axisScreenDir2D.sqrMagnitude < 0.001f)
+                return;
+
+            axisScreenDir2D.Normalize();
+
+            // スクリーン移動量を軸方向成分に分解
+            float axisScreenMovement = Vector2.Dot(screenDelta, axisScreenDir2D);
+
+            // スクリーン移動量をワールド移動量に変換（距離依存のスケール）
+            float worldScale = ctx.CameraDistance * 0.001f;
+            Vector3 worldDelta = axisDir * axisScreenMovement * worldScale;
+
             _currentTransform.Apply(worldDelta);
 
             var affectedIndices = _currentTransform.GetAffectedIndices();
@@ -640,59 +682,11 @@ namespace MeshFactory.Tools
             }
 
             ctx.SyncMesh?.Invoke();
-
-            if (ctx.UndoController != null)
-            {
-                ctx.UndoController.MeshContext.MeshData = ctx.MeshData;
-            }
         }
 
         private void EndAxisDrag(ToolContext ctx)
         {
-            if (_currentTransform == null || ctx.MeshData == null)
-            {
-                _currentTransform = null;
-                _dragStartPositions = null;
-                _draggingAxis = AxisType.None;
-                return;
-            }
-
-            _currentTransform.End();
-
-            var affectedIndices = _currentTransform.GetAffectedIndices();
-            var originalPositions = _currentTransform.GetOriginalPositions();
-            var currentPositions = _currentTransform.GetCurrentPositions();
-
-            var movedIndices = new List<int>();
-            var oldPositions = new List<Vector3>();
-            var newPositions = new List<Vector3>();
-
-            for (int i = 0; i < affectedIndices.Length; i++)
-            {
-                if (Vector3.Distance(currentPositions[i], originalPositions[i]) > 0.0001f)
-                {
-                    movedIndices.Add(affectedIndices[i]);
-                    oldPositions.Add(originalPositions[i]);
-                    newPositions.Add(currentPositions[i]);
-                }
-            }
-
-            if (movedIndices.Count > 0 && ctx.UndoController != null)
-            {
-                string axisName = _draggingAxis.ToString();
-                string actionName = UseMagnet
-                    ? $"Magnet {axisName}-Axis Move {movedIndices.Count} Vertices"
-                    : $"{axisName}-Axis Move {movedIndices.Count} Vertices";
-
-                var record = new VertexMoveRecord(
-                    movedIndices.ToArray(),
-                    oldPositions.ToArray(),
-                    newPositions.ToArray());
-                ctx.UndoController.VertexEditStack.Record(record, actionName);
-            }
-
-            _currentTransform = null;
-            _dragStartPositions = null;
+            EndVertexMove(ctx);  // 共通処理
             _draggingAxis = AxisType.None;
         }
 
@@ -717,162 +711,106 @@ namespace MeshFactory.Tools
 
         private void EndCenterDrag(ToolContext ctx)
         {
-            if (_currentTransform == null || ctx.MeshData == null)
-            {
-                _currentTransform = null;
-                _dragStartPositions = null;
-                return;
-            }
-
-            _currentTransform.End();
-
-            var affectedIndices = _currentTransform.GetAffectedIndices();
-            var originalPositions = _currentTransform.GetOriginalPositions();
-            var currentPositions = _currentTransform.GetCurrentPositions();
-
-            var movedIndices = new List<int>();
-            var oldPositions = new List<Vector3>();
-            var newPositions = new List<Vector3>();
-
-            for (int i = 0; i < affectedIndices.Length; i++)
-            {
-                if (Vector3.Distance(currentPositions[i], originalPositions[i]) > 0.0001f)
-                {
-                    movedIndices.Add(affectedIndices[i]);
-                    oldPositions.Add(originalPositions[i]);
-                    newPositions.Add(currentPositions[i]);
-                }
-            }
-
-            if (movedIndices.Count > 0 && ctx.UndoController != null)
-            {
-                string actionName = UseMagnet
-                    ? $"Magnet Move {movedIndices.Count} Vertices"
-                    : $"Move {movedIndices.Count} Vertices";
-
-                var record = new VertexMoveRecord(
-                    movedIndices.ToArray(),
-                    oldPositions.ToArray(),
-                    newPositions.ToArray());
-                ctx.UndoController.VertexEditStack.Record(record, actionName);
-            }
-
-            _currentTransform = null;
-            _dragStartPositions = null;
+            EndVertexMove(ctx);  // 共通処理
         }
 
-        // === ギズモ描画 ===
+        // === ギズモ計算・描画 ===
 
         private void UpdateGizmoCenter(ToolContext ctx)
         {
-            if (_affectedVertices.Count > 0 && ctx.MeshData != null)
-            {
-                Vector3 sum = Vector3.zero;
-                int count = 0;
-                foreach (int idx in _affectedVertices)
-                {
-                    if (idx >= 0 && idx < ctx.MeshData.VertexCount)
-                    {
-                        sum += ctx.MeshData.Vertices[idx].Position;
-                        count++;
-                    }
-                }
-                if (count > 0)
-                {
-                    _selectionCenter = sum / count;
-                }
-
-                _gizmoCenter = _selectionCenter;
-            }
-            else
+            if (_affectedVertices.Count == 0 || ctx.MeshData == null)
             {
                 _selectionCenter = Vector3.zero;
                 _gizmoCenter = Vector3.zero;
+                return;
             }
+
+            // 選択頂点の重心を計算
+            _selectionCenter = Vector3.zero;
+            foreach (int vi in _affectedVertices)
+            {
+                if (vi >= 0 && vi < ctx.MeshData.VertexCount)
+                {
+                    _selectionCenter += ctx.MeshData.Vertices[vi].Position;
+                }
+            }
+            _selectionCenter /= _affectedVertices.Count;
+            _gizmoCenter = _selectionCenter;
         }
 
         private Vector2 GetGizmoOriginScreen(ToolContext ctx)
         {
-            Vector2 centerScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            // 重心のスクリーン座標 + オフセット
+            Vector2 centerScreen = ctx.WorldToScreenPos(
+                _selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             return centerScreen + _gizmoScreenOffset;
         }
 
-        /// <summary>
-        /// ワールド軸をスクリーン座標に投影して終点を取得
-        /// </summary>
-        private Vector2 GetAxisScreenEnd(ToolContext ctx, Vector3 axisDirection, Vector2 originScreen)
+        private Vector3 GetAxisScreenDirection(ToolContext ctx, Vector3 worldAxis)
         {
-            // ギズモ原点のワールド座標を逆算（近似）
-            // 実際には選択重心を基準に軸方向を計算
-            Vector2 centerScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Vector3 axisEnd = _selectionCenter + axisDirection * 0.1f;  // 短い距離で方向を取得
-            Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            // 重心からワールド軸方向に少し進んだ点のスクリーン座標を計算
+            Vector3 axisEnd = _selectionCenter + worldAxis;
+            Vector2 centerScreen = ctx.WorldToScreenPos(
+                _selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector2 axisEndScreen = ctx.WorldToScreenPos(
+                axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
-            // 方向ベクトルを正規化して長さを適用
-            Vector2 dir = (axisEndScreen - centerScreen).normalized;
+            Vector2 screenDir = (axisEndScreen - centerScreen).normalized;
+            return new Vector3(screenDir.x, screenDir.y, 0);
+        }
 
-            // 方向がほぼゼロ（軸がカメラを向いている）場合はデフォルト方向
-            if (dir.sqrMagnitude < 0.001f)
-            {
-                if (axisDirection == Vector3.right) dir = new Vector2(1, 0);
-                else if (axisDirection == Vector3.up) dir = new Vector2(0, -1);
-                else dir = new Vector2(-0.7f, 0.7f);
-            }
-
-            return originScreen + dir * _screenAxisLength;
+        private Vector2 GetAxisScreenEnd(ToolContext ctx, Vector3 worldAxis, Vector2 originScreen)
+        {
+            // スクリーン空間での軸方向を計算
+            Vector3 screenDir = GetAxisScreenDirection(ctx, worldAxis);
+            return originScreen + new Vector2(screenDir.x, screenDir.y) * _screenAxisLength;
         }
 
         private void DrawAxisGizmo(ToolContext ctx)
         {
             Vector2 originScreen = GetGizmoOriginScreen(ctx);
 
-            if (!ctx.PreviewRect.Contains(originScreen))
-                return;
+            // 軸の色
+            Color xColor = (_draggingAxis == AxisType.X || _hoveredAxis == AxisType.X)
+                ? new Color(1f, 0.3f, 0.3f, 1f)
+                : new Color(0.8f, 0.2f, 0.2f, 0.7f);
 
-            // 重心からギズモ原点への接続線（薄く）
-            Vector2 centerScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Handles.BeginGUI();
-            Handles.color = new Color(1f, 1f, 1f, 0.3f);
-            Handles.DrawDottedLine(
-                new Vector3(centerScreen.x, centerScreen.y, 0),
-                new Vector3(originScreen.x, originScreen.y, 0),
-                2f);
-            Handles.EndGUI();
+            Color yColor = (_draggingAxis == AxisType.Y || _hoveredAxis == AxisType.Y)
+                ? new Color(0.3f, 1f, 0.3f, 1f)
+                : new Color(0.2f, 0.8f, 0.2f, 0.7f);
 
-            // X軸（正確なワールド方向）
+            Color zColor = (_draggingAxis == AxisType.Z || _hoveredAxis == AxisType.Z)
+                ? new Color(0.3f, 0.3f, 1f, 1f)
+                : new Color(0.2f, 0.2f, 0.8f, 0.7f);
+
+            // 軸先端の位置
             Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
-            bool xHovered = _hoveredAxis == AxisType.X || _draggingAxis == AxisType.X;
-            Color xColor = xHovered ? Color.yellow : Color.red;
-            float xWidth = xHovered ? 3f : 2f;
-            DrawAxisLine(originScreen, xEnd, xColor, xWidth);
-            DrawAxisHandle(xEnd, xColor, xHovered, "X");
-
-            // Y軸（正確なワールド方向）
             Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
-            bool yHovered = _hoveredAxis == AxisType.Y || _draggingAxis == AxisType.Y;
-            Color yColor = yHovered ? Color.yellow : Color.green;
-            float yWidth = yHovered ? 3f : 2f;
-            DrawAxisLine(originScreen, yEnd, yColor, yWidth);
-            DrawAxisHandle(yEnd, yColor, yHovered, "Y");
-
-            // Z軸（正確なワールド方向）
             Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
-            bool zHovered = _hoveredAxis == AxisType.Z || _draggingAxis == AxisType.Z;
-            Color zColor = zHovered ? Color.yellow : Color.blue;
-            float zWidth = zHovered ? 3f : 2f;
-            DrawAxisLine(originScreen, zEnd, zColor, zWidth);
-            DrawAxisHandle(zEnd, zColor, zHovered, "Z");
 
-            // 中心点（大きく、ドラッグ可能）
-            bool centerHovered = _hoveredAxis == AxisType.Center || _state == MoveState.CenterDragging;
-            Color centerColor = centerHovered ? Color.yellow : new Color(0.9f, 0.9f, 0.9f);
-            float currentCenterSize = centerHovered ? _centerSize * 1.2f : _centerSize;
+            // 軸線を描画
+            float lineWidth = 2f;
+            DrawAxisLine(originScreen, xEnd, xColor, lineWidth);
+            DrawAxisLine(originScreen, yEnd, yColor, lineWidth);
+            DrawAxisLine(originScreen, zEnd, zColor, lineWidth);
 
+            // 軸先端のハンドルを描画
+            DrawAxisHandle(xEnd, xColor, _hoveredAxis == AxisType.X, "X");
+            DrawAxisHandle(yEnd, yColor, _hoveredAxis == AxisType.Y, "Y");
+            DrawAxisHandle(zEnd, zColor, _hoveredAxis == AxisType.Z, "Z");
+
+            // 中央の四角を描画
+            bool centerHovered = (_hoveredAxis == AxisType.Center);
+            Color centerColor = centerHovered
+                ? new Color(1f, 1f, 1f, 0.9f)
+                : new Color(0.8f, 0.8f, 0.8f, 0.6f);
+
+            float halfCenter = _centerSize / 2;
             Rect centerRect = new Rect(
-                originScreen.x - currentCenterSize / 2,
-                originScreen.y - currentCenterSize / 2,
-                currentCenterSize,
-                currentCenterSize);
+                originScreen.x - halfCenter,
+                originScreen.y - halfCenter,
+                _centerSize,
+                _centerSize);
             EditorGUI.DrawRect(centerRect, centerColor);
 
             // 中央の枠線

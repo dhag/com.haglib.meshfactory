@@ -21,6 +21,10 @@ namespace MeshFactory.Tools
     public class LineExtrudeTool : IEditTool
     {
         public string Name => "Line Extrude";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 状態 ===
         private List<int> _selectedLineIndices = new List<int>();

@@ -18,6 +18,10 @@ namespace MeshFactory.Tools
     public class PivotOffsetTool : IEditTool
     {
         public string Name => "Pivot Offset";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 状態 ===
         private enum ToolState

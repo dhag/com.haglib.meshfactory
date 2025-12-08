@@ -390,6 +390,11 @@ public partial class SimpleMeshFactory : EditorWindow
     /// <summary>
     /// Undo/Redo実行後のコールバック
     /// </summary>
+// SimpleMeshFactory.cs の OnUndoRedoPerformed メソッドを以下に置き換え
+
+    /// <summary>
+    /// Undo/Redo実行後のコールバック
+    /// </summary>
     private void OnUndoRedoPerformed()
     {
         // コンテキストからメッシュに反映
@@ -442,12 +447,24 @@ public partial class SimpleMeshFactory : EditorWindow
 
         RestoreToolFromName(editorState.CurrentToolName);
 
+        //ナイフツールの固有設定----
         if (_knifeTool != null)
         {
-            _knifeTool.Mode = editorState.KnifeMode;
-            _knifeTool.EdgeSelect = editorState.KnifeEdgeSelect;
-            _knifeTool.ChainMode = editorState.KnifeChainMode;
+            _knifeTool.knifeProperty.Mode = editorState.knifeProperty.Mode;
+            _knifeTool.knifeProperty.EdgeSelect = editorState.knifeProperty.EdgeSelect;
+            _knifeTool.knifeProperty.ChainMode = editorState.knifeProperty.ChainMode;
         }
+        //----------------------
+
+        // ★汎用ツール設定の復元（IToolSettings対応）
+        if (editorState.ToolSettings != null)
+        {
+            editorState.ToolSettings.ApplyToTool(_moveTool);
+            // 将来追加するツールも同様に:
+            // editorState.ToolSettings.ApplyToTool(_sculptTool);
+            // editorState.ToolSettings.ApplyToTool(_addFaceTool);
+        }
+        //----------------------
 
         _currentTool?.Reset();
         ResetEditState();
@@ -471,7 +488,6 @@ public partial class SimpleMeshFactory : EditorWindow
 
         Repaint();
     }
-
     private void SyncMeshFromData(MeshEntry entry)
     {
         if (entry.Data == null || entry.Mesh == null)

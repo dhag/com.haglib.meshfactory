@@ -22,6 +22,10 @@ namespace MeshFactory.Tools
     public class EdgeExtrudeTool : IEditTool
     {
         public string Name => "Extrude";
+        /// <summary>
+        /// 設定なし（nullを返す）
+        /// </summary>
+        public IToolSettings Settings => null;
 
         // === 状態（MoveToolと同じ構造） ===
         private enum ExtrudeState
