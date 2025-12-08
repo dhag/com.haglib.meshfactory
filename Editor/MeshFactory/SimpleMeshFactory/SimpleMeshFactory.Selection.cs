@@ -383,9 +383,25 @@ public partial class SimpleMeshFactory
 
         if (e.type == EventType.MouseDrag && e.button == 1)
         {
-            _rotationY += e.delta.x * 0.5f;
-            _rotationX += e.delta.y * 0.5f;
-            _rotationX = Mathf.Clamp(_rotationX, -89f, 89f);
+            if (e.control)
+            {
+                // Ctrl+右ドラッグ: Z軸回転（ロール）
+                _rotationZ += e.delta.x * 0.5f;
+            }
+            else
+            {
+                // 通常の右ドラッグ: X/Y軸回転
+                // Z回転分だけマウスデルタを逆回転して、画面上のドラッグ方向と一致させる
+                float zRad = -_rotationZ * Mathf.Deg2Rad;
+                float cos = Mathf.Cos(zRad);
+                float sin = Mathf.Sin(zRad);
+                float adjustedDeltaX = e.delta.x * cos - e.delta.y * sin;
+                float adjustedDeltaY = e.delta.x * sin + e.delta.y * cos;
+
+                _rotationY += adjustedDeltaX * 0.5f;
+                _rotationX += adjustedDeltaY * 0.5f;
+                _rotationX = Mathf.Clamp(_rotationX, -89f, 89f);
+            }
             e.Use();
             Repaint();
         }
@@ -424,9 +440,14 @@ public partial class SimpleMeshFactory
 
     private Vector3 ScreenDeltaToWorldDelta(Vector2 screenDelta, Vector3 camPos, Vector3 lookAt, float camDist, Rect previewRect)
     {
+        // カメラの向きを計算（Z軸ロール対応）
         Vector3 forward = (lookAt - camPos).normalized;
-        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
-        Vector3 up = Vector3.Cross(forward, right).normalized;
+        Quaternion lookRot = Quaternion.LookRotation(forward, Vector3.up);
+        Quaternion rollRot = Quaternion.AngleAxis(_rotationZ, Vector3.forward);
+        Quaternion camRot = lookRot * rollRot;
+
+        Vector3 right = camRot * Vector3.right;
+        Vector3 up = camRot * Vector3.up;
 
         float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
         float worldHeightAtDist = 2f * camDist * Mathf.Tan(fovRad / 2f);

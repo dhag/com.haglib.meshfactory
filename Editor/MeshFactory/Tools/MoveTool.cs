@@ -1,6 +1,8 @@
 // Tools/MoveTool.cs
 // 頂点移動ツール（マグネット、軸ドラッグ含む）
-
+// 改善版: 正確な軸方向表示、中央ドラッグ対応
+// Edge/Face/Line選択時も移動可能
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -8,6 +10,7 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Transforms;
 using MeshFactory.UndoSystem;
+using MeshFactory.Selection;
 
 namespace MeshFactory.Tools
 {
@@ -24,15 +27,18 @@ namespace MeshFactory.Tools
             Idle,
             PendingAction,
             MovingVertices,
-            AxisDragging
+            AxisDragging,
+            CenterDragging  // 中央ドラッグ（自由移動）
         }
         private MoveState _state = MoveState.Idle;
 
         // 軸
-        private enum AxisType { None, X, Y, Z }
+        private enum AxisType { None, X, Y, Z, Center }
         private AxisType _hitAxisOnMouseDown = AxisType.None;
         private AxisType _draggingAxis = AxisType.None;
+        private AxisType _hoveredAxis = AxisType.None;  // ホバー中の軸
         private Vector3 _gizmoCenter = Vector3.zero;
+        private Vector3 _selectionCenter = Vector3.zero;  // 選択頂点の重心
         private Vector2 _lastAxisDragScreenPos;
 
         // ドラッグ
@@ -42,10 +48,41 @@ namespace MeshFactory.Tools
         private IVertexTransform _currentTransform;
         private const float DragThreshold = 4f;
 
+        // 移動対象の頂点（Edge/Face/Line選択時も含む）
+        private HashSet<int> _affectedVertices = new HashSet<int>();
+
+        // ドラッグ開始時のヒット情報
+        private enum PendingHitType
+        {
+            None,
+            Vertex,
+            Edge,           // 新規Edge選択+移動
+            Face,           // 新規Face選択+移動
+            Line,           // 新規Line選択+移動
+            SelectedEdge,   // 既存選択Edgeの移動
+            SelectedFace,   // 既存選択Faceの移動
+            SelectedLine    // 既存選択Lineの移動
+        }
+        private PendingHitType _pendingHitType = PendingHitType.None;
+        private VertexPair _pendingEdgePair;
+        private int _pendingFaceIndex = -1;
+        private int _pendingLineIndex = -1;
+
         // マグネット設定（外部から設定可能）
         public bool UseMagnet { get; set; } = false;
         public float MagnetRadius { get; set; } = 0.5f;
         public FalloffType MagnetFalloff { get; set; } = FalloffType.Smooth;
+
+        // ギズモ設定
+        private Vector2 _gizmoScreenOffset = new Vector2(60, -60);  // 重心からのスクリーンオフセット（右上）
+        private float _handleHitRadius = 10f;  // 軸先端のヒット半径（ピクセル）
+        private float _handleSize = 8f;  // 軸先端のハンドルサイズ（ピクセル）
+        private float _centerSize = 14f;  // 中央四角のサイズ（ピクセル）
+        private float _screenAxisLength = 50f;  // 軸の長さ（ピクセル）
+
+        // 最後のマウス位置（ホバー検出用）
+        private Vector2 _lastMousePos;
+        private ToolContext _lastContext;
 
         // === IEditTool実装 ===
 
@@ -55,29 +92,130 @@ namespace MeshFactory.Tools
                 return false;
 
             _mouseDownScreenPos = mousePos;
+            _lastMousePos = mousePos;
+            _lastContext = ctx;
 
-            // 軸ギズモのヒットテスト（軸がヒットした場合のみ処理）
-            if (ctx.SelectedVertices.Count > 0)
+            // 影響を受ける頂点を更新
+            UpdateAffectedVertices(ctx);
+
+            // 軸ギズモのヒットテスト（軸先端または中央がヒットした場合のみ処理）
+            if (_affectedVertices.Count > 0)
             {
                 UpdateGizmoCenter(ctx);
-                _hitAxisOnMouseDown = FindAxisAtScreenPos(mousePos, ctx);
+                _hitAxisOnMouseDown = FindAxisHandleAtScreenPos(mousePos, ctx);
                 if (_hitAxisOnMouseDown != AxisType.None)
                 {
-                    StartAxisDrag(ctx, _hitAxisOnMouseDown);
-                    return true;  // 軸ドラッグ開始、イベント消費
+                    if (_hitAxisOnMouseDown == AxisType.Center)
+                    {
+                        StartCenterDrag(ctx);
+                    }
+                    else
+                    {
+                        StartAxisDrag(ctx, _hitAxisOnMouseDown);
+                    }
+                    return true;  // ドラッグ開始、イベント消費
                 }
             }
 
-            // 頂点のヒットテスト（移動準備のため記録するが、処理は委譲）
+            // =========================================================
+            // 既存選択のヒットテストを先に行う（新規選択より優先）
+            // =========================================================
+
+            // 選択された辺の線上をクリックした場合（既存選択の移動）
+            if (ctx.SelectionState != null && ctx.SelectionState.Edges.Count > 0)
+            {
+                if (IsClickOnSelectedEdge(ctx, mousePos))
+                {
+                    _state = MoveState.PendingAction;
+                    _pendingHitType = PendingHitType.SelectedEdge;
+                    return true;
+                }
+            }
+
+            // 選択されたLineの線上をクリックした場合
+            if (ctx.SelectionState != null && ctx.SelectionState.Lines.Count > 0)
+            {
+                if (IsClickOnSelectedLine(ctx, mousePos))
+                {
+                    _state = MoveState.PendingAction;
+                    _pendingHitType = PendingHitType.SelectedLine;
+                    return true;
+                }
+            }
+
+            // 選択された面の内部をクリックした場合
+            if (ctx.SelectionState != null && ctx.SelectionState.Faces.Count > 0)
+            {
+                if (IsClickOnSelectedFace(ctx, mousePos))
+                {
+                    _state = MoveState.PendingAction;
+                    _pendingHitType = PendingHitType.SelectedFace;
+                    return true;
+                }
+            }
+
+            // =========================================================
+            // 頂点のヒットテスト
+            // =========================================================
             _hitVertexOnMouseDown = ctx.FindVertexAtScreenPos(
-                mousePos, ctx.MeshData, ctx.PreviewRect, 
+                mousePos, ctx.MeshData, ctx.PreviewRect,
                 ctx.CameraPosition, ctx.CameraTarget, ctx.HandleRadius);
-            
-            // 頂点がヒットした場合のみ移動準備
+
+            // 頂点がヒットした場合は移動準備
             if (_hitVertexOnMouseDown >= 0)
             {
                 _state = MoveState.PendingAction;
+                _pendingHitType = PendingHitType.Vertex;
                 return false;  // SimpleMeshFactory側でクリック選択処理を行わせる
+            }
+
+            // =========================================================
+            // 新規Edge/Face/Lineのヒットテスト（既存選択がない場合）
+            // =========================================================
+            if (ctx.SelectionState != null && ctx.SelectionOps != null)
+            {
+                var mode = ctx.SelectionState.Mode;
+                Func<Vector3, Vector2> worldToScreen = (pos) =>
+                    ctx.WorldToScreenPos(pos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+                // Edgeモードでのヒットテスト
+                if (mode.Has(MeshSelectMode.Edge))
+                {
+                    var edgePair = ctx.SelectionOps.FindEdgeAt(mousePos, ctx.MeshData, worldToScreen);
+                    if (edgePair.HasValue)
+                    {
+                        _pendingEdgePair = edgePair.Value;
+                        _state = MoveState.PendingAction;
+                        _pendingHitType = PendingHitType.Edge;
+                        return true;
+                    }
+                }
+
+                // Lineモードでのヒットテスト
+                if (mode.Has(MeshSelectMode.Line))
+                {
+                    int lineIdx = ctx.SelectionOps.FindLineAt(mousePos, ctx.MeshData, worldToScreen);
+                    if (lineIdx >= 0)
+                    {
+                        _pendingLineIndex = lineIdx;
+                        _state = MoveState.PendingAction;
+                        _pendingHitType = PendingHitType.Line;
+                        return true;
+                    }
+                }
+
+                // Faceモードでのヒットテスト
+                if (mode.Has(MeshSelectMode.Face))
+                {
+                    int faceIdx = ctx.SelectionOps.FindFaceAt(mousePos, ctx.MeshData, worldToScreen, ctx.CameraPosition);
+                    if (faceIdx >= 0)
+                    {
+                        _pendingFaceIndex = faceIdx;
+                        _state = MoveState.PendingAction;
+                        _pendingHitType = PendingHitType.Face;
+                        return true;
+                    }
+                }
             }
 
             return false;  // 空白クリック、SimpleMeshFactory側で処理
@@ -85,21 +223,40 @@ namespace MeshFactory.Tools
 
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
+            _lastMousePos = mousePos;
+            _lastContext = ctx;
+
             switch (_state)
             {
                 case MoveState.PendingAction:
                     float dragDistance = Vector2.Distance(mousePos, _mouseDownScreenPos);
                     if (dragDistance > DragThreshold)
                     {
-                        if (_hitVertexOnMouseDown >= 0)
+                        // ヒットタイプに応じて選択+移動開始
+                        switch (_pendingHitType)
                         {
-                            StartVertexMove(ctx);
-                        }
-                        // 空白からのドラッグは矩形選択（メイン側で処理）
-                        else
-                        {
-                            _state = MoveState.Idle;
-                            return false;
+                            case PendingHitType.Vertex:
+                                if (_hitVertexOnMouseDown >= 0)
+                                    StartVertexMove(ctx);
+                                break;
+                            case PendingHitType.Edge:
+                                SelectAndStartMove_Edge(ctx);
+                                break;
+                            case PendingHitType.Face:
+                                SelectAndStartMove_Face(ctx);
+                                break;
+                            case PendingHitType.Line:
+                                SelectAndStartMove_Line(ctx);
+                                break;
+                            case PendingHitType.SelectedEdge:
+                            case PendingHitType.SelectedFace:
+                            case PendingHitType.SelectedLine:
+                                // 既存選択の移動
+                                StartMoveFromSelection(ctx);
+                                break;
+                            default:
+                                _state = MoveState.Idle;
+                                return false;
                         }
                     }
                     ctx.Repaint?.Invoke();
@@ -115,6 +272,24 @@ namespace MeshFactory.Tools
                     _lastAxisDragScreenPos = mousePos;
                     ctx.Repaint?.Invoke();
                     return true;
+
+                case MoveState.CenterDragging:
+                    MoveSelectedVertices(delta, ctx);
+                    ctx.Repaint?.Invoke();
+                    return true;
+            }
+
+            // ホバー更新
+            UpdateAffectedVertices(ctx);
+            if (_state == MoveState.Idle && _affectedVertices.Count > 0)
+            {
+                UpdateGizmoCenter(ctx);
+                var newHovered = FindAxisHandleAtScreenPos(mousePos, ctx);
+                if (newHovered != _hoveredAxis)
+                {
+                    _hoveredAxis = newHovered;
+                    ctx.Repaint?.Invoke();
+                }
             }
 
             return false;
@@ -123,7 +298,7 @@ namespace MeshFactory.Tools
         public bool OnMouseUp(ToolContext ctx, Vector2 mousePos)
         {
             bool handled = false;
-            
+
             switch (_state)
             {
                 case MoveState.MovingVertices:
@@ -135,7 +310,12 @@ namespace MeshFactory.Tools
                     EndAxisDrag(ctx);
                     handled = true;
                     break;
-                    
+
+                case MoveState.CenterDragging:
+                    EndCenterDrag(ctx);
+                    handled = true;
+                    break;
+
                 case MoveState.PendingAction:
                     // クリック（ドラッグなし）はSimpleMeshFactory側で選択処理
                     handled = false;
@@ -149,10 +329,20 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.SelectedVertices == null || ctx.SelectedVertices.Count == 0)
+            _lastContext = ctx;
+            UpdateAffectedVertices(ctx);
+
+            if (_affectedVertices.Count == 0)
                 return;
 
             UpdateGizmoCenter(ctx);
+
+            // ホバー更新（MouseMoveイベントがない場合用）
+            if (_state == MoveState.Idle)
+            {
+                _hoveredAxis = FindAxisHandleAtScreenPos(_lastMousePos, ctx);
+            }
+
             DrawAxisGizmo(ctx);
         }
 
@@ -166,9 +356,27 @@ namespace MeshFactory.Tools
                 MagnetRadius = EditorGUILayout.Slider("Radius", MagnetRadius, 0.01f, 2f);
                 MagnetFalloff = (FalloffType)EditorGUILayout.EnumPopup("Falloff", MagnetFalloff);
             }
+
+            // ギズモ設定
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Gizmo", EditorStyles.miniBoldLabel);
+            _gizmoScreenOffset.x = EditorGUILayout.Slider("Offset X", _gizmoScreenOffset.x, -100f, 100f);
+            _gizmoScreenOffset.y = EditorGUILayout.Slider("Offset Y", _gizmoScreenOffset.y, -100f, 100f);
+
+            // 選択情報表示
+            EditorGUILayout.Space(5);
+            if (_affectedVertices.Count > 0)
+            {
+                EditorGUILayout.HelpBox($"移動対象: {_affectedVertices.Count} 頂点", MessageType.None);
+            }
         }
 
-        public void OnActivate(ToolContext ctx) { }
+        public void OnActivate(ToolContext ctx)
+        {
+            _lastContext = ctx;
+            UpdateAffectedVertices(ctx);
+        }
+
         public void OnDeactivate(ToolContext ctx) { Reset(); }
 
         public void Reset()
@@ -177,8 +385,39 @@ namespace MeshFactory.Tools
             _hitVertexOnMouseDown = -1;
             _hitAxisOnMouseDown = AxisType.None;
             _draggingAxis = AxisType.None;
+            _hoveredAxis = AxisType.None;
             _currentTransform = null;
             _dragStartPositions = null;
+            _affectedVertices.Clear();
+
+            // Pending情報クリア
+            _pendingHitType = PendingHitType.None;
+            _pendingEdgePair = default;
+            _pendingFaceIndex = -1;
+            _pendingLineIndex = -1;
+        }
+
+        // === 影響を受ける頂点の更新 ===
+
+        private void UpdateAffectedVertices(ToolContext ctx)
+        {
+            _affectedVertices.Clear();
+
+            if (ctx.SelectionState != null)
+            {
+                var affected = ctx.SelectionState.GetAllAffectedVertices(ctx.MeshData);
+                foreach (var v in affected)
+                {
+                    _affectedVertices.Add(v);
+                }
+            }
+            else if (ctx.SelectedVertices != null)
+            {
+                foreach (var v in ctx.SelectedVertices)
+                {
+                    _affectedVertices.Add(v);
+                }
+            }
         }
 
         // === 頂点移動処理 ===
@@ -188,12 +427,19 @@ namespace MeshFactory.Tools
             var oldSelection = new HashSet<int>(ctx.SelectedVertices);
             bool selectionChanged = false;
 
-            // 未選択頂点をドラッグした場合、その頂点のみ選択
-            if (!ctx.SelectedVertices.Contains(_hitVertexOnMouseDown))
+            if (_hitVertexOnMouseDown >= 0 && !_affectedVertices.Contains(_hitVertexOnMouseDown))
             {
                 ctx.SelectedVertices.Clear();
                 ctx.SelectedVertices.Add(_hitVertexOnMouseDown);
+
+                if (ctx.SelectionState != null)
+                {
+                    ctx.SelectionState.ClearAll();
+                    ctx.SelectionState.SelectVertex(_hitVertexOnMouseDown, false);
+                }
+
                 selectionChanged = true;
+                UpdateAffectedVertices(ctx);
             }
 
             if (selectionChanged)
@@ -201,10 +447,58 @@ namespace MeshFactory.Tools
                 ctx.RecordSelectionChange?.Invoke(oldSelection, ctx.SelectedVertices);
             }
 
-            // ドラッグ開始位置を記録
+            BeginMove(ctx);
+        }
+
+        private void SelectAndStartMove_Edge(ToolContext ctx)
+        {
+            if (ctx.SelectionState == null) return;
+
+            ctx.SelectionState.ClearAll();
+            ctx.SelectionState.SelectEdge(_pendingEdgePair, false);
+            ctx.SelectedVertices.Clear();
+            UpdateAffectedVertices(ctx);
+            BeginMove(ctx);
+        }
+
+        private void SelectAndStartMove_Face(ToolContext ctx)
+        {
+            if (ctx.SelectionState == null || _pendingFaceIndex < 0) return;
+
+            ctx.SelectionState.ClearAll();
+            ctx.SelectionState.SelectFace(_pendingFaceIndex, false);
+            ctx.SelectedVertices.Clear();
+            UpdateAffectedVertices(ctx);
+            BeginMove(ctx);
+        }
+
+        private void SelectAndStartMove_Line(ToolContext ctx)
+        {
+            if (ctx.SelectionState == null || _pendingLineIndex < 0) return;
+
+            ctx.SelectionState.ClearAll();
+            ctx.SelectionState.SelectLine(_pendingLineIndex, false);
+            ctx.SelectedVertices.Clear();
+            UpdateAffectedVertices(ctx);
+            BeginMove(ctx);
+        }
+
+        private void StartMoveFromSelection(ToolContext ctx)
+        {
+            UpdateAffectedVertices(ctx);
+            BeginMove(ctx);
+        }
+
+        private void BeginMove(ToolContext ctx)
+        {
+            if (_affectedVertices.Count == 0)
+            {
+                _state = MoveState.Idle;
+                return;
+            }
+
             _dragStartPositions = ctx.MeshData.Vertices.Select(v => v.Position).ToArray();
 
-            // 変形オブジェクトを作成
             if (UseMagnet)
             {
                 _currentTransform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff);
@@ -214,22 +508,21 @@ namespace MeshFactory.Tools
                 _currentTransform = new SimpleMoveTransform();
             }
 
-            _currentTransform.Begin(ctx.MeshData, ctx.SelectedVertices, _dragStartPositions);
+            _currentTransform.Begin(ctx.MeshData, _affectedVertices, _dragStartPositions);
             _state = MoveState.MovingVertices;
         }
 
         private void MoveSelectedVertices(Vector2 screenDelta, ToolContext ctx)
         {
-            if (ctx.SelectedVertices.Count == 0 || _currentTransform == null)
+            if (_affectedVertices.Count == 0 || _currentTransform == null)
                 return;
 
             Vector3 worldDelta = ctx.ScreenDeltaToWorldDelta(
-                screenDelta, ctx.CameraPosition, ctx.CameraTarget, 
+                screenDelta, ctx.CameraPosition, ctx.CameraTarget,
                 ctx.CameraDistance, ctx.PreviewRect);
 
             _currentTransform.Apply(worldDelta);
 
-            // オフセット更新
             var affectedIndices = _currentTransform.GetAffectedIndices();
             foreach (int idx in affectedIndices)
             {
@@ -259,7 +552,6 @@ namespace MeshFactory.Tools
 
             _currentTransform.End();
 
-            // Undo記録
             var affectedIndices = _currentTransform.GetAffectedIndices();
             var originalPositions = _currentTransform.GetOriginalPositions();
             var currentPositions = _currentTransform.GetCurrentPositions();
@@ -313,7 +605,7 @@ namespace MeshFactory.Tools
                 _currentTransform = new SimpleMoveTransform();
             }
 
-            _currentTransform.Begin(ctx.MeshData, ctx.SelectedVertices, _dragStartPositions);
+            _currentTransform.Begin(ctx.MeshData, _affectedVertices, _dragStartPositions);
             _state = MoveState.AxisDragging;
         }
 
@@ -324,8 +616,9 @@ namespace MeshFactory.Tools
 
             Vector3 axisDirection = GetAxisDirection(_draggingAxis);
 
-            Vector2 originScreen = ctx.WorldToScreenPos(_gizmoCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Vector3 axisEnd = _gizmoCenter + axisDirection * 0.3f;
+            // 選択頂点の重心を基準に軸方向を計算
+            Vector2 originScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector3 axisEnd = _selectionCenter + axisDirection * 0.3f;
             Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
             Vector2 axisScreenDir = (axisEndScreen - originScreen).normalized;
@@ -403,127 +696,251 @@ namespace MeshFactory.Tools
             _draggingAxis = AxisType.None;
         }
 
+        // === 中央ドラッグ処理 ===
+
+        private void StartCenterDrag(ToolContext ctx)
+        {
+            _dragStartPositions = ctx.MeshData.Vertices.Select(v => v.Position).ToArray();
+
+            if (UseMagnet)
+            {
+                _currentTransform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff);
+            }
+            else
+            {
+                _currentTransform = new SimpleMoveTransform();
+            }
+
+            _currentTransform.Begin(ctx.MeshData, _affectedVertices, _dragStartPositions);
+            _state = MoveState.CenterDragging;
+        }
+
+        private void EndCenterDrag(ToolContext ctx)
+        {
+            if (_currentTransform == null || ctx.MeshData == null)
+            {
+                _currentTransform = null;
+                _dragStartPositions = null;
+                return;
+            }
+
+            _currentTransform.End();
+
+            var affectedIndices = _currentTransform.GetAffectedIndices();
+            var originalPositions = _currentTransform.GetOriginalPositions();
+            var currentPositions = _currentTransform.GetCurrentPositions();
+
+            var movedIndices = new List<int>();
+            var oldPositions = new List<Vector3>();
+            var newPositions = new List<Vector3>();
+
+            for (int i = 0; i < affectedIndices.Length; i++)
+            {
+                if (Vector3.Distance(currentPositions[i], originalPositions[i]) > 0.0001f)
+                {
+                    movedIndices.Add(affectedIndices[i]);
+                    oldPositions.Add(originalPositions[i]);
+                    newPositions.Add(currentPositions[i]);
+                }
+            }
+
+            if (movedIndices.Count > 0 && ctx.UndoController != null)
+            {
+                string actionName = UseMagnet
+                    ? $"Magnet Move {movedIndices.Count} Vertices"
+                    : $"Move {movedIndices.Count} Vertices";
+
+                var record = new VertexMoveRecord(
+                    movedIndices.ToArray(),
+                    oldPositions.ToArray(),
+                    newPositions.ToArray());
+                ctx.UndoController.VertexEditStack.Record(record, actionName);
+            }
+
+            _currentTransform = null;
+            _dragStartPositions = null;
+        }
+
         // === ギズモ描画 ===
 
         private void UpdateGizmoCenter(ToolContext ctx)
         {
-            if (ctx.SelectedVertices.Count > 0 && ctx.MeshData != null)
+            if (_affectedVertices.Count > 0 && ctx.MeshData != null)
             {
                 Vector3 sum = Vector3.zero;
-                foreach (int idx in ctx.SelectedVertices)
+                int count = 0;
+                foreach (int idx in _affectedVertices)
                 {
                     if (idx >= 0 && idx < ctx.MeshData.VertexCount)
                     {
                         sum += ctx.MeshData.Vertices[idx].Position;
+                        count++;
                     }
                 }
-                _gizmoCenter = sum / ctx.SelectedVertices.Count;
+                if (count > 0)
+                {
+                    _selectionCenter = sum / count;
+                }
+
+                _gizmoCenter = _selectionCenter;
             }
             else
             {
+                _selectionCenter = Vector3.zero;
                 _gizmoCenter = Vector3.zero;
             }
         }
 
+        private Vector2 GetGizmoOriginScreen(ToolContext ctx)
+        {
+            Vector2 centerScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            return centerScreen + _gizmoScreenOffset;
+        }
+
+        /// <summary>
+        /// ワールド軸をスクリーン座標に投影して終点を取得
+        /// </summary>
+        private Vector2 GetAxisScreenEnd(ToolContext ctx, Vector3 axisDirection, Vector2 originScreen)
+        {
+            // ギズモ原点のワールド座標を逆算（近似）
+            // 実際には選択重心を基準に軸方向を計算
+            Vector2 centerScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector3 axisEnd = _selectionCenter + axisDirection * 0.1f;  // 短い距離で方向を取得
+            Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+            // 方向ベクトルを正規化して長さを適用
+            Vector2 dir = (axisEndScreen - centerScreen).normalized;
+
+            // 方向がほぼゼロ（軸がカメラを向いている）場合はデフォルト方向
+            if (dir.sqrMagnitude < 0.001f)
+            {
+                if (axisDirection == Vector3.right) dir = new Vector2(1, 0);
+                else if (axisDirection == Vector3.up) dir = new Vector2(0, -1);
+                else dir = new Vector2(-0.7f, 0.7f);
+            }
+
+            return originScreen + dir * _screenAxisLength;
+        }
+
         private void DrawAxisGizmo(ToolContext ctx)
         {
-            Vector2 originScreen = ctx.WorldToScreenPos(_gizmoCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector2 originScreen = GetGizmoOriginScreen(ctx);
 
             if (!ctx.PreviewRect.Contains(originScreen))
                 return;
 
-            float axisLength = 0.3f;
+            // 重心からギズモ原点への接続線（薄く）
+            Vector2 centerScreen = ctx.WorldToScreenPos(_selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Handles.BeginGUI();
+            Handles.color = new Color(1f, 1f, 1f, 0.3f);
+            Handles.DrawDottedLine(
+                new Vector3(centerScreen.x, centerScreen.y, 0),
+                new Vector3(originScreen.x, originScreen.y, 0),
+                2f);
+            Handles.EndGUI();
 
-            // X軸
-            Vector3 xEnd = _gizmoCenter + Vector3.right * axisLength;
-            Vector2 xScreen = ctx.WorldToScreenPos(xEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Color xColor = _draggingAxis == AxisType.X ? Color.yellow : Color.red;
-            float xWidth = _draggingAxis == AxisType.X ? 5f : 3f;
-            DrawAxisArrow(originScreen, xScreen, xColor, "X", xWidth);
+            // X軸（正確なワールド方向）
+            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
+            bool xHovered = _hoveredAxis == AxisType.X || _draggingAxis == AxisType.X;
+            Color xColor = xHovered ? Color.yellow : Color.red;
+            float xWidth = xHovered ? 3f : 2f;
+            DrawAxisLine(originScreen, xEnd, xColor, xWidth);
+            DrawAxisHandle(xEnd, xColor, xHovered, "X");
 
-            // Y軸
-            Vector3 yEnd = _gizmoCenter + Vector3.up * axisLength;
-            Vector2 yScreen = ctx.WorldToScreenPos(yEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Color yColor = _draggingAxis == AxisType.Y ? Color.yellow : Color.green;
-            float yWidth = _draggingAxis == AxisType.Y ? 5f : 3f;
-            DrawAxisArrow(originScreen, yScreen, yColor, "Y", yWidth);
+            // Y軸（正確なワールド方向）
+            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
+            bool yHovered = _hoveredAxis == AxisType.Y || _draggingAxis == AxisType.Y;
+            Color yColor = yHovered ? Color.yellow : Color.green;
+            float yWidth = yHovered ? 3f : 2f;
+            DrawAxisLine(originScreen, yEnd, yColor, yWidth);
+            DrawAxisHandle(yEnd, yColor, yHovered, "Y");
 
-            // Z軸
-            Vector3 zEnd = _gizmoCenter + Vector3.forward * axisLength;
-            Vector2 zScreen = ctx.WorldToScreenPos(zEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Color zColor = _draggingAxis == AxisType.Z ? Color.yellow : Color.blue;
-            float zWidth = _draggingAxis == AxisType.Z ? 5f : 3f;
-            DrawAxisArrow(originScreen, zScreen, zColor, "Z", zWidth);
+            // Z軸（正確なワールド方向）
+            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
+            bool zHovered = _hoveredAxis == AxisType.Z || _draggingAxis == AxisType.Z;
+            Color zColor = zHovered ? Color.yellow : Color.blue;
+            float zWidth = zHovered ? 3f : 2f;
+            DrawAxisLine(originScreen, zEnd, zColor, zWidth);
+            DrawAxisHandle(zEnd, zColor, zHovered, "Z");
 
-            // 中心点
-            float centerSize = 6f;
-            EditorGUI.DrawRect(new Rect(
-                originScreen.x - centerSize / 2,
-                originScreen.y - centerSize / 2,
-                centerSize,
-                centerSize), Color.white);
+            // 中心点（大きく、ドラッグ可能）
+            bool centerHovered = _hoveredAxis == AxisType.Center || _state == MoveState.CenterDragging;
+            Color centerColor = centerHovered ? Color.yellow : new Color(0.9f, 0.9f, 0.9f);
+            float currentCenterSize = centerHovered ? _centerSize * 1.2f : _centerSize;
+
+            Rect centerRect = new Rect(
+                originScreen.x - currentCenterSize / 2,
+                originScreen.y - currentCenterSize / 2,
+                currentCenterSize,
+                currentCenterSize);
+            EditorGUI.DrawRect(centerRect, centerColor);
+
+            // 中央の枠線
+            Handles.BeginGUI();
+            Handles.color = centerHovered ? Color.white : new Color(0.5f, 0.5f, 0.5f);
+            Handles.DrawSolidRectangleWithOutline(centerRect, Color.clear, Handles.color);
+            Handles.EndGUI();
         }
 
-        private void DrawAxisArrow(Vector2 from, Vector2 to, Color color, string label, float lineWidth = 3f)
+        private void DrawAxisLine(Vector2 from, Vector2 to, Color color, float lineWidth)
         {
             Handles.BeginGUI();
             Handles.color = color;
-
-            Vector3 from3 = new Vector3(from.x, from.y, 0);
-            Vector3 to3 = new Vector3(to.x, to.y, 0);
-            Handles.DrawAAPolyLine(lineWidth, from3, to3);
-
-            Vector2 dir = (to - from).normalized;
-            float arrowSize = 8f;
-            Vector2 perpendicular = new Vector2(-dir.y, dir.x);
-
-            Vector2 arrowLeft = to - dir * arrowSize + perpendicular * arrowSize * 0.5f;
-            Vector2 arrowRight = to - dir * arrowSize - perpendicular * arrowSize * 0.5f;
-
-            Handles.DrawAAPolyLine(lineWidth, to3, new Vector3(arrowLeft.x, arrowLeft.y, 0));
-            Handles.DrawAAPolyLine(lineWidth, to3, new Vector3(arrowRight.x, arrowRight.y, 0));
-
+            Handles.DrawAAPolyLine(lineWidth,
+                new Vector3(from.x, from.y, 0),
+                new Vector3(to.x, to.y, 0));
             Handles.EndGUI();
-
-            GUIStyle style = new GUIStyle(EditorStyles.boldLabel);
-            style.normal.textColor = color;
-            GUI.Label(new Rect(to.x + 4, to.y - 8, 20, 16), label, style);
         }
 
-        private AxisType FindAxisAtScreenPos(Vector2 screenPos, ToolContext ctx)
+        private void DrawAxisHandle(Vector2 pos, Color color, bool hovered, string label)
         {
-            float axisLength = 0.3f;
-            float hitRadius = 12f;
+            float size = hovered ? _handleSize * 1.3f : _handleSize;
 
-            Vector2 originScreen = ctx.WorldToScreenPos(_gizmoCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Rect handleRect = new Rect(pos.x - size / 2, pos.y - size / 2, size, size);
+            EditorGUI.DrawRect(handleRect, color);
 
-            Vector3 xEnd = _gizmoCenter + Vector3.right * axisLength;
-            Vector2 xScreen = ctx.WorldToScreenPos(xEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            if (DistanceToLineSegment(screenPos, originScreen, xScreen) < hitRadius)
+            Handles.BeginGUI();
+            Handles.color = Color.white;
+            Handles.DrawSolidRectangleWithOutline(handleRect, Color.clear, Color.white);
+            Handles.EndGUI();
+
+            GUIStyle style = new GUIStyle(EditorStyles.miniLabel);
+            style.normal.textColor = color;
+            style.fontStyle = hovered ? FontStyle.Bold : FontStyle.Normal;
+            GUI.Label(new Rect(pos.x + size / 2 + 2, pos.y - 8, 20, 16), label, style);
+        }
+
+        private AxisType FindAxisHandleAtScreenPos(Vector2 screenPos, ToolContext ctx)
+        {
+            if (_affectedVertices.Count == 0)
+                return AxisType.None;
+
+            Vector2 originScreen = GetGizmoOriginScreen(ctx);
+
+            // 中央四角のヒットテスト（優先）
+            float halfCenter = _centerSize / 2 + 2;  // 少し大きめ
+            if (Mathf.Abs(screenPos.x - originScreen.x) < halfCenter &&
+                Mathf.Abs(screenPos.y - originScreen.y) < halfCenter)
+            {
+                return AxisType.Center;
+            }
+
+            // X軸先端
+            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
+            if (Vector2.Distance(screenPos, xEnd) < _handleHitRadius)
                 return AxisType.X;
 
-            Vector3 yEnd = _gizmoCenter + Vector3.up * axisLength;
-            Vector2 yScreen = ctx.WorldToScreenPos(yEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            if (DistanceToLineSegment(screenPos, originScreen, yScreen) < hitRadius)
+            // Y軸先端
+            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
+            if (Vector2.Distance(screenPos, yEnd) < _handleHitRadius)
                 return AxisType.Y;
 
-            Vector3 zEnd = _gizmoCenter + Vector3.forward * axisLength;
-            Vector2 zScreen = ctx.WorldToScreenPos(zEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            if (DistanceToLineSegment(screenPos, originScreen, zScreen) < hitRadius)
+            // Z軸先端
+            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
+            if (Vector2.Distance(screenPos, zEnd) < _handleHitRadius)
                 return AxisType.Z;
 
             return AxisType.None;
-        }
-
-        private float DistanceToLineSegment(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
-        {
-            Vector2 line = lineEnd - lineStart;
-            float len = line.magnitude;
-            if (len < 0.001f) return Vector2.Distance(point, lineStart);
-
-            float t = Mathf.Clamp01(Vector2.Dot(point - lineStart, line) / (len * len));
-            Vector2 projection = lineStart + t * line;
-            return Vector2.Distance(point, projection);
         }
 
         private Vector3 GetAxisDirection(AxisType axis)
@@ -537,9 +954,135 @@ namespace MeshFactory.Tools
             }
         }
 
-        // === 状態アクセス（メイン側で必要な場合用） ===
+        // === 状態アクセス ===
 
         public bool IsIdle => _state == MoveState.Idle;
-        public bool IsMoving => _state == MoveState.MovingVertices || _state == MoveState.AxisDragging;
+        public bool IsMoving => _state == MoveState.MovingVertices || _state == MoveState.AxisDragging || _state == MoveState.CenterDragging;
+
+        // === 辺・面のヒットテスト ===
+
+        private bool IsClickOnSelectedEdge(ToolContext ctx, Vector2 mousePos)
+        {
+            if (ctx.MeshData == null || ctx.SelectionState == null)
+                return false;
+
+            const float hitDistance = 8f;
+
+            foreach (var edge in ctx.SelectionState.Edges)
+            {
+                if (edge.V1 < 0 || edge.V1 >= ctx.MeshData.VertexCount ||
+                    edge.V2 < 0 || edge.V2 >= ctx.MeshData.VertexCount)
+                    continue;
+
+                Vector3 p1 = ctx.MeshData.Vertices[edge.V1].Position;
+                Vector3 p2 = ctx.MeshData.Vertices[edge.V2].Position;
+
+                Vector2 sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector2 sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+                float dist = DistanceToLineSegment(mousePos, sp1, sp2);
+                if (dist < hitDistance)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsClickOnSelectedFace(ToolContext ctx, Vector2 mousePos)
+        {
+            if (ctx.MeshData == null || ctx.SelectionState == null)
+                return false;
+
+            foreach (int faceIdx in ctx.SelectionState.Faces)
+            {
+                if (faceIdx < 0 || faceIdx >= ctx.MeshData.FaceCount)
+                    continue;
+
+                var face = ctx.MeshData.Faces[faceIdx];
+                if (face.VertexCount < 3)
+                    continue;
+
+                var screenPoints = new List<Vector2>();
+                foreach (int vIdx in face.VertexIndices)
+                {
+                    if (vIdx >= 0 && vIdx < ctx.MeshData.VertexCount)
+                    {
+                        Vector3 p = ctx.MeshData.Vertices[vIdx].Position;
+                        Vector2 sp = ctx.WorldToScreenPos(p, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                        screenPoints.Add(sp);
+                    }
+                }
+
+                if (screenPoints.Count >= 3 && IsPointInPolygon(mousePos, screenPoints))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsClickOnSelectedLine(ToolContext ctx, Vector2 mousePos)
+        {
+            if (ctx.MeshData == null || ctx.SelectionState == null)
+                return false;
+
+            const float hitDistance = 8f;
+
+            foreach (int lineIdx in ctx.SelectionState.Lines)
+            {
+                if (lineIdx < 0 || lineIdx >= ctx.MeshData.FaceCount)
+                    continue;
+
+                var face = ctx.MeshData.Faces[lineIdx];
+                if (face.VertexCount != 2)
+                    continue;
+
+                int v1 = face.VertexIndices[0];
+                int v2 = face.VertexIndices[1];
+
+                if (v1 < 0 || v1 >= ctx.MeshData.VertexCount ||
+                    v2 < 0 || v2 >= ctx.MeshData.VertexCount)
+                    continue;
+
+                Vector3 p1 = ctx.MeshData.Vertices[v1].Position;
+                Vector3 p2 = ctx.MeshData.Vertices[v2].Position;
+
+                Vector2 sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector2 sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+                float dist = DistanceToLineSegment(mousePos, sp1, sp2);
+                if (dist < hitDistance)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsPointInPolygon(Vector2 point, List<Vector2> polygon)
+        {
+            bool inside = false;
+            int j = polygon.Count - 1;
+
+            for (int i = 0; i < polygon.Count; j = i++)
+            {
+                if (((polygon[i].y > point.y) != (polygon[j].y > point.y)) &&
+                    (point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x))
+                {
+                    inside = !inside;
+                }
+            }
+
+            return inside;
+        }
+
+        private float DistanceToLineSegment(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
+        {
+            Vector2 line = lineEnd - lineStart;
+            float len = line.magnitude;
+            if (len < 0.001f) return Vector2.Distance(point, lineStart);
+
+            float t = Mathf.Clamp01(Vector2.Dot(point - lineStart, line) / (len * len));
+            Vector2 projection = lineStart + t * line;
+            return Vector2.Distance(point, projection);
+        }
     }
 }

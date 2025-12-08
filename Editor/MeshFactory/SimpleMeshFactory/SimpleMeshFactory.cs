@@ -15,6 +15,8 @@ using MeshFactory.Serialization;
 using MeshFactory.Selection;
 
 
+
+
 public partial class SimpleMeshFactory : EditorWindow
 {
     // ================================================================
@@ -70,21 +72,6 @@ public partial class SimpleMeshFactory : EditorWindow
     private Vector2 _vertexScroll;
 
     // ================================================================
-    // スプリッター（ペイン幅調整）
-    // ================================================================
-    private float _leftPaneWidth = 350f;
-    private float _rightPaneWidth = 280f;
-    private const float MIN_PANE_WIDTH = 200f;
-    private const float MAX_PANE_WIDTH = 500f;
-    private const float SPLITTER_WIDTH = 6f;
-    private bool _isDraggingLeftSplitter = false;
-    private bool _isDraggingRightSplitter = false;
-
-    // 各ペインの幅を外部から参照できるようにするプロパティ
-    public float LeftPaneWidth => _leftPaneWidth;
-    public float RightPaneWidth => _rightPaneWidth;
-
-    // ================================================================
     // デフォルトマテリアル（新規メッシュ作成時に適用）
     // ================================================================
     private List<Material> _defaultMaterials = new List<Material> { null };
@@ -126,6 +113,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private PreviewRenderUtility _preview;
     private float _rotationY = 0f;
     private float _rotationX = 20f;
+    private float _rotationZ = 0f;  // Z軸回転（Ctrl+右ドラッグ）
     private float _cameraDistance = 2f;
     private Vector3 _cameraTarget = Vector3.zero;
 
@@ -175,32 +163,16 @@ public partial class SimpleMeshFactory : EditorWindow
     private bool _showVertices = true;
     private bool _vertexEditMode = true;  // Show Verticesと連動
 
-    // ================================================================
-    // ツールモード
-    // ================================================================
-    private IEditTool _currentTool;
-    private SelectTool _selectTool;
-    private MoveTool _moveTool;
-    private AddFaceTool _addFaceTool;
-    private KnifeTool _knifeTool;
-    private EdgeTopologyTool _edgeTopoTool;
-    private AdvancedSelectTool _advancedSelectTool;
-    private SculptTool _sculptTool;
-    private MergeVerticesTool _mergeTool;
-    private EdgeExtrudeTool _extrudeTool;
-    private FaceExtrudeTool _faceExtrudeTool;
-    private EdgeBevelTool _edgeBevelTool;
-    private LineExtrudeTool _lineExtrudeTool;
-    private ToolContext _toolContext;
-
-    // ツール設定（シリアライズ対象）
-    [SerializeField] private bool _useMagnet = false;
-    [SerializeField] private float _magnetRadius = 0.5f;
-    [SerializeField] private FalloffType _magnetFalloff = FalloffType.Smooth;
-
+    /// <summary>
+    /// ツールの状態
+    /// </summary>
     // UIフォールドアウト状態
     private bool _foldDisplay = true;
     private bool _foldPrimitive = true;
+
+    // ペイン幅
+    private float _leftPaneWidth = 280f;
+    private float _rightPaneWidth = 220f;
     private bool _foldSelection = true;
     private bool _foldTools = true;
     //private bool _foldWorkPlane = false;  // WorkPlaneセクション
@@ -227,7 +199,7 @@ public partial class SimpleMeshFactory : EditorWindow
 
     // カメラドラッグ用
     private bool _isCameraDragging = false;
-    private float _cameraStartRotX, _cameraStartRotY;
+    private float _cameraStartRotX, _cameraStartRotY, _cameraStartRotZ;
     private float _cameraStartDistance;
     private Vector3 _cameraStartTarget;
     private WorkPlaneSnapshot? _cameraStartWorkPlaneSnapshot;
@@ -348,43 +320,7 @@ public partial class SimpleMeshFactory : EditorWindow
     }
 
 
-    private void InitializeTools()
-    {
-        _selectTool = new SelectTool();
-        _moveTool = new MoveTool();
-        _addFaceTool = new AddFaceTool();
-        _knifeTool = new KnifeTool();
-        _edgeTopoTool = new EdgeTopologyTool();
-        _advancedSelectTool = new AdvancedSelectTool();
-        _sculptTool = new SculptTool();
-        _mergeTool = new MergeVerticesTool();
-        _extrudeTool = new EdgeExtrudeTool();
-        _faceExtrudeTool = new FaceExtrudeTool();
-        _edgeBevelTool = new EdgeBevelTool();
-        _lineExtrudeTool = new LineExtrudeTool();
-        _currentTool = _selectTool;
 
-        // MoveToolに保存された設定を反映
-        SyncToolSettings();
-
-        _toolContext = new ToolContext
-        {
-            RecordSelectionChange = RecordSelectionChange,
-            Repaint = Repaint,
-            WorldToScreenPos = WorldToPreviewPos,
-            ScreenDeltaToWorldDelta = ScreenDeltaToWorldDelta,
-            FindVertexAtScreenPos = FindVertexAtScreenPos,
-            ScreenPosToRay = ScreenPosToRay,
-            WorkPlane = _undoController?.WorkPlane,
-            CurrentMaterialIndex = 0,
-            Materials = null,
-            SelectionState = _selectionState,
-            TopologyCache = _meshTopology,
-            SelectionOps = _selectionOps
-        };
-
-
-    }
 
     /// <summary>
     /// SimpleMeshFactoryの設定をToolに同期
@@ -412,75 +348,6 @@ public partial class SimpleMeshFactory : EditorWindow
         }
     }
 
-    private void UpdateToolContext(MeshEntry entry, Rect rect, Vector3 camPos, float camDist)
-    {
-        _toolContext.MeshData = entry?.Data;
-        _toolContext.OriginalPositions = entry?.OriginalPositions;
-        _toolContext.PreviewRect = rect;
-        _toolContext.CameraPosition = camPos;
-        _toolContext.CameraTarget = _cameraTarget;
-        _toolContext.CameraDistance = camDist;
-        _toolContext.SelectedVertices = _selectedVertices;
-        _toolContext.VertexOffsets = _vertexOffsets;
-        _toolContext.GroupOffsets = _groupOffsets;
-        _toolContext.UndoController = _undoController;
-        _toolContext.WorkPlane = _undoController?.WorkPlane;
-        _toolContext.SyncMesh = () => SyncMeshFromData(entry);
-
-        // マルチマテリアル対応
-        _toolContext.CurrentMaterialIndex = entry?.CurrentMaterialIndex ?? 0;
-        _toolContext.Materials = entry?.Materials;
-
-        // 選択システム
-        _toolContext.SelectionState = _selectionState;
-        _toolContext.TopologyCache = _meshTopology;
-        _toolContext.SelectionOps = _selectionOps;
-
-        // UndoコンテキストにもMaterialsを同期
-        if (_undoController?.MeshContext != null && entry != null)
-        {
-            _undoController.MeshContext.Materials = entry.Materials;
-            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
-        }
-
-        // デフォルトマテリアルを同期
-        if (_undoController?.MeshContext != null)
-        {
-            _undoController.MeshContext.DefaultMaterials = _defaultMaterials;
-            _undoController.MeshContext.DefaultCurrentMaterialIndex = _defaultCurrentMaterialIndex;
-            _undoController.MeshContext.AutoSetDefaultMaterials = _autoSetDefaultMaterials;
-        }
-
-        // MergeToolのUpdate（選択変更やマージ実行の処理）
-        if (_currentTool == _mergeTool)
-        {
-            _mergeTool.Update(_toolContext);
-        }
-
-        // ExtrudeToolの選択更新
-        if (_currentTool == _extrudeTool)
-        {
-            _extrudeTool.OnSelectionChanged(_toolContext);
-        }
-
-        // FaceExtrudeToolの選択更新
-        if (_currentTool == _faceExtrudeTool)
-        {
-            _faceExtrudeTool.OnSelectionChanged(_toolContext);
-        }
-
-        // EdgeBevelToolの選択更新
-        if (_currentTool == _edgeBevelTool)
-        {
-            _edgeBevelTool.OnSelectionChanged(_toolContext);
-        }
-
-        // LineExtrudeToolの選択更新
-        if (_currentTool == _lineExtrudeTool)
-        {
-            _lineExtrudeTool.OnSelectionChanged();
-        }
-    }
 
 
     private void OnDisable()
@@ -632,66 +499,7 @@ public partial class SimpleMeshFactory : EditorWindow
     }
 
 
-    /// <summary>
-    /// ツール名からツールを復元
-    /// </summary>
-    private void RestoreToolFromName(string toolName)
-    {
-        if (string.IsNullOrEmpty(toolName))
-            return;
 
-        IEditTool newTool = null;
-        switch (toolName)
-        {
-            case "Select":
-                newTool = _selectTool;
-                break;
-            case "Move":
-                newTool = _moveTool;
-                break;
-            case "Add Face":
-                newTool = _addFaceTool;
-                break;
-            case "Knife":
-                newTool = _knifeTool;
-                break;
-            case "Wire":
-            case "EdgeTopo":
-                newTool = _edgeTopoTool;
-                break;
-            case "Sel+":
-                newTool = _advancedSelectTool;
-                break;
-            case "Sculpt":
-                newTool = _sculptTool;
-                break;
-            case "Merge":
-                newTool = _mergeTool;
-                break;
-            case "Extrude":
-                newTool = _extrudeTool;
-                break;
-            case "Push":
-                newTool = _faceExtrudeTool;
-                break;
-            case "Bevel":
-                newTool = _edgeBevelTool;
-                break;
-            case "Line Ext":
-                newTool = _lineExtrudeTool;
-                break;
-            default:
-                newTool = _selectTool;
-                break;
-        }
-
-        if (newTool != null && newTool != _currentTool)
-        {
-            _currentTool?.OnDeactivate(_toolContext);
-            _currentTool = newTool;
-            _currentTool?.OnActivate(_toolContext);
-        }
-    }
 
 
 
@@ -772,9 +580,6 @@ public partial class SimpleMeshFactory : EditorWindow
             {
                 EndCameraDrag();
             }
-            // スプリッタードラッグ終了
-            _isDraggingLeftSplitter = false;
-            _isDraggingRightSplitter = false;
         }
 
         HandleScrollWheel();
@@ -784,61 +589,13 @@ public partial class SimpleMeshFactory : EditorWindow
         // 左ペイン：メッシュリスト
         DrawMeshList();
 
-        // 左スプリッター
-        DrawSplitter(ref _isDraggingLeftSplitter, ref _leftPaneWidth, 1f);
-
         // 中央ペイン：プレビュー
         DrawPreview();
-
-        // 右スプリッター
-        DrawSplitter(ref _isDraggingRightSplitter, ref _rightPaneWidth, -1f);
 
         // 右ペイン：頂点編集
         DrawVertexEditor();
 
         EditorGUILayout.EndHorizontal();
-    }
-
-    /// <summary>
-    /// スプリッター描画とドラッグ処理
-    /// </summary>
-    /// <param name="isDragging">ドラッグ中フラグ</param>
-    /// <param name="paneWidth">調整対象のペイン幅</param>
-    /// <param name="direction">1f=右方向にドラッグで幅増加, -1f=左方向にドラッグで幅増加</param>
-    private void DrawSplitter(ref bool isDragging, ref float paneWidth, float direction)
-    {
-        Rect splitterRect = GUILayoutUtility.GetRect(SPLITTER_WIDTH, SPLITTER_WIDTH, GUILayout.ExpandHeight(true));
-
-        // スプリッターの見た目
-        EditorGUI.DrawRect(splitterRect, new Color(0.1f, 0.1f, 0.1f, 1f));
-        Rect lineRect = new Rect(splitterRect.x + 2, splitterRect.y, 2, splitterRect.height);
-        EditorGUI.DrawRect(lineRect, new Color(0.3f, 0.3f, 0.3f, 1f));
-
-        // カーソルをリサイズカーソルに
-        EditorGUIUtility.AddCursorRect(splitterRect, MouseCursor.ResizeHorizontal);
-
-        // ドラッグ処理
-        Event e = Event.current;
-        switch (e.type)
-        {
-            case EventType.MouseDown:
-                if (splitterRect.Contains(e.mousePosition) && e.button == 0)
-                {
-                    isDragging = true;
-                    e.Use();
-                }
-                break;
-
-            case EventType.MouseDrag:
-                if (isDragging)
-                {
-                    paneWidth += e.delta.x * direction;
-                    paneWidth = Mathf.Clamp(paneWidth, MIN_PANE_WIDTH, MAX_PANE_WIDTH);
-                    e.Use();
-                    Repaint();
-                }
-                break;
-        }
     }
 
     private void HandleScrollWheel()
@@ -853,7 +610,7 @@ public partial class SimpleMeshFactory : EditorWindow
                 BeginCameraDrag();
             }
 
-            Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, 0);
+            Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
             Vector3 right = rot * Vector3.right;
             Vector3 up = rot * Vector3.up;
 
@@ -895,6 +652,7 @@ public partial class SimpleMeshFactory : EditorWindow
         _isCameraDragging = true;
         _cameraStartRotX = _rotationX;
         _cameraStartRotY = _rotationY;
+        _cameraStartRotZ = _rotationZ;
         _cameraStartDistance = _cameraDistance;
         _cameraStartTarget = _cameraTarget;
 
@@ -919,6 +677,7 @@ public partial class SimpleMeshFactory : EditorWindow
         bool hasChanged =
             !Mathf.Approximately(_cameraStartRotX, _rotationX) ||
             !Mathf.Approximately(_cameraStartRotY, _rotationY) ||
+            !Mathf.Approximately(_cameraStartRotZ, _rotationZ) ||
             !Mathf.Approximately(_cameraStartDistance, _cameraDistance) ||
             Vector3.Distance(_cameraStartTarget, _cameraTarget) > 0.0001f;
 
@@ -932,7 +691,7 @@ public partial class SimpleMeshFactory : EditorWindow
             if (oldWorkPlane.HasValue && workPlane != null)
             {
                 // 新しいカメラ姿勢でWorkPlane軸を更新
-                Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, 0);
+                Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
                 Vector3 camPos = _cameraTarget + rot * new Vector3(0, 0, -_cameraDistance);
 
                 workPlane.UpdateFromCamera(camPos, _cameraTarget);

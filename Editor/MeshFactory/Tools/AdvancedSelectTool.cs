@@ -33,7 +33,7 @@ namespace MeshFactory.Tools
     /// </summary>
     public class AdvancedSelectTool : IEditTool
     {
-        public string Name => "Advanced Select";
+        public string Name => "Sel+";//"Advanced Select";
 
         // === 設定 ===
         private AdvancedSelectMode _mode = AdvancedSelectMode.Connected;

@@ -32,7 +32,7 @@ public partial class SimpleMeshFactory
         var mesh = entry.Mesh;
 
         float dist = _cameraDistance;
-        Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, 0);
+        Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
         Vector3 camPos = _cameraTarget + rot * new Vector3(0, 0, -dist);
 
         HandleInput(rect, entry, camPos, _cameraTarget, dist);
@@ -46,11 +46,14 @@ public partial class SimpleMeshFactory
         _preview.camera.backgroundColor = new Color(0.15f, 0.15f, 0.18f, 1f);
 
         _preview.camera.transform.position = camPos;
-        _preview.camera.transform.LookAt(_cameraTarget);
+        // LookAt後、視線軸（forward）周りにロール回転
+        Quaternion lookRot = Quaternion.LookRotation(_cameraTarget - camPos, Vector3.up);
+        Quaternion rollRot = Quaternion.AngleAxis(_rotationZ, Vector3.forward);
+        _preview.camera.transform.rotation = lookRot * rollRot;
 
         // マルチマテリアル対応描画
         DrawMeshWithMaterials(entry, mesh);
-        
+
 
         // ★ミラーメッシュ描画を追加
         if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
@@ -87,8 +90,8 @@ public partial class SimpleMeshFactory
         UpdateToolContext(entry, rect, camPos, dist);
         _currentTool?.DrawGizmo(_toolContext);
 
-        // WorkPlaneギズモ描画
-        if (_showWorkPlaneGizmo && _vertexEditMode)
+        // WorkPlaneギズモ描画（AddFaceTool時のみ）
+        if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
         {
             DrawWorkPlaneGizmo(rect, camPos, _cameraTarget);
         }
@@ -125,7 +128,6 @@ public partial class SimpleMeshFactory
             {
                 mat = defaultMat;
             }
-            Debug.Log($"[DrawMesh] SubMesh[{i}] mat={(mat != null ? mat.name : "null")}");
             _preview.DrawMesh(mesh, Matrix4x4.identity, mat, i);
         }
     }
@@ -492,8 +494,16 @@ public partial class SimpleMeshFactory
 
     private Vector2 WorldToPreviewPos(Vector3 worldPos, Rect previewRect, Vector3 camPos, Vector3 lookAt)
     {
-        Matrix4x4 view = Matrix4x4.LookAt(camPos, lookAt, Vector3.up);
-        view = view.inverse;
+        // カメラ回転を計算（Z軸ロール対応）
+        Vector3 forward = (lookAt - camPos).normalized;
+        Quaternion lookRot = Quaternion.LookRotation(forward, Vector3.up);
+        Quaternion rollRot = Quaternion.AngleAxis(_rotationZ, Vector3.forward);
+        Quaternion camRot = lookRot * rollRot;
+
+        // View行列を作成
+        Matrix4x4 camMatrix = Matrix4x4.TRS(camPos, camRot, Vector3.one);
+        Matrix4x4 view = camMatrix.inverse;
+        // Unityのカメラは-Z方向を向く
         view.m20 *= -1; view.m21 *= -1; view.m22 *= -1; view.m23 *= -1;
 
         float aspect = previewRect.width / previewRect.height;
@@ -528,14 +538,14 @@ public partial class SimpleMeshFactory
         float ndcX = ((screenPos.x - previewRect.x) / previewRect.width) * 2f - 1f;
         float ndcY = 1f - ((screenPos.y - previewRect.y) / previewRect.height) * 2f;
 
-        // カメラの向きを計算
+        // カメラの向きを計算（Z軸ロール対応）
         Vector3 forward = (lookAt - camPos).normalized;
-        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
-        if (right.sqrMagnitude < 0.001f)
-        {
-            right = Vector3.Cross(Vector3.forward, forward).normalized;
-        }
-        Vector3 up = Vector3.Cross(forward, right).normalized;
+        Quaternion lookRot = Quaternion.LookRotation(forward, Vector3.up);
+        Quaternion rollRot = Quaternion.AngleAxis(_rotationZ, Vector3.forward);
+        Quaternion camRot = lookRot * rollRot;
+
+        Vector3 right = camRot * Vector3.right;
+        Vector3 up = camRot * Vector3.up;
 
         // FOVからレイ方向を計算
         float fov = _preview != null ? _preview.cameraFieldOfView : 60f;

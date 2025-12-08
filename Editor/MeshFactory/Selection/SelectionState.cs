@@ -15,7 +15,7 @@ namespace MeshFactory.Selection
         /// <summary>
         /// 有効な選択モード（複数可）
         /// </summary>
-        public MeshSelectMode Mode { get; set; } = MeshSelectMode.Vertex;
+        public MeshSelectMode Mode { get; set; } = MeshSelectMode.Vertex | MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line;
 
         public HashSet<int> Vertices { get; } = new HashSet<int>();
         public HashSet<VertexPair> Edges { get; } = new HashSet<VertexPair>();
@@ -25,33 +25,18 @@ namespace MeshFactory.Selection
         public event Action OnSelectionChanged;
 
         /// <summary>
-        /// 有効なモードの選択をクリア
+        /// 全ての選択をクリア（モードフラグに関係なく）
         /// </summary>
         public void ClearEnabledModes()
         {
-            bool changed = false;
-            
-            if (Mode.Has(MeshSelectMode.Vertex) && Vertices.Count > 0)
-            {
-                Vertices.Clear();
-                changed = true;
-            }
-            if (Mode.Has(MeshSelectMode.Edge) && Edges.Count > 0)
-            {
-                Edges.Clear();
-                changed = true;
-            }
-            if (Mode.Has(MeshSelectMode.Face) && Faces.Count > 0)
-            {
-                Faces.Clear();
-                changed = true;
-            }
-            if (Mode.Has(MeshSelectMode.Line) && Lines.Count > 0)
-            {
-                Lines.Clear();
-                changed = true;
-            }
-            
+            bool changed = Vertices.Count > 0 || Edges.Count > 0 ||
+                          Faces.Count > 0 || Lines.Count > 0;
+
+            Vertices.Clear();
+            Edges.Clear();
+            Faces.Clear();
+            Lines.Clear();
+
             if (changed) OnSelectionChanged?.Invoke();
         }
 
@@ -62,14 +47,14 @@ namespace MeshFactory.Selection
 
         public void ClearAll()
         {
-            bool changed = Vertices.Count > 0 || Edges.Count > 0 || 
+            bool changed = Vertices.Count > 0 || Edges.Count > 0 ||
                           Faces.Count > 0 || Lines.Count > 0;
-            
+
             Vertices.Clear();
             Edges.Clear();
             Faces.Clear();
             Lines.Clear();
-            
+
             if (changed) OnSelectionChanged?.Invoke();
         }
 
@@ -96,7 +81,7 @@ namespace MeshFactory.Selection
         /// <summary>
         /// 全てのモードに何か選択があるか（Undo/Redoや移動操作用）
         /// </summary>
-        public bool HasAnySelection => Vertices.Count > 0 || Edges.Count > 0 || 
+        public bool HasAnySelection => Vertices.Count > 0 || Edges.Count > 0 ||
                                        Faces.Count > 0 || Lines.Count > 0;
 
         // === 頂点選択 ===
@@ -297,13 +282,13 @@ namespace MeshFactory.Selection
         public HashSet<int> GetAllAffectedVertices(MeshData meshData)
         {
             var result = new HashSet<int>(Vertices);
-            
+
             foreach (var pair in Edges)
             {
                 result.Add(pair.V1);
                 result.Add(pair.V2);
             }
-            
+
             if (meshData != null)
             {
                 foreach (int faceIdx in Faces)
@@ -312,7 +297,7 @@ namespace MeshFactory.Selection
                     foreach (int vIdx in meshData.Faces[faceIdx].VertexIndices)
                         result.Add(vIdx);
                 }
-                
+
                 foreach (int faceIdx in Lines)
                 {
                     if (faceIdx < 0 || faceIdx >= meshData.FaceCount) continue;
@@ -324,7 +309,7 @@ namespace MeshFactory.Selection
                     }
                 }
             }
-            
+
             return result;
         }
 
@@ -333,7 +318,7 @@ namespace MeshFactory.Selection
         public IEnumerable<int> GetOverlappingLines(TopologyCache topology)
         {
             if (topology == null) yield break;
-            
+
             foreach (var edgePair in Edges)
             {
                 foreach (var line in topology.GetLinesAt(edgePair))
@@ -346,13 +331,13 @@ namespace MeshFactory.Selection
         public IEnumerable<VertexPair> GetOverlappingEdges(TopologyCache topology, MeshData meshData)
         {
             if (topology == null || meshData == null) yield break;
-            
+
             foreach (int lineIdx in Lines)
             {
                 if (lineIdx < 0 || lineIdx >= meshData.FaceCount) continue;
                 var face = meshData.Faces[lineIdx];
                 if (face.VertexCount != 2) continue;
-                
+
                 var pair = new VertexPair(face.VertexIndices[0], face.VertexIndices[1]);
                 if (topology.HasOverlappingEdge(pair))
                 {
@@ -364,7 +349,7 @@ namespace MeshFactory.Selection
         public void ConvertEdgesToLines(TopologyCache topology)
         {
             if (topology == null) return;
-            
+
             var lineIndices = GetOverlappingLines(topology).ToList();
             Lines.Clear();
             foreach (int idx in lineIndices)
@@ -380,7 +365,7 @@ namespace MeshFactory.Selection
         public void ConvertLinesToEdges(TopologyCache topology, MeshData meshData)
         {
             if (topology == null || meshData == null) return;
-            
+
             var edgePairs = GetOverlappingEdges(topology, meshData).ToList();
             Edges.Clear();
             foreach (var pair in edgePairs)
@@ -410,18 +395,18 @@ namespace MeshFactory.Selection
         public void RestoreFromSnapshot(SelectionSnapshot snapshot)
         {
             if (snapshot == null) return;
-            
+
             Mode = snapshot.Mode;
             Vertices.Clear();
             Edges.Clear();
             Faces.Clear();
             Lines.Clear();
-            
+
             foreach (int v in snapshot.Vertices) Vertices.Add(v);
             foreach (var e in snapshot.Edges) Edges.Add(e);
             foreach (int f in snapshot.Faces) Faces.Add(f);
             foreach (int l in snapshot.Lines) Lines.Add(l);
-            
+
             OnSelectionChanged?.Invoke();
         }
     }

@@ -58,9 +58,9 @@ namespace MeshFactory.Tools
         public string Name => "Add Face";
 
         // === 設定 ===
-        private AddFaceMode _mode = AddFaceMode.Triangle;
+        private AddFaceMode _mode = AddFaceMode.Quad;  // デフォルトは四角形
         private float _defaultDistance = 1.5f;  // WorkPlaneと交差しない場合のカメラからの距離
-        private bool _continuousLine = false;   // 連続線分モード
+        private bool _continuousLine = true;    // 連続線分モード（デフォルトON）
 
         // === 状態 ===
         private List<PointInfo> _points = new List<PointInfo>();
@@ -110,6 +110,16 @@ namespace MeshFactory.Tools
             // 点を追加
             PointInfo point = GetPointAtScreenPos(ctx, mousePos);
 
+            // デバッグログ
+            if (point.IsExistingVertex)
+            {
+                Debug.Log($"[AddFaceTool] Point added: Existing vertex V{point.ExistingVertexIndex} at {point.Position}");
+            }
+            else
+            {
+                Debug.Log($"[AddFaceTool] Point added: NEW vertex at {point.Position}");
+            }
+
             // 連続線分モードの場合
             if (_mode == AddFaceMode.Line && _continuousLine && _lastLinePoint.HasValue)
             {
@@ -117,8 +127,17 @@ namespace MeshFactory.Tools
                 _points.Clear();
                 _points.Add(_lastLinePoint.Value);
                 _points.Add(point);
-                CreateFace(ctx);
-                _lastLinePoint = point;  // 今回の点を次の開始点に
+                var createdIndices = CreateFace(ctx);
+
+                // 作成された頂点インデックスで_lastLinePointを更新
+                if (createdIndices.Count >= 2)
+                {
+                    int lastIdx = createdIndices[1];
+                    Vector3 lastPos = ctx.MeshData.Vertices[lastIdx].Position;
+                    _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
+                    Debug.Log($"[AddFaceTool] Continuous line: next start = V{lastIdx}");
+                }
+
                 _points.Clear();
                 ctx.Repaint?.Invoke();
                 return true;
@@ -129,13 +148,16 @@ namespace MeshFactory.Tools
             // 必要な点数に達したら面を作成
             if (_points.Count >= RequiredPoints)
             {
-                // 連続線分モードの場合、最後の点を保存
-                if (_mode == AddFaceMode.Line && _continuousLine)
+                var createdIndices = CreateFace(ctx);
+
+                // 連続線分モードの場合、最後の頂点インデックスを保存
+                if (_mode == AddFaceMode.Line && _continuousLine && createdIndices.Count >= 2)
                 {
-                    _lastLinePoint = _points[_points.Count - 1];
+                    int lastIdx = createdIndices[createdIndices.Count - 1];
+                    Vector3 lastPos = ctx.MeshData.Vertices[lastIdx].Position;
+                    _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                 }
 
-                CreateFace(ctx);
                 _points.Clear();
             }
 
@@ -238,16 +260,29 @@ namespace MeshFactory.Tools
                     _previewPoint, ctx.PreviewRect,
                     ctx.CameraPosition, ctx.CameraTarget);
 
-                // プレビュー点の色（既存頂点=シアン半透明、新規=黄色半透明）
+                // プレビュー点の色（既存頂点=シアン、新規=黄色半透明）
                 Color previewColor = _previewHitVertex >= 0
-                    ? new Color(0f, 1f, 1f, 0.5f)
-                    : new Color(1f, 1f, 0f, 0.5f);
+                    ? new Color(0f, 1f, 1f, 0.9f)    // シアン（スナップ時は不透明）
+                    : new Color(1f, 1f, 0f, 0.5f);   // 黄色半透明
 
-                float size = 10f;
+                float size = _previewHitVertex >= 0 ? 14f : 10f;  // スナップ時は大きく
                 EditorGUI.DrawRect(new Rect(
                     previewScreen.x - size / 2,
                     previewScreen.y - size / 2,
                     size, size), previewColor);
+
+                // スナップ時はラベル表示
+                if (_previewHitVertex >= 0)
+                {
+                    // スナップインジケーター（円）
+                    Handles.color = new Color(0f, 1f, 1f, 0.6f);
+                    Handles.DrawWireDisc(
+                        new Vector3(previewScreen.x, previewScreen.y, 0),
+                        Vector3.forward, 12f);
+
+                    GUI.Label(new Rect(previewScreen.x + 10, previewScreen.y - 8, 60, 16),
+                        $"V{_previewHitVertex}", EditorStyles.whiteBoldLabel);
+                }
 
                 // 最後の確定点からプレビュー点への線
                 if (_points.Count > 0)
@@ -354,6 +389,62 @@ namespace MeshFactory.Tools
             _points.Clear();
             _previewValid = false;
             _lastLinePoint = null;
+
+            // 選択された頂点を最初の点として使用
+            if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.MeshData != null)
+            {
+                var selectedList = new List<int>(ctx.SelectedVertices);
+
+                // Lineモードで2頂点選択されていれば即座に線分作成
+                if (_mode == AddFaceMode.Line && selectedList.Count == 2)
+                {
+                    foreach (int idx in selectedList)
+                    {
+                        if (idx >= 0 && idx < ctx.MeshData.VertexCount)
+                        {
+                            Vector3 pos = ctx.MeshData.Vertices[idx].Position;
+                            _points.Add(PointInfo.FromExisting(idx, pos));
+                        }
+                    }
+
+                    if (_points.Count == 2)
+                    {
+                        var createdIndices = CreateFace(ctx);
+
+                        // 連続モードなら最後の点を保持
+                        if (_continuousLine && createdIndices.Count >= 2)
+                        {
+                            int lastIdx = createdIndices[1];
+                            Vector3 lastPos = ctx.MeshData.Vertices[lastIdx].Position;
+                            _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
+                        }
+                        _points.Clear();
+                    }
+                    return;
+                }
+
+                // 1頂点選択の場合、それを最初の点として使用
+                if (selectedList.Count == 1)
+                {
+                    int selectedIdx = selectedList[0];
+                    if (selectedIdx >= 0 && selectedIdx < ctx.MeshData.VertexCount)
+                    {
+                        Vector3 pos = ctx.MeshData.Vertices[selectedIdx].Position;
+                        var startPoint = PointInfo.FromExisting(selectedIdx, pos);
+
+                        if (_mode == AddFaceMode.Line && _continuousLine)
+                        {
+                            // 連続線分モードの場合は開始点として設定
+                            _lastLinePoint = startPoint;
+                        }
+                        else
+                        {
+                            // 通常モードの場合は最初の点として追加
+                            _points.Add(startPoint);
+                        }
+                    }
+                }
+            }
         }
 
         public void OnDeactivate(ToolContext ctx)
@@ -380,9 +471,7 @@ namespace MeshFactory.Tools
         private PointInfo GetPointAtScreenPos(ToolContext ctx, Vector2 screenPos)
         {
             // 1. 既存頂点のヒットテスト
-            int hitVertex = ctx.FindVertexAtScreenPos(
-                screenPos, ctx.MeshData, ctx.PreviewRect,
-                ctx.CameraPosition, ctx.CameraTarget, ctx.HandleRadius);
+            int hitVertex = FindNearestVertexAtScreen(ctx, screenPos);
 
             if (hitVertex >= 0)
             {
@@ -393,6 +482,39 @@ namespace MeshFactory.Tools
             // 2. WorkPlaneとの交点
             Vector3 worldPos = GetWorldPositionFromScreen(ctx, screenPos);
             return PointInfo.FromNew(worldPos);
+        }
+
+        /// <summary>
+        /// スクリーン位置から最も近い頂点を検索
+        /// </summary>
+        private int FindNearestVertexAtScreen(ToolContext ctx, Vector2 screenPos)
+        {
+            if (ctx.MeshData == null) return -1;
+
+            // ヒット半径（少し大きめに設定）
+            float hitRadius = 15f;
+            if (ctx.HandleRadius > 0) hitRadius = Mathf.Max(hitRadius, ctx.HandleRadius);
+
+            int nearest = -1;
+            float minDist = hitRadius;
+
+            for (int i = 0; i < ctx.MeshData.VertexCount; i++)
+            {
+                Vector2 vertScreen = ctx.WorldToScreenPos(
+                    ctx.MeshData.Vertices[i].Position,
+                    ctx.PreviewRect,
+                    ctx.CameraPosition,
+                    ctx.CameraTarget);
+
+                float dist = Vector2.Distance(screenPos, vertScreen);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    nearest = i;
+                }
+            }
+
+            return nearest;
         }
 
         /// <summary>
@@ -437,10 +559,8 @@ namespace MeshFactory.Tools
                 return;
             }
 
-            // 既存頂点のヒットテスト
-            _previewHitVertex = ctx.FindVertexAtScreenPos(
-                screenPos, ctx.MeshData, ctx.PreviewRect,
-                ctx.CameraPosition, ctx.CameraTarget, ctx.HandleRadius);
+            // 既存頂点のヒットテスト（フォールバック付き）
+            _previewHitVertex = FindNearestVertexAtScreen(ctx, screenPos);
 
             if (_previewHitVertex >= 0)
             {
@@ -455,23 +575,27 @@ namespace MeshFactory.Tools
         }
 
         /// <summary>
-        /// 面を作成
+        /// 面を作成し、作成された頂点インデックスのリストを返す
         /// </summary>
-        private void CreateFace(ToolContext ctx)
+        private List<int> CreateFace(ToolContext ctx)
         {
+            var createdIndices = new List<int>();
+
             if (ctx.MeshData == null || _points.Count < 2)
-                return;
+                return createdIndices;
 
             var meshData = ctx.MeshData;
             var newVertexIndices = new List<int>();
             var addedVertices = new List<(int Index, Vertex Vertex)>();
 
             // 各点について、既存頂点を使用するか新規作成
-            foreach (var point in _points)
+            for (int i = 0; i < _points.Count; i++)
             {
+                var point = _points[i];
                 if (point.IsExistingVertex)
                 {
                     newVertexIndices.Add(point.ExistingVertexIndex);
+                    createdIndices.Add(point.ExistingVertexIndex);
                 }
                 else
                 {
@@ -484,6 +608,10 @@ namespace MeshFactory.Tools
                     meshData.Vertices.Add(vertex);
                     newVertexIndices.Add(newIndex);
                     addedVertices.Add((newIndex, vertex));
+                    createdIndices.Add(newIndex);
+
+                    // _pointsの情報も更新（次回使用時のため）
+                    _points[i] = PointInfo.FromExisting(newIndex, point.Position);
                 }
             }
 
@@ -566,6 +694,8 @@ namespace MeshFactory.Tools
             }
 
             ctx.Repaint?.Invoke();
+
+            return createdIndices;
         }
 
         /// <summary>
