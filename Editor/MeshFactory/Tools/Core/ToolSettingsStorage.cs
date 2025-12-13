@@ -1,6 +1,7 @@
 // Assets/Editor/UndoSystem/MeshEditor/ToolSettingsStorage.cs
 // EditorStateContextでツール設定を管理するための拡張
 // IToolSettings対応
+// ToolNameはIEditTool.Nameを使用
 
 using System;
 using System.Collections.Generic;
@@ -40,12 +41,12 @@ namespace MeshFactory.Tools
         }
 
         /// <summary>
-        /// 設定を保存
+        /// 設定を保存（ツール名指定）
         /// </summary>
-        public void Set(IToolSettings settings)
+        public void Set(string toolName, IToolSettings settings)
         {
-            if (settings == null) return;
-            _settings[settings.ToolName] = settings.Clone();
+            if (settings == null || string.IsNullOrEmpty(toolName)) return;
+            _settings[toolName] = settings.Clone();
         }
 
         /// <summary>
@@ -138,24 +139,24 @@ namespace MeshFactory.Tools
         // ================================================================
 
         /// <summary>
-        /// ツールから設定を同期
+        /// ツールから設定を同期（tool.Nameをキーとして使用）
         /// </summary>
         public void SyncFromTool(IEditTool tool)
         {
             if (tool?.Settings != null)
             {
-                Set(tool.Settings);
+                Set(tool.Name, tool.Settings);
             }
         }
 
         /// <summary>
-        /// ツールへ設定を適用
+        /// ツールへ設定を適用（tool.Nameをキーとして使用）
         /// </summary>
         public void ApplyToTool(IEditTool tool)
         {
             if (tool?.Settings == null) return;
 
-            var stored = Get<IToolSettings>(tool.Settings.ToolName);
+            var stored = Get<IToolSettings>(tool.Name);
             if (stored != null)
             {
                 tool.Settings.CopyFrom(stored);

@@ -29,8 +29,6 @@ namespace MeshFactory.Tools
         // IToolSettings 実装
         // ================================================================
 
-        public override string ToolName => "Move";
-
         public override IToolSettings Clone()
         {
             return new MoveSettings

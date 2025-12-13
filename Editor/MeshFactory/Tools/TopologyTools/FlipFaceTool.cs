@@ -17,6 +17,10 @@ namespace MeshFactory.Tools
     public class FlipFaceTool : IEditTool
     {
         public string Name => "Flip";
+        public string DisplayName => "Flip";
+
+        //public ToolCategory Category => ToolCategory.Utility;
+
         /// <summary>
         /// 設定なし（nullを返す）
         /// </summary>

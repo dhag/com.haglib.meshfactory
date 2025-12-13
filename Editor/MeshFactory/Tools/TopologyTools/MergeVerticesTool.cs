@@ -17,6 +17,8 @@ namespace MeshFactory.Tools
     public class MergeVerticesTool : IEditTool
     {
         public string Name => "Merge";
+        public string DisplayName => "Merge";
+        // ToolCategory Category => ToolCategory.Topology;
 
         // ================================================================
         // 設定（IToolSettings対応）

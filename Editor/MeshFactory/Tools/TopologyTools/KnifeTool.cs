@@ -29,6 +29,8 @@ namespace MeshFactory.Tools
     public partial class KnifeTool : IEditTool
     {
         public string Name => "Knife";
+        public string DisplayName => "Knife";
+        //public ToolCategory Category => ToolCategory.Topology;
 
         // ================================================================
         // 設定（IToolSettings対応）

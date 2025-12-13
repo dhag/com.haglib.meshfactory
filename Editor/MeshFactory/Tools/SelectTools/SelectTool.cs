@@ -13,6 +13,8 @@ namespace MeshFactory.Tools
     public class SelectTool : IEditTool
     {
         public string Name => "Select";
+        public string DisplayName => "Select";
+        //public ToolCategory Category => ToolCategory.Selection;
 
         /// <summary>
         /// 設定なし（nullを返す）

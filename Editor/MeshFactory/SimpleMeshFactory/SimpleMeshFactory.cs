@@ -20,9 +20,9 @@ using MeshFactory.Selection;
 public partial class SimpleMeshFactory : EditorWindow
 {
     // ================================================================
-    // メッシュデータ（内部クラス → MeshDataと名前衝突を避けるためリネーム）
+    // メッシュデータ（MeshDataと名前衝突を避けるためリネーム）
     // ================================================================
-    private class MeshEntry
+    public class MeshEntry
     {
         public string Name;
         public Mesh Mesh;                           // Unity Mesh（表示用）
@@ -251,9 +251,22 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undoコントローラー初期化
         _undoController = new MeshUndoController("SimpleMeshFactory");
         _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
+        
+        // MeshListをUndoコントローラーに設定
+        _undoController.SetMeshList(_meshList, OnMeshListChanged);
 
         // Show Verticesと編集モードを同期
         _vertexEditMode = _showVertices;
+
+        // EditorStateにローカル変数の初期値を設定
+        if (_undoController != null)
+        {
+            _undoController.EditorState.ShowWireframe = _showWireframe;
+            _undoController.EditorState.ShowVertices = _showVertices;
+            _undoController.EditorState.AddToCurrentMesh = _addToCurrentMesh;
+            _undoController.EditorState.AutoMergeOnCreate = _autoMergeOnCreate;
+            _undoController.EditorState.AutoMergeThreshold = _autoMergeThreshold;
+        }
 
         // Selection System 初期化（ツールより先に初期化）
         InitializeSelectionSystem();
@@ -440,6 +453,9 @@ public partial class SimpleMeshFactory : EditorWindow
         _cameraTarget = editorState.CameraTarget;
         _showWireframe = editorState.ShowWireframe;
         _showVertices = editorState.ShowVertices;
+        _addToCurrentMesh = editorState.AddToCurrentMesh;
+        _autoMergeOnCreate = editorState.AutoMergeOnCreate;
+        _autoMergeThreshold = editorState.AutoMergeThreshold;
 
         RestoreToolFromName(editorState.CurrentToolName);
 
@@ -472,6 +488,94 @@ public partial class SimpleMeshFactory : EditorWindow
         {
             // 従来のレガシー同期（Vertexモードのみ）
             SyncSelectionFromLegacy();
+        }
+
+        // MeshListContextから選択インデックスを反映
+        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        if (_undoController?.MeshListContext != null)
+        {
+            int newIndex = _undoController.MeshListContext.SelectedIndex;
+            if (newIndex != _selectedIndex && newIndex >= -1 && newIndex < _meshList.Count)
+            {
+                _selectedIndex = newIndex;
+                if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+                {
+                    var entry = _meshList[_selectedIndex];
+                    // MeshContextに必要な情報だけを設定
+                    _undoController.MeshContext.MeshData = entry.Data;
+                    _undoController.MeshContext.TargetMesh = entry.Mesh;
+                    _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+                    _undoController.MeshContext.Materials = entry.Materials != null 
+                        ? new List<Material>(entry.Materials) 
+                        : new List<Material>();
+                    _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+                }
+            }
+        }
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// MeshListのUndo/Redo後のコールバック
+    /// </summary>
+    private void OnMeshListChanged()
+    {
+        // MeshListContextから選択インデックスを取得
+        if (_undoController?.MeshListContext != null)
+        {
+            _selectedIndex = _undoController.MeshListContext.SelectedIndex;
+        }
+
+        // 選択中のエントリをMeshContextに設定
+        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+        {
+            var entry = _meshList[_selectedIndex];
+            
+            // MeshContextに必要な情報だけを設定
+            if (_undoController != null)
+            {
+                _undoController.MeshContext.MeshData = entry.Data;
+                _undoController.MeshContext.TargetMesh = entry.Mesh;
+                _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+                _undoController.MeshContext.Materials = entry.Materials != null 
+                    ? new List<Material>(entry.Materials) 
+                    : new List<Material>();
+                _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+            }
+            
+            InitVertexOffsets(updateCamera: false);
+        }
+        else
+        {
+            _selectedIndex = _meshList.Count > 0 ? 0 : -1;
+            if (_selectedIndex >= 0)
+            {
+                var entry = _meshList[_selectedIndex];
+                
+                if (_undoController != null)
+                {
+                    _undoController.MeshContext.MeshData = entry.Data;
+                    _undoController.MeshContext.TargetMesh = entry.Mesh;
+                    _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+                    _undoController.MeshContext.Materials = entry.Materials != null 
+                        ? new List<Material>(entry.Materials) 
+                        : new List<Material>();
+                    _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+                }
+                
+                InitVertexOffsets(updateCamera: false);
+            }
+        }
+
+        // 選択クリア
+        _selectedVertices.Clear();
+        _selectionState?.ClearAll();
+        
+        if (_undoController != null)
+        {
+            _undoController.MeshContext.SelectedVertices = new HashSet<int>();
         }
 
         Repaint();

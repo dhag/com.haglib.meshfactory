@@ -21,6 +21,8 @@ namespace MeshFactory.Tools
     public class MoveTool : IEditTool
     {
         public string Name => "Move";
+        public string DisplayName => "Move";
+        //public ToolCategory Category => ToolCategory.Transform;  
 
         // ================================================================
         // 設定（IToolSettings対応）

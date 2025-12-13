@@ -279,7 +279,7 @@ namespace MeshFactory.Tools
             {
                 if (tool.Settings != null)
                 {
-                    storage.Set(tool.Settings);
+                    storage.Set(tool.Name, tool.Settings);
                 }
             }
         }

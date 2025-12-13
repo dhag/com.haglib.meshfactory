@@ -56,6 +56,8 @@ namespace MeshFactory.Tools
     public class AddFaceTool : IEditTool
     {
         public string Name => "Add Face";
+        public string DisplayName => "Add Face";
+        //public ToolCategory Category => ToolCategory.Topology;  
 
         // ================================================================
         // 設定（IToolSettings対応）

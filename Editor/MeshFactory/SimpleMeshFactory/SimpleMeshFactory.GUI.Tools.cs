@@ -1,6 +1,7 @@
 // Assets/Editor/SimpleMeshFactory.GUI.Tools.cs
 // ToolManager統合版
 // Phase 1: UI描画をToolManagerと連携
+// ToolButtonLayoutを削除し、登録順で2列自動レイアウト
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -11,24 +12,6 @@ using MeshFactory.Selection;
 
 public partial class SimpleMeshFactory
 {
-    // ================================================================
-    // ツールボタンレイアウト定義
-    // ================================================================
-
-    /// <summary>
-    /// ツールボタンの行定義
-    /// 新しいツールを追加する場合はToolRegistryと併せてここも更新
-    /// </summary>
-    private static readonly string[][] ToolButtonLayout = new string[][]
-    {
-        new[] { "Select", "Move" },
-        new[] { "Add Face", "Knife" },
-        new[] { "EdgeTopo", "Sel+" },
-        new[] { "Sculpt", "Merge" },
-        new[] { "Extrude", "Push" },
-        new[] { "Bevel", "Pivot Offset" },
-    };
-
     // ================================================================
     // Tools セクション描画
     // ================================================================
@@ -41,7 +24,7 @@ public partial class SimpleMeshFactory
 
         EditorGUI.indentLevel++;
 
-        // ツールボタン（レイアウト定義に基づいて描画）
+        // ツールボタン（登録順で2列自動レイアウト）
         DrawToolButtons();
 
         // 現在のツールの設定UI
@@ -57,21 +40,33 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// ツールボタンを描画
+    /// ツールボタンを描画（登録順で2列自動レイアウト）
     /// </summary>
     private void DrawToolButtons()
     {
-        foreach (var row in ToolButtonLayout)
+        if (_toolManager == null) return;
+
+        var toolNames = _toolManager.ToolNames;
+        int count = toolNames.Count;
+
+        for (int i = 0; i < count; i += 2)
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                foreach (var toolName in row)
+                // 1列目
+                var tool1 = _toolManager.GetTool(toolNames[i]);
+                if (tool1 != null)
                 {
-                    var tool = _toolManager?.GetTool(toolName);
-                    if (tool != null)
+                    DrawToolButton(tool1);
+                }
+
+                // 2列目（存在する場合）
+                if (i + 1 < count)
+                {
+                    var tool2 = _toolManager.GetTool(toolNames[i + 1]);
+                    if (tool2 != null)
                     {
-                        string displayName = ToolRegistry.GetDisplayName(toolName);
-                        DrawToolButton(tool, displayName);
+                        DrawToolButton(tool2);
                     }
                 }
             }
@@ -81,7 +76,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 個別ツールボタンを描画
     /// </summary>
-    private void DrawToolButton(IEditTool tool, string label)
+    private void DrawToolButton(IEditTool tool)
     {
         if (tool == null) return;
 
@@ -90,7 +85,7 @@ public partial class SimpleMeshFactory
         if (isActive)
             GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
 
-        if (GUILayout.Toggle(isActive, label, "Button") && !isActive)
+        if (GUILayout.Toggle(isActive, tool.DisplayName, "Button") && !isActive)
         {
             // Undo記録付きでツール切り替え
             SwitchToolWithUndo(tool);
@@ -113,7 +108,7 @@ public partial class SimpleMeshFactory
         if (_undoController != null)
         {
             _undoController.EditorState.CurrentToolName = newTool.Name;
-            _undoController.EndEditorStateDrag($"Switch to {newTool.Name} Tool");
+            _undoController.EndEditorStateDrag($"Switch to {newTool.DisplayName} Tool");
         }
     }
 
@@ -145,7 +140,7 @@ public partial class SimpleMeshFactory
             // After: 変更検出 & Undo記録
             if (settings.IsDifferentFrom(before))
             {
-                RecordToolSettingsChange(before, settings.Clone());
+                RecordToolSettingsChange(currentTool, before, settings.Clone());
             }
         }
         else
@@ -158,9 +153,9 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ツール設定変更をUndo記録
     /// </summary>
-    private void RecordToolSettingsChange(IToolSettings before, IToolSettings after)
+    private void RecordToolSettingsChange(IEditTool tool, IToolSettings before, IToolSettings after)
     {
-        if (_undoController == null || before == null || after == null)
+        if (_undoController == null || tool == null || before == null || after == null)
             return;
 
         var editorState = _undoController.EditorState;
@@ -168,16 +163,16 @@ public partial class SimpleMeshFactory
             editorState.ToolSettings = new ToolSettingsStorage();
 
         // Before: 変更前の設定をEditorStateContextに設定
-        editorState.ToolSettings.Set(before);
+        editorState.ToolSettings.Set(tool.Name, before);
 
         // BeginDrag: スナップショット取得
         _undoController.BeginEditorStateDrag();
 
         // After: 変更後の設定をEditorStateContextに設定
-        editorState.ToolSettings.Set(after);
+        editorState.ToolSettings.Set(tool.Name, after);
 
         // EndDrag: 差異検出 & Undo記録
-        _undoController.EndEditorStateDrag($"Change {after.ToolName} Settings");
+        _undoController.EndEditorStateDrag($"Change {tool.DisplayName} Settings");
 
         Repaint();
     }

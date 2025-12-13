@@ -8,8 +8,6 @@ namespace MeshFactory.Tools
     /// </summary>
     public class KnifeSettings : IToolSettings
     {
-        public string ToolName => "Knife";
-
         // ================================================================
         // 設定値
         // ================================================================

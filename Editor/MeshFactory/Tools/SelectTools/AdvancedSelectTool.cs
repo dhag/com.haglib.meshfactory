@@ -14,7 +14,9 @@ namespace MeshFactory.Tools
     /// </summary>
     public class AdvancedSelectTool : IEditTool
     {
-        public string Name => "Sel+";
+        public string Name => "SelectAdvanced";//"Sel+";
+        public string DisplayName => "SelectAdvanced";//"Sel+";
+        //public ToolCategory Category => ToolCategory.Selection; 
 
         // ================================================================
         // 設定（IToolSettings対応）

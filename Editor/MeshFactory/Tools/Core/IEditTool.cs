@@ -7,12 +7,29 @@ using UnityEngine;
 namespace MeshFactory.Tools
 {
     /// <summary>
+    /// ツールのカテゴリ
+    /// </summary>
+    public enum ToolCategory
+    {
+        Selection,      // 選択系
+        Transform,      // 変形系
+        Topology,       // トポロジ編集系
+        Utility         // ユーティリティ
+    }
+
+    /// <summary>
     /// 編集ツールの共通インターフェース
     /// </summary>
     public interface IEditTool
     {
-        /// <summary>ツール名</summary>
+        /// <summary>ツール名（内部識別子）</summary>
         string Name { get; }
+
+        /// <summary>表示名</summary>
+        string DisplayName { get; }
+
+        /// <summary>カテゴリ</summary>
+        //ToolCategory Category { get; }
 
         /// <summary>
         /// ツール設定（Undo対応）

@@ -10,8 +10,6 @@ namespace MeshFactory.Tools
     /// </summary>
     public class SculptSettings : IToolSettings
     {
-        public string ToolName => "Sculpt";
-
         // ================================================================
         // 設定値
         // ================================================================

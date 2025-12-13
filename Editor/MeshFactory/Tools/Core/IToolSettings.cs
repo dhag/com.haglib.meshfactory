@@ -1,6 +1,7 @@
 // Assets/Editor/MeshFactory/Tools/IToolSettings.cs
 // ツール設定の共通インターフェース
 // 各ツールが自分のSettingsを自己管理し、統一的にUndo対応
+// ToolNameはIEditTool.Nameを使用するため削除
 
 using System;
 
@@ -12,11 +13,6 @@ namespace MeshFactory.Tools
     /// </summary>
     public interface IToolSettings
     {
-        /// <summary>
-        /// ツール名（EditorStateContextでのキーに使用）
-        /// </summary>
-        string ToolName { get; }
-
         /// <summary>
         /// 設定の複製を作成（Undo用スナップショット）
         /// </summary>
@@ -42,7 +38,6 @@ namespace MeshFactory.Tools
     /// </summary>
     public abstract class ToolSettingsBase : IToolSettings
     {
-        public abstract string ToolName { get; }
         public abstract IToolSettings Clone();
         public abstract bool IsDifferentFrom(IToolSettings other);
         public abstract void CopyFrom(IToolSettings other);

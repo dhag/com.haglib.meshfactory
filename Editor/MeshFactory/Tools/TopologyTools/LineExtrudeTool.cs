@@ -21,6 +21,8 @@ namespace MeshFactory.Tools
     public class LineExtrudeTool : IEditTool
     {
         public string Name => "Line Extrude";
+        public string DisplayName => "Line Extrude";
+        //public ToolCategory Category => ToolCategory.Topology;
         /// <summary>
         /// 設定なし（nullを返す）
         /// </summary>

@@ -30,6 +30,8 @@ namespace MeshFactory.Tools
     public class EdgeTopologyTool : IEditTool
     {
         public string Name => "EdgeTopo";
+        public string DisplayName => "EdgeTopo";
+        //public ToolCategory Category => ToolCategory.Topology;
 
         // ================================================================
         // 設定（IToolSettings対応）

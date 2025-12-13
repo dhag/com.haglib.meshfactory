@@ -18,6 +18,8 @@ namespace MeshFactory.Tools
     public class FaceExtrudeTool : IEditTool
     {
         public string Name => "Push";
+        public string DisplayName => "Push";
+        //ublic ToolCategory Category => ToolCategory.Topology;
 
         // ================================================================
         // 設定（IToolSettings対応）

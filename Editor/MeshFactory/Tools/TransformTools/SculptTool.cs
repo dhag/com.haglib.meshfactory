@@ -32,6 +32,9 @@ namespace MeshFactory.Tools
     public class SculptTool : IEditTool
     {
         public string Name => "Sculpt";
+        public string DisplayName => "Sculpt";
+
+        //public ToolCategory Category => ToolCategory.Transform;
 
         // ================================================================
         // 設定（IToolSettings対応）

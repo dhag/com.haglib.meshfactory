@@ -12,8 +12,6 @@ namespace MeshFactory.Tools
     [Serializable]
     public class EdgeExtrudeSettings : IToolSettings
     {
-        public string ToolName => "Extrude";
-
         /// <summary>
         /// 押し出しモード
         /// </summary>

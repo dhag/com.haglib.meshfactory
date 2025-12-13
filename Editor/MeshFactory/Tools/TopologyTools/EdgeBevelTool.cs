@@ -15,6 +15,8 @@ namespace MeshFactory.Tools
     public class EdgeBevelTool : IEditTool
     {
         public string Name => "Bevel";
+        public string DisplayName => "Bevel";
+        //public ToolCategory Category => ToolCategory.Topology;
 
         // ================================================================
         // 設定（IToolSettings対応）

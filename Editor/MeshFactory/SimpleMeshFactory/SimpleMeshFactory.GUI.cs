@@ -155,13 +155,22 @@ public partial class SimpleMeshFactory
                 // Create Mesh
                 EditorGUILayout.LabelField("Create Mesh", EditorStyles.miniBoldLabel);
 
-                // ★追加モードUI
+                // ★追加モードUI（Undo対応）
                 EditorGUILayout.BeginHorizontal();
                 EditorGUI.BeginChangeCheck();
-                _addToCurrentMesh = EditorGUILayout.ToggleLeft("Add to Current", _addToCurrentMesh, GUILayout.Width(110));
-                if (EditorGUI.EndChangeCheck())
+                bool newAddToCurrentMesh = EditorGUILayout.ToggleLeft("Add to Current", _addToCurrentMesh, GUILayout.Width(110));
+                if (EditorGUI.EndChangeCheck() && newAddToCurrentMesh != _addToCurrentMesh)
                 {
-                    // 設定変更
+                    if (_undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                    }
+                    _addToCurrentMesh = newAddToCurrentMesh;
+                    if (_undoController != null)
+                    {
+                        _undoController.EditorState.AddToCurrentMesh = _addToCurrentMesh;
+                        _undoController.EndEditorStateDrag("Toggle Add to Current");
+                    }
                 }
 
                 // 追加先がない場合は警告
@@ -171,11 +180,39 @@ public partial class SimpleMeshFactory
                 }
                 EditorGUILayout.EndHorizontal();
 
-                // 自動マージUI
+                // 自動マージUI（Undo対応）
                 EditorGUILayout.BeginHorizontal();
-                _autoMergeOnCreate = EditorGUILayout.ToggleLeft("Auto Merge", _autoMergeOnCreate, GUILayout.Width(90));
+                EditorGUI.BeginChangeCheck();
+                bool newAutoMergeOnCreate = EditorGUILayout.ToggleLeft("Auto Merge", _autoMergeOnCreate, GUILayout.Width(90));
+                if (EditorGUI.EndChangeCheck() && newAutoMergeOnCreate != _autoMergeOnCreate)
+                {
+                    if (_undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                    }
+                    _autoMergeOnCreate = newAutoMergeOnCreate;
+                    if (_undoController != null)
+                    {
+                        _undoController.EditorState.AutoMergeOnCreate = _autoMergeOnCreate;
+                        _undoController.EndEditorStateDrag("Toggle Auto Merge");
+                    }
+                }
                 EditorGUI.BeginDisabledGroup(!_autoMergeOnCreate);
-                _autoMergeThreshold = EditorGUILayout.FloatField(_autoMergeThreshold, GUILayout.Width(60));
+                EditorGUI.BeginChangeCheck();
+                float newAutoMergeThreshold = EditorGUILayout.FloatField(_autoMergeThreshold, GUILayout.Width(60));
+                if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newAutoMergeThreshold, _autoMergeThreshold))
+                {
+                    if (_undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                    }
+                    _autoMergeThreshold = newAutoMergeThreshold;
+                    if (_undoController != null)
+                    {
+                        _undoController.EditorState.AutoMergeThreshold = _autoMergeThreshold;
+                        _undoController.EndEditorStateDrag("Change Auto Merge Threshold");
+                    }
+                }
                 EditorGUI.EndDisabledGroup();
                 EditorGUILayout.EndHorizontal();
 

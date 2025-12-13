@@ -206,20 +206,30 @@ public partial class SimpleMeshFactory
         displayMesh.hideFlags = HideFlags.HideAndDontSave;
         entry.Mesh = displayMesh;
 
-        // Undo記録
-        var beforeSnapshot = _undoController?.CaptureMeshDataSnapshot();
+        // Undo記録用に変更前の状態を保存
+        int oldSelectedIndex = _selectedIndex;
+        int insertIndex = _meshList.Count;
 
         _meshList.Add(entry);
         _selectedIndex = _meshList.Count - 1;
         InitVertexOffsets();
 
-        LoadEntryToUndoController(entry);
-
-        // Undo記録（メッシュ追加）
-        if (_undoController != null && beforeSnapshot != null)
+        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        // MeshContextに必要な情報だけを設定
+        if (_undoController != null)
         {
-            var afterSnapshot = _undoController.CaptureMeshDataSnapshot();
-            _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, $"Load Mesh: {name}");
+            _undoController.MeshContext.MeshData = entry.Data;
+            _undoController.MeshContext.TargetMesh = entry.Mesh;
+            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.SelectedVertices = new HashSet<int>();
+            _undoController.MeshContext.Materials = entry.Materials != null 
+                ? new List<Material>(entry.Materials) 
+                : new List<Material>();
+            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+
+            // Undo記録（メッシュリスト追加）
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshEntryAdd(entry, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 
         Repaint();
@@ -289,11 +299,32 @@ public partial class SimpleMeshFactory
 
         Debug.Log($"[CreateNewMeshEntry] name={name}, vertices={entry.Data.VertexCount}, faces={entry.Data.FaceCount}");
 
+        // Undo記録用に変更前の状態を保存
+        int oldSelectedIndex = _selectedIndex;
+        int insertIndex = _meshList.Count;
+
+        // リストに追加
         _meshList.Add(entry);
         _selectedIndex = _meshList.Count - 1;
         InitVertexOffsets();
 
-        LoadEntryToUndoController(entry);
+        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        // MeshContextに必要な情報だけを設定
+        if (_undoController != null)
+        {
+            _undoController.MeshContext.MeshData = entry.Data;
+            _undoController.MeshContext.TargetMesh = entry.Mesh;
+            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.SelectedVertices = new HashSet<int>();
+            _undoController.MeshContext.Materials = entry.Materials != null 
+                ? new List<Material>(entry.Materials) 
+                : new List<Material>();
+            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+            
+            // Undo記録（メッシュエントリ追加）
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshEntryAdd(entry, insertIndex, oldSelectedIndex, _selectedIndex);
+        }
 
         Repaint();
     }
@@ -309,11 +340,14 @@ public partial class SimpleMeshFactory
             entry.Data = new MeshData(entry.Name);
         }
 
-        // Undo用スナップショット
-        MeshDataSnapshot beforeSnapshot = default;
+        // ================================================================
+        // Undo: 開始時スナップショット（ツール標準方式）
+        // ================================================================
+        MeshDataSnapshot snapshotBefore = null;
         if (_undoController != null)
         {
-            beforeSnapshot = MeshDataSnapshot.Capture(_undoController.MeshContext);
+            _undoController.MeshContext.MeshData = entry.Data;
+            snapshotBefore = MeshDataSnapshot.Capture(_undoController.MeshContext);
         }
 
         // 追加前の頂点数を記録
@@ -340,7 +374,6 @@ public partial class SimpleMeshFactory
         // 自動マージ（追加した頂点と既存頂点の境界をマージ）
         if (_autoMergeOnCreate && entry.Data.VertexCount >= 2)
         {
-            // 全頂点を対象にして、追加頂点と既存頂点の接合部をマージ
             var allVertices = new HashSet<int>(Enumerable.Range(0, entry.Data.VertexCount));
             var result = MergeVerticesTool.MergeVerticesAtSamePosition(entry.Data, allVertices, _autoMergeThreshold);
 
@@ -356,17 +389,32 @@ public partial class SimpleMeshFactory
         // メッシュ更新
         SyncMeshFromData(entry);
 
-        // Undo記録
-        if (_undoController != null)
+        // ================================================================
+        // Undo: 終了時スナップショット + 記録（ツール標準方式）
+        // ================================================================
+        if (_undoController != null && snapshotBefore != null)
         {
             _undoController.MeshContext.MeshData = entry.Data;
-            var afterSnapshot = MeshDataSnapshot.Capture(_undoController.MeshContext);
-            _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, $"Add {name}");
+            var snapshotAfter = MeshDataSnapshot.Capture(_undoController.MeshContext);
+            
+            // 直接VertexEditStackに記録（RecordTopologyChangeのEndGroup副作用を回避）
+            var record = new MeshSnapshotRecord(snapshotBefore, snapshotAfter);
+            _undoController.VertexEditStack.Record(record, $"Merge: {name}");
+            _undoController.FocusVertexEdit();
         }
 
-        // 選択更新
-        InitVertexOffsets();
-        LoadEntryToUndoController(entry);
+        // 選択更新（カメラは変更しない）
+        InitVertexOffsets(updateCamera: false);
+        
+        // 注意: LoadEntryToUndoControllerは呼ばない
+        // SetMeshData内で_vertexEditStack.Clear()が呼ばれるため、Undo記録が消えてしまう
+        // MeshContextは既に上で設定済み、追加で必要な設定のみ行う
+        if (_undoController != null)
+        {
+            _undoController.MeshContext.TargetMesh = entry.Mesh;
+            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+        }
 
         Debug.Log($"[AddMeshDataToCurrent] Added {name} to {entry.Name}, total vertices={entry.Data.VertexCount}, faces={entry.Data.FaceCount}");
 
@@ -431,11 +479,31 @@ public partial class SimpleMeshFactory
             }
         }
 
+        // Undo記録用に変更前の状態を保存
+        int oldSelectedIndex = _selectedIndex;
+        int insertIndex = _meshList.Count;
+
         _meshList.Add(entry);
         _selectedIndex = _meshList.Count - 1;
         InitVertexOffsets();
 
-        LoadEntryToUndoController(entry);
+        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        // MeshContextに必要な情報だけを設定
+        if (_undoController != null)
+        {
+            _undoController.MeshContext.MeshData = entry.Data;
+            _undoController.MeshContext.TargetMesh = entry.Mesh;
+            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.SelectedVertices = new HashSet<int>();
+            _undoController.MeshContext.Materials = entry.Materials != null 
+                ? new List<Material>(entry.Materials) 
+                : new List<Material>();
+            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+
+            // Undo記録（メッシュリスト追加）
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshEntryAdd(entry, insertIndex, oldSelectedIndex, _selectedIndex);
+        }
 
         Repaint();
     }
@@ -446,6 +514,16 @@ public partial class SimpleMeshFactory
             return;
 
         var entry = _meshList[index];
+        
+        // Undo記録用にスナップショットを削除前に保存
+        int oldSelectedIndex = _selectedIndex;
+        MeshEntrySnapshot snapshot = null;
+        if (_undoController != null)
+        {
+            snapshot = MeshEntrySnapshot.Capture(entry);
+        }
+
+        // Meshの破棄
         if (entry.Mesh != null)
         {
             DestroyImmediate(entry.Mesh);
@@ -466,13 +544,41 @@ public partial class SimpleMeshFactory
         {
             InitVertexOffsets();
             var newEntry = _meshList[_selectedIndex];
-            LoadEntryToUndoController(newEntry);
+            
+            // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+            // MeshContextに必要な情報だけを設定
+            if (_undoController != null)
+            {
+                _undoController.MeshContext.MeshData = newEntry.Data;
+                _undoController.MeshContext.TargetMesh = newEntry.Mesh;
+                _undoController.MeshContext.OriginalPositions = newEntry.OriginalPositions;
+                _undoController.MeshContext.SelectedVertices = new HashSet<int>();
+                _undoController.MeshContext.Materials = newEntry.Materials != null 
+                    ? new List<Material>(newEntry.Materials) 
+                    : new List<Material>();
+                _undoController.MeshContext.CurrentMaterialIndex = newEntry.CurrentMaterialIndex;
+            }
         }
         else
         {
             _vertexOffsets = null;
             _groupOffsets = null;
+            // メッシュがなくなったときだけClear
             _undoController?.VertexEditStack.Clear();
+        }
+
+        // Undo記録（メッシュリスト削除）
+        if (_undoController != null && snapshot != null)
+        {
+            var record = new MeshListChangeRecord
+            {
+                RemovedEntries = new List<(int, MeshEntrySnapshot)> { (index, snapshot) },
+                OldSelectedIndex = oldSelectedIndex,
+                NewSelectedIndex = _selectedIndex
+            };
+            _undoController.MeshListStack.Record(record, $"Remove Mesh: {entry.Name}");
+            _undoController.FocusMeshList();
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
         }
 
         Repaint();
@@ -481,7 +587,8 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 頂点オフセット初期化（MeshDataベース）
     /// </summary>
-    private void InitVertexOffsets()
+    /// <param name="updateCamera">trueの場合、カメラをメッシュに合わせて調整する</param>
+    private void InitVertexOffsets(bool updateCamera = true)
     {
         if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count)
         {
@@ -505,11 +612,14 @@ public partial class SimpleMeshFactory
         _vertexOffsets = new Vector3[vertexCount];
         _groupOffsets = new Vector3[vertexCount];  // Vertexと1:1
 
-        // カメラ設定
-        var bounds = meshData.CalculateBounds();
-        float radius = Mathf.Max(bounds.extents.magnitude, 0.5f);
-        _cameraDistance = radius * 3.5f;
-        _cameraTarget = bounds.center;
+        // カメラ設定（オプション）
+        if (updateCamera)
+        {
+            var bounds = meshData.CalculateBounds();
+            float radius = Mathf.Max(bounds.extents.magnitude, 0.5f);
+            _cameraDistance = radius * 3.5f;
+            _cameraTarget = bounds.center;
+        }
     }
     // ================================================================
     // 保存機能

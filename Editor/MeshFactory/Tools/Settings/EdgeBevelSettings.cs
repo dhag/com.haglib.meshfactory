@@ -12,8 +12,6 @@ namespace MeshFactory.Tools
     [Serializable]
     public class EdgeBevelSettings : IToolSettings
     {
-        public string ToolName => "Bevel";
-
         [SerializeField] private float _amount = 0.1f;
         [SerializeField] private int _segments = 1;
         [SerializeField] private bool _fillet = true;

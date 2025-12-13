@@ -12,8 +12,6 @@ namespace MeshFactory.Tools
     [Serializable]
     public class FaceExtrudeSettings : IToolSettings
     {
-        public string ToolName => "Push";
-
         /// <summary>
         /// 押し出しタイプ
         /// </summary>

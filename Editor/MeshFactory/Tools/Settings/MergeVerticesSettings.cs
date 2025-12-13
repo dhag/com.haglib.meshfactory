@@ -10,8 +10,6 @@ namespace MeshFactory.Tools
     /// </summary>
     public class MergeVerticesSettings : IToolSettings
     {
-        public string ToolName => "Merge";
-
         // ================================================================
         // 設定値
         // ================================================================

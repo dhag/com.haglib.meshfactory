@@ -8,8 +8,6 @@ namespace MeshFactory.Tools
     /// </summary>
     public class EdgeTopologySettings : IToolSettings
     {
-        public string ToolName => "EdgeTopo";
-
         // ================================================================
         // 設定値
         // ================================================================

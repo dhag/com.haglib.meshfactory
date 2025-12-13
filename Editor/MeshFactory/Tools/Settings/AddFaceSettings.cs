@@ -10,8 +10,6 @@ namespace MeshFactory.Tools
     /// </summary>
     public class AddFaceSettings : IToolSettings
     {
-        public string ToolName => "Add Face";
-
         // ================================================================
         // 設定値
         // ================================================================

@@ -18,6 +18,8 @@ namespace MeshFactory.Tools
     public class EdgeExtrudeTool : IEditTool
     {
         public string Name => "Extrude";
+        public string DisplayName => "Extrude";
+        //public ToolCategory Category => ToolCategory.Topology;
 
         // ================================================================
         // 設定（IToolSettings対応）

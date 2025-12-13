@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
@@ -24,12 +25,14 @@ namespace MeshFactory.UndoSystem
         private UndoStack<MeshEditContext> _vertexEditStack;
         private UndoStack<EditorStateContext> _editorStateStack;
         private UndoStack<WorkPlane> _workPlaneStack;
+        private UndoStack<MeshListContext> _meshListStack;
         private UndoGroup _subWindowGroup;
 
         // === コンテキスト ===
         private MeshEditContext _meshContext;
         private EditorStateContext _editorStateContext;
         private WorkPlane _workPlane;
+        private MeshListContext _meshListContext;
 
         // === 状態追跡（変更検出用） ===
         private Vector3[] _lastVertexPositions;
@@ -48,6 +51,7 @@ namespace MeshFactory.UndoSystem
         public MeshEditContext MeshContext => _meshContext;
         public EditorStateContext EditorState => _editorStateContext;
         public WorkPlane WorkPlane => _workPlane;
+        public MeshListContext MeshListContext => _meshListContext;
 
         /// <summary>MeshDataへの直接アクセス</summary>
         public MeshData MeshData => _meshContext?.MeshData;
@@ -62,6 +66,7 @@ namespace MeshFactory.UndoSystem
         public UndoStack<MeshEditContext> VertexEditStack => _vertexEditStack;
         public UndoStack<EditorStateContext> EditorStateStack => _editorStateStack;
         public UndoStack<WorkPlane> WorkPlaneStack => _workPlaneStack;
+        public UndoStack<MeshListContext> MeshListStack => _meshListStack;
         public UndoGroup SubWindowGroup => _subWindowGroup;
 
         // === イベント ===
@@ -101,6 +106,15 @@ namespace MeshFactory.UndoSystem
             );
             _mainGroup.AddChild(_workPlaneStack);
 
+            // MeshListスタック（リスト操作用）
+            _meshListContext = new MeshListContext();
+            _meshListStack = new UndoStack<MeshListContext>(
+                $"{windowId}/MeshList",
+                "Mesh List",
+                _meshListContext
+            );
+            _mainGroup.AddChild(_meshListStack);
+
             // MeshContextにWorkPlane参照を設定（選択連動Undo用）
             _meshContext.WorkPlane = _workPlane;
 
@@ -118,6 +132,8 @@ namespace MeshFactory.UndoSystem
             _editorStateStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
             _workPlaneStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
             _workPlaneStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
+            _meshListStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
+            _meshListStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
 
             // グローバルマネージャーに登録
             UndoManager.Instance.AddChild(_mainGroup);
@@ -848,7 +864,104 @@ namespace MeshFactory.UndoSystem
                    $"  Vertex: {_vertexEditStack.GetDebugInfo()}\n" +
                    $"  EditorState: {_editorStateStack.GetDebugInfo()}\n" +
                    $"  WorkPlane: {_workPlaneStack.GetDebugInfo()}\n" +
+                   $"  MeshList: {_meshListStack.GetDebugInfo()}\n" +
                    $"  SubWindows: {_subWindowGroup.Children.Count}";
+        }
+
+        // ================================================================
+        // MeshList操作
+        // ================================================================
+
+        /// <summary>
+        /// MeshListを設定（SimpleMeshFactory初期化時に呼び出し）
+        /// </summary>
+        /// <param name="meshList">メッシュエントリリストへの参照</param>
+        /// <param name="onListChanged">リスト変更時のコールバック</param>
+        public void SetMeshList(List<SimpleMeshFactory.MeshEntry> meshList, Action onListChanged = null)
+        {
+            _meshListContext.MeshList = meshList;
+            _meshListContext.OnListChanged = onListChanged;
+        }
+
+        /// <summary>
+        /// MeshListにフォーカス
+        /// </summary>
+        public void FocusMeshList()
+        {
+            _mainGroup.FocusedChildId = _meshListStack.Id;
+            UndoManager.Instance.FocusedChildId = _mainGroup.Id;
+        }
+
+        /// <summary>
+        /// メッシュエントリ追加を記録
+        /// </summary>
+        /// <param name="entry">追加されたエントリ</param>
+        /// <param name="insertIndex">挿入位置</param>
+        /// <param name="oldSelectedIndex">追加前の選択インデックス</param>
+        /// <param name="newSelectedIndex">追加後の選択インデックス</param>
+        public void RecordMeshEntryAdd(SimpleMeshFactory.MeshEntry entry, int insertIndex, int oldSelectedIndex, int newSelectedIndex)
+        {
+            var record = new MeshListChangeRecord
+            {
+                AddedEntries = new List<(int, MeshEntrySnapshot)>
+                {
+                    (insertIndex, MeshEntrySnapshot.Capture(entry))
+                },
+                OldSelectedIndex = oldSelectedIndex,
+                NewSelectedIndex = newSelectedIndex
+            };
+
+            _meshListStack.Record(record, $"Add Mesh: {entry.Name}");
+            FocusMeshList();
+        }
+
+        /// <summary>
+        /// メッシュエントリ削除を記録（複数対応）
+        /// </summary>
+        /// <param name="removedEntries">削除されたエントリ（インデックス + エントリ）のリスト</param>
+        /// <param name="oldSelectedIndex">削除前の選択インデックス</param>
+        /// <param name="newSelectedIndex">削除後の選択インデックス</param>
+        public void RecordMeshEntriesRemove(List<(int Index, SimpleMeshFactory.MeshEntry Entry)> removedEntries, int oldSelectedIndex, int newSelectedIndex)
+        {
+            var record = new MeshListChangeRecord
+            {
+                RemovedEntries = removedEntries
+                    .Select(e => (e.Index, MeshEntrySnapshot.Capture(e.Entry)))
+                    .ToList(),
+                OldSelectedIndex = oldSelectedIndex,
+                NewSelectedIndex = newSelectedIndex
+            };
+
+            string desc = removedEntries.Count == 1 
+                ? $"Remove Mesh: {removedEntries[0].Entry.Name}"
+                : $"Remove {removedEntries.Count} Meshes";
+
+            _meshListStack.Record(record, desc);
+            FocusMeshList();
+        }
+
+        /// <summary>
+        /// メッシュエントリ順序変更を記録
+        /// </summary>
+        /// <param name="entry">移動したエントリ</param>
+        /// <param name="oldIndex">移動前のインデックス</param>
+        /// <param name="newIndex">移動後のインデックス</param>
+        /// <param name="oldSelectedIndex">移動前の選択インデックス</param>
+        /// <param name="newSelectedIndex">移動後の選択インデックス</param>
+        public void RecordMeshEntryReorder(SimpleMeshFactory.MeshEntry entry, int oldIndex, int newIndex, int oldSelectedIndex, int newSelectedIndex)
+        {
+            var snapshot = MeshEntrySnapshot.Capture(entry);
+
+            var record = new MeshListChangeRecord
+            {
+                RemovedEntries = new List<(int, MeshEntrySnapshot)> { (oldIndex, snapshot) },
+                AddedEntries = new List<(int, MeshEntrySnapshot)> { (newIndex, snapshot) },
+                OldSelectedIndex = oldSelectedIndex,
+                NewSelectedIndex = newSelectedIndex
+            };
+
+            _meshListStack.Record(record, $"Reorder Mesh: {entry.Name}");
+            FocusMeshList();
         }
     }
 }

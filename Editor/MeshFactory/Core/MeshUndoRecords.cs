@@ -936,6 +936,11 @@ namespace MeshFactory.UndoSystem
         // 現在のツール
         public string CurrentToolName = "Select";
 
+        // メッシュ作成設定
+        public bool AddToCurrentMesh = true;
+        public bool AutoMergeOnCreate = true;
+        public float AutoMergeThreshold = 0.001f;
+
         // ツール設定
         //ナイフツールの固有設定（既存）
         //public KnifeProperty knifeProperty = new KnifeProperty();
@@ -961,6 +966,9 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = ShowVertices,
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
+                AddToCurrentMesh = AddToCurrentMesh,
+                AutoMergeOnCreate = AutoMergeOnCreate,
+                AutoMergeThreshold = AutoMergeThreshold,
             };
             /*
             // KnifeProperty（既存）
@@ -988,6 +996,9 @@ namespace MeshFactory.UndoSystem
             ShowVertices = snapshot.ShowVertices;
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
+            AddToCurrentMesh = snapshot.AddToCurrentMesh;
+            AutoMergeOnCreate = snapshot.AutoMergeOnCreate;
+            AutoMergeThreshold = snapshot.AutoMergeThreshold;
 
             // KnifeProperty（既存）
             /*knifeProperty.Mode = snapshot.knifeProperty.Mode;
@@ -1014,6 +1025,11 @@ namespace MeshFactory.UndoSystem
         public bool ShowWireframe, ShowVertices, VertexEditMode;
         public string CurrentToolName;
 
+        // メッシュ作成設定
+        public bool AddToCurrentMesh;
+        public bool AutoMergeOnCreate;
+        public float AutoMergeThreshold;
+
         // ナイフツール設定（既存）
         //public KnifeProperty knifeProperty;
 
@@ -1030,7 +1046,10 @@ namespace MeshFactory.UndoSystem
                 ShowWireframe != other.ShowWireframe ||
                 ShowVertices != other.ShowVertices ||
                 VertexEditMode != other.VertexEditMode ||
-                CurrentToolName != other.CurrentToolName)
+                CurrentToolName != other.CurrentToolName ||
+                AddToCurrentMesh != other.AddToCurrentMesh ||
+                AutoMergeOnCreate != other.AutoMergeOnCreate ||
+                !Mathf.Approximately(AutoMergeThreshold, other.AutoMergeThreshold))
             {
                 return true;
             }
@@ -1447,6 +1466,183 @@ namespace MeshFactory.UndoSystem
             {
                 ctx.WorkPlane.ApplySnapshot(NewWorkPlaneSnapshot.Value);
             }
+        }
+    }
+
+    // ============================================================
+    // メッシュリスト操作用
+    // ============================================================
+
+    /// <summary>
+    /// メッシュリスト操作用コンテキスト
+    /// </summary>
+    public class MeshListContext
+    {
+        /// <summary>メッシュエントリリスト（SimpleMeshFactoryから参照を受け取る）</summary>
+        public List<SimpleMeshFactory.MeshEntry> MeshList;
+
+        /// <summary>現在の選択インデックス</summary>
+        public int SelectedIndex;
+
+        /// <summary>Undo/Redo実行後のコールバック（UI更新等）</summary>
+        public System.Action OnListChanged;
+    }
+
+    /// <summary>
+    /// MeshEntryの完全なスナップショット
+    /// </summary>
+    public class MeshEntrySnapshot
+    {
+        public string Name;
+        public MeshData Data;                    // Clone
+        public List<Material> Materials;
+        public int CurrentMaterialIndex;
+        public ExportSettings ExportSettings;
+        public Vector3[] OriginalPositions;
+
+        /// <summary>
+        /// MeshEntryからスナップショットを作成
+        /// </summary>
+        public static MeshEntrySnapshot Capture(SimpleMeshFactory.MeshEntry entry)
+        {
+            if (entry == null) return null;
+
+            return new MeshEntrySnapshot
+            {
+                Name = entry.Name,
+                Data = entry.Data?.Clone(),
+                Materials = entry.Materials != null ? new List<Material>(entry.Materials) : new List<Material>(),
+                CurrentMaterialIndex = entry.CurrentMaterialIndex,
+                ExportSettings = entry.ExportSettings != null ? new ExportSettings(entry.ExportSettings) : null,
+                OriginalPositions = entry.OriginalPositions != null 
+                    ? (Vector3[])entry.OriginalPositions.Clone() 
+                    : null
+            };
+        }
+
+        /// <summary>
+        /// スナップショットからMeshEntryを復元
+        /// </summary>
+        public SimpleMeshFactory.MeshEntry ToMeshEntry()
+        {
+            var entry = new SimpleMeshFactory.MeshEntry
+            {
+                Name = Name,
+                Data = Data?.Clone(),
+                Materials = Materials != null ? new List<Material>(Materials) : new List<Material>(),
+                CurrentMaterialIndex = CurrentMaterialIndex,
+                ExportSettings = ExportSettings != null ? new ExportSettings(ExportSettings) : null,
+                OriginalPositions = OriginalPositions != null 
+                    ? (Vector3[])OriginalPositions.Clone() 
+                    : null
+            };
+
+            // Unity Meshを再生成
+            if (entry.Data != null)
+            {
+                entry.Mesh = entry.Data.ToUnityMesh();
+                entry.Mesh.name = Name;
+                entry.Mesh.hideFlags = HideFlags.HideAndDontSave;
+            }
+
+            return entry;
+        }
+    }
+
+    /// <summary>
+    /// メッシュリスト用Undo記録の基底クラス
+    /// </summary>
+    public abstract class MeshListUndoRecord : IUndoRecord<MeshListContext>
+    {
+        public UndoOperationInfo Info { get; set; }
+        public abstract void Undo(MeshListContext context);
+        public abstract void Redo(MeshListContext context);
+    }
+
+    /// <summary>
+    /// メッシュリスト変更記録
+    /// 追加、削除、挿入、順序変更に対応
+    /// </summary>
+    public class MeshListChangeRecord : MeshListUndoRecord
+    {
+        /// <summary>削除されたエントリ（インデックス + スナップショット）</summary>
+        public List<(int Index, MeshEntrySnapshot Snapshot)> RemovedEntries = new List<(int, MeshEntrySnapshot)>();
+
+        /// <summary>追加されたエントリ（インデックス + スナップショット）</summary>
+        public List<(int Index, MeshEntrySnapshot Snapshot)> AddedEntries = new List<(int, MeshEntrySnapshot)>();
+
+        /// <summary>変更前の選択インデックス</summary>
+        public int OldSelectedIndex;
+
+        /// <summary>変更後の選択インデックス</summary>
+        public int NewSelectedIndex;
+
+        public override void Undo(MeshListContext ctx)
+        {
+            // 1. AddedEntriesを降順で削除（大きいインデックスから）
+            var sortedAdded = AddedEntries.OrderByDescending(e => e.Index).ToList();
+            foreach (var (index, _) in sortedAdded)
+            {
+                if (index >= 0 && index < ctx.MeshList.Count)
+                {
+                    // Meshを破棄
+                    var entry = ctx.MeshList[index];
+                    if (entry.Mesh != null)
+                    {
+                        Object.DestroyImmediate(entry.Mesh);
+                    }
+                    ctx.MeshList.RemoveAt(index);
+                }
+            }
+
+            // 2. RemovedEntriesを昇順で挿入（小さいインデックスから）
+            var sortedRemoved = RemovedEntries.OrderBy(e => e.Index).ToList();
+            foreach (var (index, snapshot) in sortedRemoved)
+            {
+                var entry = snapshot.ToMeshEntry();
+                int insertIndex = Mathf.Clamp(index, 0, ctx.MeshList.Count);
+                ctx.MeshList.Insert(insertIndex, entry);
+            }
+
+            // 3. 選択インデックスを復元
+            ctx.SelectedIndex = Mathf.Clamp(OldSelectedIndex, -1, ctx.MeshList.Count - 1);
+
+            // 4. コールバック
+            ctx.OnListChanged?.Invoke();
+        }
+
+        public override void Redo(MeshListContext ctx)
+        {
+            // 1. RemovedEntriesを降順で削除（大きいインデックスから）
+            var sortedRemoved = RemovedEntries.OrderByDescending(e => e.Index).ToList();
+            foreach (var (index, _) in sortedRemoved)
+            {
+                if (index >= 0 && index < ctx.MeshList.Count)
+                {
+                    // Meshを破棄
+                    var entry = ctx.MeshList[index];
+                    if (entry.Mesh != null)
+                    {
+                        Object.DestroyImmediate(entry.Mesh);
+                    }
+                    ctx.MeshList.RemoveAt(index);
+                }
+            }
+
+            // 2. AddedEntriesを昇順で挿入（小さいインデックスから）
+            var sortedAdded = AddedEntries.OrderBy(e => e.Index).ToList();
+            foreach (var (index, snapshot) in sortedAdded)
+            {
+                var entry = snapshot.ToMeshEntry();
+                int insertIndex = Mathf.Clamp(index, 0, ctx.MeshList.Count);
+                ctx.MeshList.Insert(insertIndex, entry);
+            }
+
+            // 3. 選択インデックスを復元
+            ctx.SelectedIndex = Mathf.Clamp(NewSelectedIndex, -1, ctx.MeshList.Count - 1);
+
+            // 4. コールバック
+            ctx.OnListChanged?.Invoke();
         }
     }
 }

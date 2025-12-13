@@ -27,8 +27,6 @@ namespace MeshFactory.Tools
     [Serializable]
     public class AdvancedSelectSettings : IToolSettings
     {
-        public string ToolName => "Sel+";
-
         [SerializeField] private AdvancedSelectMode _mode = AdvancedSelectMode.Connected;
         [SerializeField] private float _edgeLoopThreshold = 0.7f;
         [SerializeField] private bool _addToSelection = true;
