@@ -476,7 +476,7 @@ public partial class SimpleMeshFactory
         // Undo記録
         RecordExtendedSelectionChange(oldSnapshot, oldLegacySelection);
     }
-
+    /*
     /// <summary>
     /// ツールボタンを描画（トグル形式）
     /// </summary>
@@ -515,7 +515,7 @@ public partial class SimpleMeshFactory
 
         GUI.backgroundColor = oldColor;
     }
-
+    */
     /// <summary>
     /// MeshEntryをUndoコントローラーに読み込む
     /// </summary>

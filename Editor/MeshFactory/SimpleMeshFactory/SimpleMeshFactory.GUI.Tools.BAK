@@ -22,11 +22,11 @@ public partial class SimpleMeshFactory
     private static readonly string[][] ToolButtonLayout = new string[][]
     {
         new[] { "Select", "Move" },
-        new[] { "Add Face", "Knife" },
+        new[] { "AddFace", "Knife" },
         new[] { "EdgeTopo", "Sel+" },
         new[] { "Sculpt", "Merge" },
         new[] { "Extrude", "Push" },
-        new[] { "Bevel", "Pivot Offset" },
+        new[] { "Bevel", "Pivot" },
     };
 
     // ================================================================
@@ -131,6 +131,16 @@ public partial class SimpleMeshFactory
             return;
 
         // --------------------------------------------------------
+        // KnifeTool: 既存の処理を維持（後方互換）
+        // 将来的にKnifeSettingsに移行後、この分岐は削除可能
+        // --------------------------------------------------------
+        if (currentTool is KnifeTool knife)
+        {
+            DrawKnifeToolSettingsWithUndo(knife);
+            return;
+        }
+
+        // --------------------------------------------------------
         // IToolSettings対応ツール: 汎用Undo処理
         // --------------------------------------------------------
         var settings = currentTool.Settings;
@@ -182,4 +192,41 @@ public partial class SimpleMeshFactory
         Repaint();
     }
 
+    // ================================================================
+    // KnifeTool専用処理（既存コード維持）
+    // ================================================================
+
+    /// <summary>
+    /// KnifeToolの設定UIを描画（既存処理維持）
+    /// </summary>
+    private void DrawKnifeToolSettingsWithUndo(KnifeTool knifeTool)
+    {
+        // 変更前の状態を保存
+        var oldMode = knifeTool.knifeProperty.Mode;
+        var oldEdgeSelect = knifeTool.knifeProperty.EdgeSelect;
+        var oldChainMode = knifeTool.knifeProperty.ChainMode;
+
+        // UI描画
+        knifeTool.DrawSettingsUI();
+
+        // 設定が変更されたらUndo記録
+        if (knifeTool.knifeProperty.Mode != oldMode ||
+            knifeTool.knifeProperty.EdgeSelect != oldEdgeSelect ||
+            knifeTool.knifeProperty.ChainMode != oldChainMode)
+        {
+            // 変更前の状態を復元（BeginDrag前に必要）
+            _undoController.EditorState.knifeProperty.Mode = oldMode;
+            _undoController.EditorState.knifeProperty.EdgeSelect = oldEdgeSelect;
+            _undoController.EditorState.knifeProperty.ChainMode = oldChainMode;
+
+            _undoController.BeginEditorStateDrag();
+
+            // 変更後の状態を設定
+            _undoController.EditorState.knifeProperty.Mode = knifeTool.knifeProperty.Mode;
+            _undoController.EditorState.knifeProperty.EdgeSelect = knifeTool.knifeProperty.EdgeSelect;
+            _undoController.EditorState.knifeProperty.ChainMode = knifeTool.knifeProperty.ChainMode;
+
+            _undoController.EndEditorStateDrag("Change Knife Settings");
+        }
+    }
 }

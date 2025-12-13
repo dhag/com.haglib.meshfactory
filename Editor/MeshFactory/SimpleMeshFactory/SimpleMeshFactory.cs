@@ -205,7 +205,29 @@ public partial class SimpleMeshFactory : EditorWindow
     private WorkPlaneSnapshot? _cameraStartWorkPlaneSnapshot;
 
 
+    // ================================================================
+    // 【フェーズ2追加】選択Undo管理
+    // ================================================================
 
+    /// <summary>
+    /// マウス操作開始時の選択スナップショット
+    /// </summary>
+    private SelectionSnapshot _selectionSnapshotOnMouseDown;
+
+    /// <summary>
+    /// マウス操作開始時のレガシー選択
+    /// </summary>
+    private HashSet<int> _legacySelectionOnMouseDown;
+
+    /// <summary>
+    /// マウス操作開始時のWorkPlaneスナップショット
+    /// </summary>
+    private WorkPlaneSnapshot? _workPlaneSnapshotOnMouseDown;
+
+    /// <summary>
+    /// このマウス操作中にトポロジー変更があったか
+    /// </summary>
+    private bool _topologyChangedDuringMouseOperation;
 
 
 
@@ -322,32 +344,6 @@ public partial class SimpleMeshFactory : EditorWindow
 
 
 
-    /// <summary>
-    /// SimpleMeshFactoryの設定をToolに同期
-    /// </summary>
-    private void SyncToolSettings()
-    {
-        if (_moveTool != null)
-        {
-            _moveTool.UseMagnet = _useMagnet;
-            _moveTool.MagnetRadius = _magnetRadius;
-            _moveTool.MagnetFalloff = _magnetFalloff;
-        }
-    }
-
-    /// <summary>
-    /// Toolの設定をSimpleMeshFactoryに同期（シリアライズ用）
-    /// </summary>
-    private void SyncSettingsFromTool()
-    {
-        if (_moveTool != null)
-        {
-            _useMagnet = _moveTool.UseMagnet;
-            _magnetRadius = _moveTool.MagnetRadius;
-            _magnetFalloff = _moveTool.MagnetFalloff;
-        }
-    }
-
 
 
     private void OnDisable()
@@ -448,25 +444,17 @@ public partial class SimpleMeshFactory : EditorWindow
         RestoreToolFromName(editorState.CurrentToolName);
 
         //ナイフツールの固有設定----
-        if (_knifeTool != null)
+        /*if (_knifeTool != null)
         {
             _knifeTool.knifeProperty.Mode = editorState.knifeProperty.Mode;
             _knifeTool.knifeProperty.EdgeSelect = editorState.knifeProperty.EdgeSelect;
             _knifeTool.knifeProperty.ChainMode = editorState.knifeProperty.ChainMode;
         }
-        //----------------------
+        */
+        //// ツール汎用設定の復元
+        ApplyToTools(editorState);
 
-        // ★汎用ツール設定の復元（IToolSettings対応）
-        if (editorState.ToolSettings != null)
-        {
-            editorState.ToolSettings.ApplyToTool(_moveTool);
-            // 将来追加するツールも同様に:
-            // editorState.ToolSettings.ApplyToTool(_sculptTool);
-            // editorState.ToolSettings.ApplyToTool(_addFaceTool);
-        }
-        //----------------------
-
-        _currentTool?.Reset();
+            _currentTool?.Reset();
         ResetEditState();
 
         // SelectionState を復元
@@ -488,6 +476,9 @@ public partial class SimpleMeshFactory : EditorWindow
 
         Repaint();
     }
+
+
+
     private void SyncMeshFromData(MeshEntry entry)
     {
         if (entry.Data == null || entry.Mesh == null)

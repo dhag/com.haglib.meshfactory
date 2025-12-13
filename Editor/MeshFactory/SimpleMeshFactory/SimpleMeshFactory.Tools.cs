@@ -1,7 +1,7 @@
-// Assets/Editor/SimpleMeshFactory.cs
-// 階層型Undoシステム統合済みメッシュエディタ
-// MeshData（Vertex/Face）ベース対応版
-// DefaultMaterials対応版
+// Assets/Editor/SimpleMeshFactory.Tools.cs
+// Phase 2: 設定フィールド削除・ToolManager統合版
+// ツール設定はToolSettingsStorage経由で永続化
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,95 +18,170 @@ using MeshFactory.Selection;
 public partial class SimpleMeshFactory : EditorWindow
 {
     // ================================================================
-    // ツールモード
+    // ツール管理（ToolManagerに統合）
     // ================================================================
-    private IEditTool _currentTool;
-    private SelectTool _selectTool;
-    private MoveTool _moveTool;
-    private AddFaceTool _addFaceTool;
-    private KnifeTool _knifeTool;
-    private LineExtrudeTool _lineExtrudeTool;
-    private FlipFaceTool _flipFaceTool;
-    private EdgeTopologyTool _edgeTopoTool;
-    private AdvancedSelectTool _advancedSelectTool;
-    private SculptTool _sculptTool;
-    private MergeVerticesTool _mergeTool;
-    private EdgeExtrudeTool _extrudeTool;
-    private FaceExtrudeTool _faceExtrudeTool;
-    private EdgeBevelTool _edgeBevelTool;
-    private PivotOffsetTool _pivotOffsetTool;
-    //
-    private ToolContext _toolContext;
 
-    // ツール設定（シリアライズ対象）
-    [SerializeField] private bool _useMagnet = false;
-    [SerializeField] private float _magnetRadius = 0.5f;
-    [SerializeField] private FalloffType _magnetFalloff = FalloffType.Smooth;
+    /// <summary>ツールマネージャ</summary>
+    private ToolManager _toolManager;
+
+    /// <summary>現在のツール（後方互換）</summary>
+    private IEditTool _currentTool => _toolManager?.CurrentTool;
+
+    /// <summary>ToolContext（後方互換）</summary>
+    private ToolContext _toolContext => _toolManager?.Context;
+
+    // ================================================================
+    // 型付きアクセス用プロパティ（後方互換）
+    // ================================================================
+
+    private SelectTool _selectTool => _toolManager?.GetTool<SelectTool>();
+    private MoveTool _moveTool => _toolManager?.GetTool<MoveTool>();
+    private KnifeTool _knifeTool => _toolManager?.GetTool<KnifeTool>();
+    private AddFaceTool _addFaceTool => _toolManager?.GetTool<AddFaceTool>();
+    private EdgeTopologyTool _edgeTopoTool => _toolManager?.GetTool<EdgeTopologyTool>();
+    private AdvancedSelectTool _advancedSelectTool => _toolManager?.GetTool<AdvancedSelectTool>();
+    private SculptTool _sculptTool => _toolManager?.GetTool<SculptTool>();
+    private MergeVerticesTool _mergeTool => _toolManager?.GetTool<MergeVerticesTool>();
+    private EdgeExtrudeTool _extrudeTool => _toolManager?.GetTool<EdgeExtrudeTool>();
+    private FaceExtrudeTool _faceExtrudeTool => _toolManager?.GetTool<FaceExtrudeTool>();
+    private EdgeBevelTool _edgeBevelTool => _toolManager?.GetTool<EdgeBevelTool>();
+    private LineExtrudeTool _lineExtrudeTool => _toolManager?.GetTool<LineExtrudeTool>();
+    private FlipFaceTool _flipFaceTool => _toolManager?.GetTool<FlipFaceTool>();
+    private PivotOffsetTool _pivotOffsetTool => _toolManager?.GetTool<PivotOffsetTool>();
+
+    // ================================================================
+    // 【削除】ツール設定フィールド
+    // ================================================================
+    // 以下は削除済み - MoveToolが自身のMoveSettingsで管理
+    // [SerializeField] private bool _useMagnet = false;
+    // [SerializeField] private float _magnetRadius = 0.5f;
+    // [SerializeField] private FalloffType _magnetFalloff = FalloffType.Smooth;
+
+    // ================================================================
+    // 初期化
+    // ================================================================
 
     private void InitializeTools()
     {
-        _selectTool = new SelectTool();
-        _moveTool = new MoveTool();
-        _addFaceTool = new AddFaceTool();
-        _knifeTool = new KnifeTool();
-        _lineExtrudeTool = new LineExtrudeTool();
-        _flipFaceTool = new FlipFaceTool();
-        _edgeTopoTool = new EdgeTopologyTool();
-        _advancedSelectTool = new AdvancedSelectTool();
-        _sculptTool = new SculptTool();
-        _mergeTool = new MergeVerticesTool();
-        _extrudeTool = new EdgeExtrudeTool();
-        _faceExtrudeTool = new FaceExtrudeTool();
-        _edgeBevelTool = new EdgeBevelTool();
-        _pivotOffsetTool = new PivotOffsetTool();
+        // ToolManagerを作成
+        _toolManager = new ToolManager();
 
+        // 全ツールを登録
+        ToolRegistry.RegisterAllTools(_toolManager);
 
-        _currentTool = _selectTool;
+        // ツール切り替えイベントを購読
+        _toolManager.OnToolChanged += OnToolChanged;
 
-        // MoveToolに保存された設定を反映
-        SyncToolSettings();
+        // ToolContextの初期設定
+        SetupToolContext();
 
-        _toolContext = new ToolContext
-        {
-            RecordSelectionChange = RecordSelectionChange,
-            Repaint = Repaint,
-            WorldToScreenPos = WorldToPreviewPos,
-            ScreenDeltaToWorldDelta = ScreenDeltaToWorldDelta,
-            FindVertexAtScreenPos = FindVertexAtScreenPos,
-            ScreenPosToRay = ScreenPosToRay,
-            WorkPlane = _undoController?.WorkPlane,
-            CurrentMaterialIndex = 0,
-            Materials = null,
-            SelectionState = _selectionState,
-            TopologyCache = _meshTopology,
-            SelectionOps = _selectionOps
-        };
-
-
+        // 【削除】SyncToolSettings()呼び出し
+        // ツール設定はEditorStateから復元される
     }
+
+    /// <summary>
+    /// ToolContextの初期設定
+    /// </summary>
+    private void SetupToolContext()
+    {
+        var ctx = _toolManager.Context;
+
+        // コールバック設定（エディタ機能への橋渡し）
+        ctx.RecordSelectionChange = RecordSelectionChange;
+        ctx.Repaint = Repaint;
+        ctx.WorldToScreenPos = WorldToPreviewPos;
+        ctx.ScreenDeltaToWorldDelta = ScreenDeltaToWorldDelta;
+        ctx.FindVertexAtScreenPos = FindVertexAtScreenPos;
+        ctx.ScreenPosToRay = ScreenPosToRay;
+        ctx.WorkPlane = _undoController?.WorkPlane;
+        ctx.CurrentMaterialIndex = 0;
+        ctx.Materials = null;
+        ctx.SelectionState = _selectionState;
+        ctx.TopologyCache = _meshTopology;
+        ctx.SelectionOps = _selectionOps;
+    }
+
+    /// <summary>
+    /// ツール切り替え時のコールバック
+    /// </summary>
+    private void OnToolChanged(IEditTool oldTool, IEditTool newTool)
+    {
+        // EditorStateに現在のツール名を記録
+        if (_undoController != null)
+        {
+            _undoController.EditorState.CurrentToolName = newTool?.Name ?? "Select";
+        }
+
+        Repaint();
+    }
+
+    // ================================================================
+    // 設定の同期（Undo/Redo対応）
+    // ================================================================
+
+    /// <summary>
+    /// EditorStateからツール設定を復元（Undo/Redo時に呼ばれる）
+    /// </summary>
+    void ApplyToTools(EditorStateContext editorState)
+    {
+        // ToolSettingsStorageから全ツールに設定を復元
+        if (editorState.ToolSettings != null)
+        {
+            _toolManager.LoadSettings(editorState.ToolSettings);
+        }
+    }
+
+    /// <summary>
+    /// ツール設定をEditorStateに保存（UI変更時に呼ばれる）
+    /// </summary>
+    private void SyncSettingsFromTool()
+    {
+        // EditorStateのToolSettingsStorageに全ツールの設定を保存
+        if (_undoController?.EditorState != null)
+        {
+            if (_undoController.EditorState.ToolSettings == null)
+            {
+                _undoController.EditorState.ToolSettings = new ToolSettingsStorage();
+            }
+            _toolManager.SaveSettings(_undoController.EditorState.ToolSettings);
+        }
+    }
+
+    // ================================================================
+    // 【削除】SyncToolSettings()
+    // ================================================================
+    // 以下は削除済み - 設定の同期はToolManager.LoadSettings/SaveSettingsで行う
+    // private void SyncToolSettings() { ... }
+
+    // ================================================================
+    // ToolContext更新
+    // ================================================================
+
     private void UpdateToolContext(MeshEntry entry, Rect rect, Vector3 camPos, float camDist)
     {
-        _toolContext.MeshData = entry?.Data;
-        _toolContext.OriginalPositions = entry?.OriginalPositions;
-        _toolContext.PreviewRect = rect;
-        _toolContext.CameraPosition = camPos;
-        _toolContext.CameraTarget = _cameraTarget;
-        _toolContext.CameraDistance = camDist;
-        _toolContext.SelectedVertices = _selectedVertices;
-        _toolContext.VertexOffsets = _vertexOffsets;
-        _toolContext.GroupOffsets = _groupOffsets;
-        _toolContext.UndoController = _undoController;
-        _toolContext.WorkPlane = _undoController?.WorkPlane;
-        _toolContext.SyncMesh = () => SyncMeshFromData(entry);
+        var ctx = _toolManager.Context;
+
+        ctx.MeshData = entry?.Data;
+        ctx.OriginalPositions = entry?.OriginalPositions;
+        ctx.PreviewRect = rect;
+        ctx.CameraPosition = camPos;
+        ctx.CameraTarget = _cameraTarget;
+        ctx.CameraDistance = camDist;
+        ctx.SelectedVertices = _selectedVertices;
+        ctx.VertexOffsets = _vertexOffsets;
+        ctx.GroupOffsets = _groupOffsets;
+        ctx.UndoController = _undoController;
+        ctx.WorkPlane = _undoController?.WorkPlane;
+        ctx.SyncMesh = () => SyncMeshFromData(entry);
 
         // マルチマテリアル対応
-        _toolContext.CurrentMaterialIndex = entry?.CurrentMaterialIndex ?? 0;
-        _toolContext.Materials = entry?.Materials;
+        ctx.CurrentMaterialIndex = entry?.CurrentMaterialIndex ?? 0;
+        ctx.Materials = entry?.Materials;
 
         // 選択システム
-        _toolContext.SelectionState = _selectionState;
-        _toolContext.TopologyCache = _meshTopology;
-        _toolContext.SelectionOps = _selectionOps;
+        ctx.SelectionState = _selectionState;
+        ctx.TopologyCache = _meshTopology;
+        ctx.SelectionOps = _selectionOps;
 
         // UndoコンテキストにもMaterialsを同期
         if (_undoController?.MeshContext != null && entry != null)
@@ -123,104 +198,78 @@ public partial class SimpleMeshFactory : EditorWindow
             _undoController.MeshContext.AutoSetDefaultMaterials = _autoSetDefaultMaterials;
         }
 
-        // MergeToolのUpdate（選択変更やマージ実行の処理）
-        if (_currentTool == _mergeTool)
-        {
-            _mergeTool.Update(_toolContext);
-        }
-
-        // ExtrudeToolの選択更新
-        if (_currentTool == _extrudeTool)
-        {
-            _extrudeTool.OnSelectionChanged(_toolContext);
-        }
-
-        // FaceExtrudeToolの選択更新
-        if (_currentTool == _faceExtrudeTool)
-        {
-            _faceExtrudeTool.OnSelectionChanged(_toolContext);
-        }
-
-        // EdgeBevelToolの選択更新
-        if (_currentTool == _edgeBevelTool)
-        {
-            _edgeBevelTool.OnSelectionChanged(_toolContext);
-        }
-
-        // LineExtrudeToolの選択更新
-        if (_currentTool == _lineExtrudeTool)
-        {
-            _lineExtrudeTool.OnSelectionChanged();
-        }
+        // ツール固有の更新処理
+        NotifyToolOfContextUpdate();
     }
 
     /// <summary>
-    /// ツール名からツールを復元
+    /// ツール固有のコンテキスト更新通知
+    /// </summary>
+    private void NotifyToolOfContextUpdate()
+    {
+        var ctx = _toolManager.Context;
+        var current = _toolManager.CurrentTool;
+
+        // MergeToolの更新
+        if (current is MergeVerticesTool mergeTool)
+        {
+            mergeTool.Update(ctx);
+        }
+        // ExtrudeToolの選択更新
+        else if (current is EdgeExtrudeTool extrudeTool)
+        {
+            extrudeTool.OnSelectionChanged(ctx);
+        }
+        // FaceExtrudeToolの選択更新
+        else if (current is FaceExtrudeTool faceExtrudeTool)
+        {
+            faceExtrudeTool.OnSelectionChanged(ctx);
+        }
+        // EdgeBevelToolの選択更新
+        else if (current is EdgeBevelTool edgeBevelTool)
+        {
+            edgeBevelTool.OnSelectionChanged(ctx);
+        }
+        // LineExtrudeToolの選択更新
+        else if (current is LineExtrudeTool lineExtrudeTool)
+        {
+            lineExtrudeTool.OnSelectionChanged();
+        }
+    }
+
+    // ================================================================
+    // ツール切り替え
+    // ================================================================
+
+    /// <summary>
+    /// ツール名からツールを設定
+    /// </summary>
+    private void SetToolByName(string toolName)
+    {
+        _toolManager.SetTool(toolName);
+    }
+
+    /// <summary>
+    /// ツール名からツールを復元（Undo/Redo用）
     /// </summary>
     private void RestoreToolFromName(string toolName)
     {
         if (string.IsNullOrEmpty(toolName))
             return;
 
-        IEditTool newTool = null;
-        switch (toolName)
+        _toolManager.SetTool(toolName);
+    }
+
+    // ================================================================
+    // クリーンアップ
+    // ================================================================
+
+    private void CleanupTools()
+    {
+        if (_toolManager != null)
         {
-            case "Select":
-                newTool = _selectTool;
-                break;
-            case "Move":
-                newTool = _moveTool;
-                break;
-            case "Add Face":
-                newTool = _addFaceTool;
-                break;
-            case "Knife":
-                newTool = _knifeTool;
-                break;
-            case "EdgeTopo":
-                newTool = _edgeTopoTool;
-                break;
-            case "Sel+":
-                newTool = _advancedSelectTool;
-                break;
-            case "Sculpt":
-                newTool = _sculptTool;
-                break;
-            case "Merge":
-                newTool = _mergeTool;
-                break;
-            case "Extrude":
-                newTool = _extrudeTool;
-                break;
-            case "Push":
-                newTool = _faceExtrudeTool;
-                break;
-            case "Bevel":
-                newTool = _edgeBevelTool;
-                break;
-            case "Line Ext":
-                newTool = _lineExtrudeTool;
-                break;
-            case "Flip":
-                newTool = _flipFaceTool;
-                break;
-            case "Pivot":
-                newTool = _pivotOffsetTool;
-                break;
-
-
-            default:
-                newTool = _selectTool;
-                break;
-        }
-
-        if (newTool != null && newTool != _currentTool)
-        {
-            _currentTool?.OnDeactivate(_toolContext);
-            _currentTool = newTool;
-            _currentTool?.OnActivate(_toolContext);
+            _toolManager.OnToolChanged -= OnToolChanged;
+            _toolManager = null;
         }
     }
 }
-
-

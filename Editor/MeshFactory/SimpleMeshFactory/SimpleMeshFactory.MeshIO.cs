@@ -722,12 +722,13 @@ public partial class SimpleMeshFactory
             currentToolName = _currentTool?.Name ?? "Select",
             selectedMeshIndex = _selectedIndex,
             //ナイフツールの固有設定
+            /*
             //------------------------
             knifeMode = _knifeTool?.knifeProperty.Mode.ToString() ?? "Cut",
             knifeEdgeSelect = _knifeTool?.knifeProperty.EdgeSelect ?? false,
             knifeChainMode = _knifeTool?.knifeProperty.ChainMode ?? false
             //------------------------
-
+            */
         };
 
         // エクスポート
@@ -819,7 +820,7 @@ public partial class SimpleMeshFactory
             {
                 SetToolByName(state.currentToolName);
             }
-
+            /*
             // KnifeToolの設定を復元
             //ナイフツールの固有設定
             if (_knifeTool != null)
@@ -841,6 +842,7 @@ public partial class SimpleMeshFactory
                     //------------------------
                 }
             }
+            */
         }
         else if (_meshList.Count > 0)
         {
@@ -862,44 +864,7 @@ public partial class SimpleMeshFactory
         Repaint();
     }
 
-    /// <summary>
-    /// ツール名からツールを設定
-    /// </summary>
-    private void SetToolByName(string toolName)
-    {
-        switch (toolName)
-        {
-            case "Select":
-                _currentTool = _selectTool;
-                break;
-            case "Move":
-                _currentTool = _moveTool;
-                break;
-            case "Add Face":
-                _currentTool = _addFaceTool;
-                break;
-            case "Knife":
-                _currentTool = _knifeTool;
-                break;
-            case "Edge Topology":
-                _currentTool = _edgeTopoTool;
-                break;
-            case "Advanced Select":
-                _currentTool = _advancedSelectTool;
-                break;
-            case "Sculpt":
-                _currentTool = _sculptTool;
-                break;
-            default:
-                _currentTool = _selectTool;
-                break;
-        }
 
-        if (_undoController != null)
-        {
-            _undoController.EditorState.CurrentToolName = _currentTool.Name;
-        }
-    }
 
     /// <summary>
     /// 保存用のマテリアル配列を取得（マルチマテリアル対応）

@@ -400,27 +400,71 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// メッシュ全体のスナップショット記録（トポロジー変更用）
     /// MeshDataベースの新構造対応
+    /// 
+    /// SelectionState参照を保持し、Edge/Line選択もUndo対象に
     /// </summary>
     public class MeshSnapshotRecord : MeshUndoRecord
     {
         public MeshDataSnapshot Before;
         public MeshDataSnapshot After;
 
+        // ================================================================
+        // 拡張選択復元用のSelectionState参照
+        // ================================================================
+        //
+        // 【目的】
+        // Undo/Redo時にExtendedSelection（Edge/Line選択）を復元するため
+        // 
+        // 【注意】
+        // - SimpleMeshFactoryの_selectionStateと同じインスタンスを指す
+        // - SimpleMeshFactoryが破棄されると無効になるが、
+        //   通常はエディタウィンドウと同じライフサイクル
+        // - nullの場合は従来動作（Edge/Line選択は復元されない）
+        //
+        private SelectionState _selectionStateRef;
+
+        /// <summary>
+        /// コンストラクタ（従来版・後方互換）
+        /// </summary>
         public MeshSnapshotRecord(MeshDataSnapshot before, MeshDataSnapshot after)
         {
             Before = before;
             After = after;
+            _selectionStateRef = null;
+        }
+
+        /// <summary>
+        /// コンストラクタ（拡張選択対応版）
+        /// 
+        /// 【フェーズ1追加】
+        /// </summary>
+        /// <param name="before">変更前スナップショット</param>
+        /// <param name="after">変更後スナップショット</param>
+        /// <param name="selectionState">
+        /// 拡張選択状態への参照。Undo/Redo時の復元先。
+        /// トポロジー変更ツール（ベベル、押し出し等）は必ずこれを渡すこと。
+        /// </param>
+        public MeshSnapshotRecord(
+            MeshDataSnapshot before,
+            MeshDataSnapshot after,
+            SelectionState selectionState)
+        {
+            Before = before;
+            After = after;
+            _selectionStateRef = selectionState;
         }
 
         public override void Undo(MeshEditContext ctx)
         {
-            Before?.ApplyTo(ctx);
+            // 【フェーズ1変更】拡張選択対応版ApplyToを呼び出し
+            Before?.ApplyTo(ctx, _selectionStateRef);
             ctx.ApplyToMesh();
         }
 
         public override void Redo(MeshEditContext ctx)
         {
-            After?.ApplyTo(ctx);
+            // 【フェーズ1変更】拡張選択対応版ApplyToを呼び出し
+            After?.ApplyTo(ctx, _selectionStateRef);
             ctx.ApplyToMesh();
         }
     }
@@ -428,6 +472,13 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// MeshDataのスナップショット
     /// マルチマテリアル対応版
+    /// </summary>
+    /// <summary>
+    /// MeshDataのスナップショット
+    /// マルチマテリアル対応版
+    /// 
+    /// 【フェーズ1】ExtendedSelection対応
+    /// トポロジー変更時にEdge/Line選択も保存・復元可能に
     /// </summary>
     public class MeshDataSnapshot
     {
@@ -444,8 +495,30 @@ namespace MeshFactory.UndoSystem
         public int DefaultCurrentMaterialIndex;
         public bool AutoSetDefaultMaterials;
 
+        // ================================================================
+        // 【フェーズ1追加】拡張選択状態（Edge/Line含む）
+        // ================================================================
+        //
+        // 【目的】
+        // トポロジー変更（ベベル、押し出し等）時に、Edge/Line選択も
+        // 一緒にUndo/Redoされるようにする。
+        //
+        // 【背景】
+        // 従来、SelectedVertices/SelectedFacesのみ保存していたため、
+        // Edge選択（HashSet<VertexPair>）やLine選択（HashSet<int>）は
+        // Undoで復元されなかった。
+        //
+        // 【SelectionSnapshotの内容】（SelectionState.csで定義）
+        // - Mode: MeshSelectMode（フラグ）
+        // - Vertices: HashSet<int>
+        // - Edges: HashSet<VertexPair>  ← 新たに保存対象
+        // - Faces: HashSet<int>
+        // - Lines: HashSet<int>         ← 新たに保存対象
+        //
+        public SelectionSnapshot ExtendedSelection;
+
         /// <summary>
-        /// コンテキストからスナップショットを作成
+        /// コンテキストからスナップショットを作成（従来版・後方互換）
         /// </summary>
         public static MeshDataSnapshot Capture(MeshEditContext ctx)
         {
@@ -459,11 +532,56 @@ namespace MeshFactory.UndoSystem
                 DefaultMaterials = ctx.DefaultMaterials != null ? new List<Material>(ctx.DefaultMaterials) : new List<Material> { null },
                 DefaultCurrentMaterialIndex = ctx.DefaultCurrentMaterialIndex,
                 AutoSetDefaultMaterials = ctx.AutoSetDefaultMaterials
+                // ExtendedSelection は null（後方互換）
             };
         }
 
         /// <summary>
-        /// スナップショットをコンテキストに適用
+        /// コンテキストからスナップショットを作成（拡張選択対応版）
+        /// 
+        /// </summary>
+        /// <param name="ctx">メッシュ編集コンテキスト</param>
+        /// <param name="selectionState">
+        /// 拡張選択状態（Edge/Line含む）。
+        /// 
+        /// 【重要】トポロジー変更ツールは必ずこれを渡すこと！
+        /// - EdgeBevelTool
+        /// - EdgeExtrudeTool  
+        /// - FaceExtrudeTool
+        /// - KnifeTool
+        /// - AddFaceTool
+        /// 等
+        /// 
+        /// nullを渡すと従来通りの動作（Edge/Line選択は保存されない）
+        /// </param>
+        /// <returns>スナップショット</returns>
+        public static MeshDataSnapshot Capture(MeshEditContext ctx, SelectionState selectionState)
+        {
+            var snapshot = new MeshDataSnapshot
+            {
+                MeshData = ctx.MeshData?.Clone(),
+                SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
+                SelectedFaces = new HashSet<int>(ctx.SelectedFaces),
+                Materials = ctx.Materials != null ? new List<Material>(ctx.Materials) : new List<Material> { null },
+                CurrentMaterialIndex = ctx.CurrentMaterialIndex,
+                DefaultMaterials = ctx.DefaultMaterials != null ? new List<Material>(ctx.DefaultMaterials) : new List<Material> { null },
+                DefaultCurrentMaterialIndex = ctx.DefaultCurrentMaterialIndex,
+                AutoSetDefaultMaterials = ctx.AutoSetDefaultMaterials
+            };
+
+            // 【フェーズ1追加】拡張選択を保存
+            // SelectionStateが渡された場合のみ保存。
+            // これによりEdge/Line選択もUndo対象になる。
+            if (selectionState != null)
+            {
+                snapshot.ExtendedSelection = selectionState.CreateSnapshot();
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// スナップショットをコンテキストに適用（従来版・後方互換）
         /// </summary>
         public void ApplyTo(MeshEditContext ctx)
         {
@@ -485,6 +603,62 @@ namespace MeshFactory.UndoSystem
             }
             ctx.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
             ctx.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+
+            // ExtendedSelection は復元しない（後方互換）
+        }
+
+        /// <summary>
+        /// スナップショットをコンテキストに適用（拡張選択対応版）
+        /// 
+        /// 【フェーズ1追加】
+        /// </summary>
+        /// <param name="ctx">メッシュ編集コンテキスト</param>
+        /// <param name="selectionState">
+        /// 拡張選択状態の復元先。
+        /// 
+        /// 【重要】SimpleMeshFactory側で_selectionStateを渡すこと！
+        /// Undo/Redo実行時にEdge/Line選択を正しく復元するために必要。
+        /// 
+        /// nullを渡すと拡張選択は復元されない（従来動作）
+        /// </param>
+        public void ApplyTo(MeshEditContext ctx, SelectionState selectionState)
+        {
+            // === 既存処理（メッシュデータ、レガシー選択、マテリアル） ===
+            ctx.MeshData = MeshData?.Clone();
+            ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
+            ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
+
+            if (Materials != null)
+            {
+                ctx.Materials = new List<Material>(Materials);
+                ctx.CurrentMaterialIndex = CurrentMaterialIndex;
+            }
+
+            if (DefaultMaterials != null)
+            {
+                ctx.DefaultMaterials = new List<Material>(DefaultMaterials);
+            }
+            ctx.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
+            ctx.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+
+            // ================================================================
+            // 【フェーズ1追加】拡張選択の復元
+            // ================================================================
+            //
+            // ExtendedSelectionが保存されている場合のみ復元。
+            // これにより：
+            // - ベベルUndo時 → 元のEdge選択が復元
+            // - 押し出しUndo時 → 元のFace選択が復元
+            // 等が可能になる。
+            //
+            // 【注意】
+            // - ExtendedSelectionがnull（従来のスナップショット）の場合はスキップ
+            // - selectionStateがnullの場合もスキップ（呼び出し側の責任）
+            //
+            if (ExtendedSelection != null && selectionState != null)
+            {
+                selectionState.RestoreFromSnapshot(ExtendedSelection);
+            }
         }
     }
 
@@ -764,7 +938,7 @@ namespace MeshFactory.UndoSystem
 
         // ツール設定
         //ナイフツールの固有設定（既存）
-        public KnifeProperty knifeProperty = new KnifeProperty();
+        //public KnifeProperty knifeProperty = new KnifeProperty();
 
         // 汎用ツール設定ストレージ（新規追加）
         public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();
@@ -788,13 +962,13 @@ namespace MeshFactory.UndoSystem
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
             };
-
+            /*
             // KnifeProperty（既存）
             snapshot.knifeProperty = new KnifeProperty();
             snapshot.knifeProperty.Mode = knifeProperty.Mode;
             snapshot.knifeProperty.EdgeSelect = knifeProperty.EdgeSelect;
             snapshot.knifeProperty.ChainMode = knifeProperty.ChainMode;
-
+            */
             // ToolSettings（新規）
             snapshot.ToolSettings = ToolSettings?.Clone();
 
@@ -816,10 +990,10 @@ namespace MeshFactory.UndoSystem
             CurrentToolName = snapshot.CurrentToolName;
 
             // KnifeProperty（既存）
-            knifeProperty.Mode = snapshot.knifeProperty.Mode;
+            /*knifeProperty.Mode = snapshot.knifeProperty.Mode;
             knifeProperty.EdgeSelect = snapshot.knifeProperty.EdgeSelect;
             knifeProperty.ChainMode = snapshot.knifeProperty.ChainMode;
-
+            */
             // ToolSettings（新規）
             if (snapshot.ToolSettings != null)
             {
@@ -841,7 +1015,7 @@ namespace MeshFactory.UndoSystem
         public string CurrentToolName;
 
         // ナイフツール設定（既存）
-        public KnifeProperty knifeProperty;
+        //public KnifeProperty knifeProperty;
 
         // 汎用ツール設定（新規追加）
         public ToolSettingsStorage ToolSettings;
@@ -860,7 +1034,7 @@ namespace MeshFactory.UndoSystem
             {
                 return true;
             }
-
+            /*
             // KnifeProperty（既存）
             if (knifeProperty != null && other.knifeProperty != null)
             {
@@ -871,7 +1045,7 @@ namespace MeshFactory.UndoSystem
                     return true;
                 }
             }
-
+            */
             // ToolSettings（新規）
             if (ToolSettings != null && other.ToolSettings != null)
             {

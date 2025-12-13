@@ -27,6 +27,8 @@ public partial class SimpleMeshFactory
         {
             if (e.type == EventType.MouseUp && e.button == 0)
             {
+                //トポロジー変更スナップショット保存
+                RecordSelectionChangeIfNeeded();
                 HandleMouseUpOutside(entry, rect, camPos, lookAt);
             }
             return;
@@ -56,6 +58,9 @@ public partial class SimpleMeshFactory
             case EventType.MouseDown:
                 if (e.button == 0)
                 {
+                    // スナップショット取得
+                    CaptureSelectionSnapshotForUndo();
+
                     // まずツールに処理を委譲
                     if (_currentTool != null && _currentTool.OnMouseDown(_toolContext, mousePos))
                     {
@@ -106,6 +111,9 @@ public partial class SimpleMeshFactory
                     {
                         OnMouseUp(e, mousePos, meshData, rect, camPos, lookAt, handleRadius, entry);
                     }
+                    // 選択変更検出
+                    RecordSelectionChangeIfNeeded();
+
                 }
                 break;
 
@@ -423,5 +431,143 @@ public partial class SimpleMeshFactory
         {
             RecordExtendedSelectionChange(oldSnapshot, oldSelection);
         }
+    }
+
+    // ================================================================
+    // 【フェーズ2追加】選択Undo用メソッド
+    // ================================================================
+    // 
+    // これらのメソッドを SimpleMeshFactory_Input.cs の末尾
+    // （クラスの閉じ括弧 } の直前）に追加してください
+    //
+
+    /// <summary>
+    /// 選択スナップショットを取得（MouseDown時に呼び出し）
+    /// 
+    /// 【フェーズ2追加】
+    /// </summary>
+    private void CaptureSelectionSnapshotForUndo()
+    {
+        // 選択スナップショット
+        _selectionSnapshotOnMouseDown = _selectionState?.CreateSnapshot();
+
+        // レガシー選択
+        _legacySelectionOnMouseDown = _selectedVertices != null
+            ? new HashSet<int>(_selectedVertices)
+            : new HashSet<int>();
+
+        // トポロジー変更フラグをリセット
+        _topologyChangedDuringMouseOperation = false;
+
+        // WorkPlane連動用（AutoUpdateOriginOnSelection有効時）
+        var workPlane = _undoController?.WorkPlane;
+        if (workPlane != null && workPlane.AutoUpdateOriginOnSelection && !workPlane.IsLocked)
+        {
+            _workPlaneSnapshotOnMouseDown = workPlane.CreateSnapshot();
+        }
+        else
+        {
+            _workPlaneSnapshotOnMouseDown = null;
+        }
+    }
+
+    /// <summary>
+    /// 選択変更があればUndo記録する（MouseUp時に呼び出し）
+    /// 
+    /// 【フェーズ2追加】
+    /// </summary>
+    private void RecordSelectionChangeIfNeeded()
+    {
+        // トポロジー変更があった場合はスキップ
+        if (_topologyChangedDuringMouseOperation)
+        {
+            _topologyChangedDuringMouseOperation = false;
+            _selectionSnapshotOnMouseDown = null;
+            _legacySelectionOnMouseDown = null;
+            _workPlaneSnapshotOnMouseDown = null;
+            return;
+        }
+
+        // スナップショットがない場合はスキップ
+        if (_selectionSnapshotOnMouseDown == null || _selectionState == null)
+        {
+            return;
+        }
+
+        // 変更チェック
+        var afterSnapshot = _selectionState.CreateSnapshot();
+
+        if (!_selectionSnapshotOnMouseDown.IsDifferentFrom(afterSnapshot))
+        {
+            // 変更なし
+            _selectionSnapshotOnMouseDown = null;
+            _legacySelectionOnMouseDown = null;
+            _workPlaneSnapshotOnMouseDown = null;
+            return;
+        }
+
+        // 選択が変更された → Undo記録
+        var newLegacyVertices = _selectedVertices != null
+            ? new HashSet<int>(_selectedVertices)
+            : new HashSet<int>();
+
+        if (_undoController?.MeshContext != null)
+        {
+            _undoController.MeshContext.SelectedVertices = new HashSet<int>(newLegacyVertices);
+        }
+
+        // WorkPlane連動
+        WorkPlaneSnapshot? newWorkPlane = null;
+        var workPlane = _undoController?.WorkPlane;
+
+        if (_workPlaneSnapshotOnMouseDown.HasValue &&
+            workPlane != null &&
+            workPlane.AutoUpdateOriginOnSelection &&
+            !workPlane.IsLocked)
+        {
+            if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+            {
+                var entry = _meshList[_selectedIndex];
+                var affectedVertices = _selectionState.GetAllAffectedVertices(entry?.Data);
+                if (entry?.Data != null && affectedVertices.Count > 0)
+                {
+                    workPlane.UpdateOriginFromSelection(entry.Data, affectedVertices);
+                }
+            }
+
+            newWorkPlane = workPlane.CreateSnapshot();
+
+            if (!_workPlaneSnapshotOnMouseDown.Value.IsDifferentFrom(newWorkPlane.Value))
+            {
+                newWorkPlane = null;
+                _workPlaneSnapshotOnMouseDown = null;
+            }
+        }
+
+        // Undo記録
+        _undoController?.RecordExtendedSelectionChange(
+            _selectionSnapshotOnMouseDown,
+            afterSnapshot,
+            _legacySelectionOnMouseDown,
+            newLegacyVertices,
+            _workPlaneSnapshotOnMouseDown,
+            newWorkPlane
+        );
+
+        _lastSelectionSnapshot = afterSnapshot;
+
+        // クリーンアップ
+        _selectionSnapshotOnMouseDown = null;
+        _legacySelectionOnMouseDown = null;
+        _workPlaneSnapshotOnMouseDown = null;
+    }
+
+    /// <summary>
+    /// トポロジー変更フラグを設定
+    /// 【フェーズ2追加】
+    /// </summary>
+    public void SetTopologyChangedFlag()
+    {
+        _topologyChangedDuringMouseOperation = true;
     }
 }

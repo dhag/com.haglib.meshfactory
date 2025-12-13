@@ -8,6 +8,7 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
 using static MeshFactory.UndoSystem.KnifeCutOperationRecord;
+using MeshFactory.Selection;
 
 namespace MeshFactory.UndoSystem
 {
@@ -461,7 +462,10 @@ namespace MeshFactory.UndoSystem
         // === スナップショット（トポロジー変更用） ===
 
         /// <summary>
-        /// トポロジー変更前にスナップショットを取得（新形式）
+        /// トポロジー変更前にスナップショットを取得（新形式・後方互換）
+        /// 
+        /// 【注意】この版ではEdge/Line選択は保存されない
+        /// Edge/Line選択も保存したい場合はselectionState付きの版を使用
         /// </summary>
         public MeshDataSnapshot CaptureMeshDataSnapshot()
         {
@@ -469,15 +473,74 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
-        /// トポロジー変更を記録（新形式）
+        /// トポロジー変更前にスナップショットを取得（拡張選択対応版オーバーロード）
+        /// 
         /// </summary>
-        public void RecordTopologyChange(MeshDataSnapshot before, MeshDataSnapshot after, string description = "Topology Change")
+        /// <param name="selectionState">
+        /// 拡張選択状態（Edge/Line含む）。
+        /// 
+        /// 【重要】トポロジー変更ツールは必ずこれを渡すこと！
+        /// これにより、ベベルや押し出しのUndoで元の選択も復元される。
+        /// </param>
+        /// <returns>スナップショット</returns>
+        public MeshDataSnapshot CaptureMeshDataSnapshot(SelectionState selectionState)
+        {
+            return MeshDataSnapshot.Capture(_meshContext, selectionState);
+        }
+
+        /// <summary>
+        /// トポロジー変更を記録（新形式・後方互換）
+        /// 
+        /// 【注意】この版ではEdge/Line選択はUndo時に復元されない
+        /// Edge/Line選択も復元したい場合はselectionState付きの版を使用
+        /// </summary>
+        public void RecordTopologyChange(
+            MeshDataSnapshot before,
+            MeshDataSnapshot after,
+            string description = "Topology Change")
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             var record = new MeshSnapshotRecord(before, after);
             _vertexEditStack.Record(record, description);
             FocusVertexEdit();
         }
+
+
+        /// <summary>
+        /// トポロジー変更を記録（拡張選択対応版）
+        /// 
+        /// 【フェーズ1追加】
+        /// </summary>
+        /// <param name="before">変更前スナップショット（Capture()で取得）</param>
+        /// <param name="after">変更後スナップショット（Capture()で取得）</param>
+        /// <param name="selectionState">
+        /// 拡張選択状態への参照。
+        /// 
+        /// 【重要】
+        /// Edge/Line選択のUndo/Redoに必要。
+        /// トポロジー変更ツール（ベベル、押し出し等）は必ずこれを渡すこと！
+        /// 
+        /// これにより：
+        /// - ベベルUndo時 → メッシュが戻り、元のEdge選択も復元
+        /// - 押し出しUndo時 → メッシュが戻り、元のFace選択も復元
+        /// 
+        /// nullの場合は従来動作（Edge/Line選択は復元されない）
+        /// </param>
+        /// <param name="description">Undo履歴に表示される説明</param>
+        public void RecordTopologyChange(
+            MeshDataSnapshot before,
+            MeshDataSnapshot after,
+            SelectionState selectionState,
+            string description = "Topology Change")
+        {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
+
+            // selectionStateを渡すことでEdge/Line選択もUndo対象に
+            var record = new MeshSnapshotRecord(before, after, selectionState);
+            _vertexEditStack.Record(record, description);
+            FocusVertexEdit();
+        }
+ 
 
 
 
@@ -635,7 +698,7 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
-            before.knifeProperty = _editorStateContext.knifeProperty;
+            //before.knifeProperty = _editorStateContext.knifeProperty;
 
             var after = new EditorStateSnapshot
             {
@@ -647,7 +710,7 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
-            after.knifeProperty = _editorStateContext.knifeProperty;
+            //after.knifeProperty = _editorStateContext.knifeProperty;
 
             var record = new EditorStateChangeRecord(before, after);
             _editorStateStack.Record(record, "Change View");
@@ -673,7 +736,7 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
-            before.knifeProperty = _editorStateContext.knifeProperty;
+            //before.knifeProperty = _editorStateContext.knifeProperty;
 
             var after = new EditorStateSnapshot
             {
@@ -685,7 +748,7 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = _editorStateContext.ShowVertices,
                 VertexEditMode = _editorStateContext.VertexEditMode
             };
-            after.knifeProperty = _editorStateContext.knifeProperty;
+            //after.knifeProperty = _editorStateContext.knifeProperty;
 
             var record = new EditorStateChangeRecord(before, after, oldWorkPlane, newWorkPlane);
             _editorStateStack.Record(record, "Change View");
