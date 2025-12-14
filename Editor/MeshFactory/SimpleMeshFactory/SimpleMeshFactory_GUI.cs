@@ -14,7 +14,7 @@ public partial class SimpleMeshFactory
     // ================================================================
     private void DrawMeshList()
     {
-        using (new EditorGUILayout.VerticalScope(GUILayout.Width(350)))
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(_leftPaneWidth)))
         {
             EditorGUILayout.LabelField("UnityMesh Factory", EditorStyles.boldLabel);
 

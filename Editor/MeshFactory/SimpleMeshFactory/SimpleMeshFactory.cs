@@ -185,8 +185,19 @@ public partial class SimpleMeshFactory : EditorWindow
     private bool _foldPrimitive = true;
 
     // ペイン幅
-    //private float _leftPaneWidth = 280f;
+    private float _leftPaneWidth = 320f;
     private float _rightPaneWidth = 220f;
+
+    // スプリッター
+    private bool _isDraggingLeftSplitter = false;
+    private bool _isDraggingRightSplitter = false;
+    private Rect _leftSplitterRect;
+    private Rect _rightSplitterRect;
+    private const float SplitterWidth = 6f;
+    private const float MinPaneWidth = 150f;
+    private const float MaxLeftPaneWidth = 500f;
+    private const float MaxRightPaneWidth = 400f;
+
     private bool _foldSelection = true;
     private bool _foldTools = true;
     //private bool _foldWorkPlane = false;  // WorkPlaneセクション
@@ -265,7 +276,7 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undoコントローラー初期化
         _undoController = new MeshUndoController("SimpleMeshFactory");
         _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-        
+
         // MeshListをUndoコントローラーに設定
         _undoController.SetMeshList(_meshContextList, OnMeshListChanged);
 
@@ -487,7 +498,7 @@ public partial class SimpleMeshFactory : EditorWindow
         //// ツール汎用設定の復元
         ApplyToTools(editorState);
 
-            _currentTool?.Reset();
+        _currentTool?.Reset();
         ResetEditState();
 
         // SelectionState を復元
@@ -522,8 +533,8 @@ public partial class SimpleMeshFactory : EditorWindow
                     _undoController.MeshContext.MeshData = newMeshContext.Data;
                     _undoController.MeshContext.TargetMesh = newMeshContext.UnityMesh;
                     _undoController.MeshContext.OriginalPositions = newMeshContext.OriginalPositions;
-                    _undoController.MeshContext.Materials = newMeshContext.Materials != null 
-                        ? new List<Material>(newMeshContext.Materials) 
+                    _undoController.MeshContext.Materials = newMeshContext.Materials != null
+                        ? new List<Material>(newMeshContext.Materials)
                         : new List<Material>();
                     _undoController.MeshContext.CurrentMaterialIndex = newMeshContext.CurrentMaterialIndex;
                 }
@@ -555,12 +566,12 @@ public partial class SimpleMeshFactory : EditorWindow
                 _undoController.MeshContext.MeshData = meshContext.Data;
                 _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
                 _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
-                _undoController.MeshContext.Materials = meshContext.Materials != null 
-                    ? new List<Material>(meshContext.Materials) 
+                _undoController.MeshContext.Materials = meshContext.Materials != null
+                    ? new List<Material>(meshContext.Materials)
                     : new List<Material>();
                 _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
             }
-            
+
             InitVertexOffsets(updateCamera: false);
         }
         else
@@ -574,12 +585,12 @@ public partial class SimpleMeshFactory : EditorWindow
                     _undoController.MeshContext.MeshData = fallbackMeshContext.Data;
                     _undoController.MeshContext.TargetMesh = fallbackMeshContext.UnityMesh;
                     _undoController.MeshContext.OriginalPositions = fallbackMeshContext.OriginalPositions;
-                    _undoController.MeshContext.Materials = fallbackMeshContext.Materials != null 
-                        ? new List<Material>(fallbackMeshContext.Materials) 
+                    _undoController.MeshContext.Materials = fallbackMeshContext.Materials != null
+                        ? new List<Material>(fallbackMeshContext.Materials)
                         : new List<Material>();
                     _undoController.MeshContext.CurrentMaterialIndex = fallbackMeshContext.CurrentMaterialIndex;
                 }
-                
+
                 InitVertexOffsets(updateCamera: false);
             }
         }
@@ -587,7 +598,7 @@ public partial class SimpleMeshFactory : EditorWindow
         // 選択クリア
         _selectedVertices.Clear();
         _selectionState?.ClearAll();
-        
+
         if (_undoController != null)
         {
             _undoController.MeshContext.SelectedVertices = new HashSet<int>();
@@ -706,22 +717,37 @@ public partial class SimpleMeshFactory : EditorWindow
             {
                 EndCameraDrag();
             }
+            // スプリッタードラッグ終了
+            _isDraggingLeftSplitter = false;
+            _isDraggingRightSplitter = false;
         }
 
         HandleScrollWheel();
+
+        // スプリッターのドラッグ処理
+        HandleSplitterDrag(e);
 
         EditorGUILayout.BeginHorizontal();
 
         // 左ペイン：メッシュリスト
         DrawMeshList();
 
+        // 左スプリッター
+        DrawSplitter(ref _leftSplitterRect, true);
+
         // 中央ペイン：プレビュー
         DrawPreview();
+
+        // 右スプリッター
+        DrawSplitter(ref _rightSplitterRect, false);
 
         // 右ペイン：頂点編集
         DrawVertexEditor();
 
         EditorGUILayout.EndHorizontal();
+
+        // カーソル変更
+        UpdateSplitterCursor();
     }
 
     private void HandleScrollWheel()
@@ -843,6 +869,136 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         _cameraStartWorkPlaneSnapshot = null;
+    }
+
+    // ================================================================
+    // スプリッター処理
+    // ================================================================
+
+    // スプリッター用のコントロールID
+    private int _leftSplitterControlId;
+    private int _rightSplitterControlId;
+
+    /// <summary>
+    /// スプリッターを描画（イベント処理込み）
+    /// </summary>
+    private void DrawSplitter(ref Rect splitterRect, bool isLeftSplitter)
+    {
+        // コントロールIDを取得
+        int controlId = GUIUtility.GetControlID(FocusType.Passive);
+        if (isLeftSplitter)
+            _leftSplitterControlId = controlId;
+        else
+            _rightSplitterControlId = controlId;
+
+        // スプリッター領域を確保
+        splitterRect = GUILayoutUtility.GetRect(
+            SplitterWidth, SplitterWidth,
+            GUILayout.ExpandHeight(true));
+
+        // イベント処理
+        Event e = Event.current;
+
+        switch (e.GetTypeForControl(controlId))
+        {
+            case EventType.MouseDown:
+                if (e.button == 0 && splitterRect.Contains(e.mousePosition))
+                {
+                    GUIUtility.hotControl = controlId;
+                    if (isLeftSplitter)
+                        _isDraggingLeftSplitter = true;
+                    else
+                        _isDraggingRightSplitter = true;
+                    e.Use();
+                }
+                break;
+
+            case EventType.MouseDrag:
+                if (GUIUtility.hotControl == controlId)
+                {
+                    if (isLeftSplitter)
+                    {
+                        _leftPaneWidth += e.delta.x;
+                        _leftPaneWidth = Mathf.Clamp(_leftPaneWidth, MinPaneWidth, MaxLeftPaneWidth);
+                    }
+                    else
+                    {
+                        _rightPaneWidth -= e.delta.x;
+                        _rightPaneWidth = Mathf.Clamp(_rightPaneWidth, MinPaneWidth, MaxRightPaneWidth);
+                    }
+                    e.Use();
+                    Repaint();
+                }
+                break;
+
+            case EventType.MouseUp:
+                if (GUIUtility.hotControl == controlId)
+                {
+                    GUIUtility.hotControl = 0;
+                    if (isLeftSplitter)
+                        _isDraggingLeftSplitter = false;
+                    else
+                        _isDraggingRightSplitter = false;
+                    e.Use();
+                }
+                break;
+
+            case EventType.Repaint:
+                // 背景色
+                bool isDragging = GUIUtility.hotControl == controlId;
+                bool isHovering = splitterRect.Contains(e.mousePosition);
+
+                Color splitterColor;
+                if (isDragging)
+                {
+                    splitterColor = new Color(0.4f, 0.6f, 1f, 0.8f);  // ドラッグ中：青
+                }
+                else if (isHovering)
+                {
+                    splitterColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);  // ホバー：グレー
+                }
+                else
+                {
+                    splitterColor = new Color(0.3f, 0.3f, 0.3f, 0.3f);  // 通常：薄いグレー
+                }
+
+                EditorGUI.DrawRect(splitterRect, splitterColor);
+
+                // 中央にグリップを描画
+                float centerX = splitterRect.x + splitterRect.width / 2;
+                float gripHeight = Mathf.Min(splitterRect.height * 0.3f, 60f);
+                float gripTop = splitterRect.y + (splitterRect.height - gripHeight) / 2;
+
+                Color gripColor = isDragging || isHovering
+                    ? new Color(0.7f, 0.7f, 0.7f, 0.8f)
+                    : new Color(0.5f, 0.5f, 0.5f, 0.5f);
+
+                for (int i = 0; i < 3; i++)
+                {
+                    float y = gripTop + i * (gripHeight / 2);
+                    EditorGUI.DrawRect(new Rect(centerX - 1, y, 2, 2), gripColor);
+                }
+                break;
+        }
+
+        // カーソル変更
+        EditorGUIUtility.AddCursorRect(splitterRect, MouseCursor.ResizeHorizontal);
+    }
+
+    /// <summary>
+    /// スプリッターのドラッグを処理（未使用、DrawSplitter内で処理）
+    /// </summary>
+    private void HandleSplitterDrag(Event e)
+    {
+        // DrawSplitter内で処理するため、ここでは何もしない
+    }
+
+    /// <summary>
+    /// スプリッター上でのカーソル変更（未使用、DrawSplitter内で処理）
+    /// </summary>
+    private void UpdateSplitterCursor()
+    {
+        // DrawSplitter内で処理するため、ここでは何もしない
     }
 
 }
