@@ -1,6 +1,7 @@
 // Tools/IEditTool.cs
 // 編集ツールの共通インターフェース
 // IToolSettings対応版
+// ローカライズ対応版
 
 using UnityEngine;
 
@@ -25,7 +26,7 @@ namespace MeshFactory.Tools
         /// <summary>ツール名（内部識別子）</summary>
         string Name { get; }
 
-        /// <summary>表示名</summary>
+        /// <summary>表示名（英語、フォールバック用）</summary>
         string DisplayName { get; }
 
         /// <summary>カテゴリ</summary>
@@ -36,6 +37,14 @@ namespace MeshFactory.Tools
         /// 設定を持たないツールはnullを返す
         /// </summary>
         IToolSettings Settings { get; }
+
+        /// <summary>
+        /// ローカライズされた表示名を取得
+        /// ツール自身がローカライズに対応する場合はオーバーライド
+        /// 対応しない場合はnullを返す（外部でフォールバック処理）
+        /// </summary>
+        /// <returns>ローカライズされた名前、または null</returns>
+        string GetLocalizedDisplayName() => null;
 
         /// <summary>
         /// マウスダウン処理

@@ -88,8 +88,8 @@ public partial class SimpleMeshFactory
         if (isActive)
             GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
 
-        // ツール名をローカライズ（Tool_XXX形式で辞書を検索）
-        string displayName = L.Get("Tool_" + tool.Name);
+        // ツール名をローカライズ（フォールバック付き）
+        string displayName = L.GetToolName(tool);
 
         if (GUILayout.Toggle(isActive, displayName, "Button") && !isActive)
         {
@@ -201,7 +201,7 @@ public partial class SimpleMeshFactory
         EditorGUI.indentLevel++;
 
         // UnityMesh List Window（統合版）
-        if (GUILayout.Button(L.Get("OpenMeshListWindow")))
+        if (GUILayout.Button(L.Get("Window_MeshContextList")))
         {
             MeshListWindow.Open(_toolManager?.toolContext);
         }

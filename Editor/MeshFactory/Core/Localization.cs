@@ -4,6 +4,7 @@
 
 using System.Collections.Generic;
 using UnityEditor;
+using MeshFactory.Tools;
 
 namespace MeshFactory.Localization
 {
@@ -61,7 +62,19 @@ namespace MeshFactory.Localization
         /// <returns>現在の言語のテキスト（未定義ならキーをそのまま返す）</returns>
         public static string Get(string key)
         {
-            if (_texts.TryGetValue(key, out var translations))
+            return GetFrom(_texts, key);
+        }
+        
+        /// <summary>
+        /// 指定辞書からローカライズされたテキストを取得
+        /// ツール固有の辞書用
+        /// </summary>
+        /// <param name="texts">ローカライズ辞書</param>
+        /// <param name="key">テキストキー</param>
+        /// <returns>現在の言語のテキスト（未定義ならキーをそのまま返す）</returns>
+        public static string GetFrom(Dictionary<string, Dictionary<string, string>> texts, string key)
+        {
+            if (texts != null && texts.TryGetValue(key, out var translations))
             {
                 string langKey = GetLanguageKey(_currentLanguage);
                 if (translations.TryGetValue(langKey, out var text))
@@ -75,6 +88,33 @@ namespace MeshFactory.Localization
                 }
             }
             return key; // 未定義ならキーをそのまま返す
+        }
+        
+        /// <summary>
+        /// 指定辞書からフォーマット付きでテキストを取得
+        /// </summary>
+        public static string GetFrom(Dictionary<string, Dictionary<string, string>> texts, string key, params object[] args)
+        {
+            string format = GetFrom(texts, key);
+            try
+            {
+                return string.Format(format, args);
+            }
+            catch
+            {
+                return format;
+            }
+        }
+        
+        /// <summary>
+        /// ローカライズされたテキストをフォーマット付きで取得
+        /// </summary>
+        /// <param name="key">テキストキー</param>
+        /// <param name="args">フォーマット引数</param>
+        /// <returns>フォーマット済みテキスト</returns>
+        public static string Get(string key, params object[] args)
+        {
+            return GetFrom(_texts, key, args);
         }
         
         /// <summary>
@@ -130,7 +170,11 @@ namespace MeshFactory.Localization
             ["ModelFile"] = new() { ["en"] = "Model File", ["ja"] = "モデルファイル", ["hi"] = "もでるふぁいる" },
             ["VertexEditor"] = new() { ["en"] = "Vertex Editor", ["ja"] = "頂点エディタ", ["hi"] = "ちょうてんへんしゅう" },
             ["MeshList"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュリスト", ["hi"] = "めっしゅりすと" },
-            ["OpenMeshListWindow"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュオブジェクトリスト", ["hi"] = "ずけいりすと" },
+            
+            // ============================================================
+            // ウィンドウタイトル（キーは "Window_" + IToolWindow.Name）
+            // ============================================================
+            ["Window_MeshContextList"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュオブジェクトリスト", ["hi"] = "ずけいりすと" },
             
             // ============================================================
             // Displayセクション
@@ -241,6 +285,56 @@ namespace MeshFactory.Localization
             ["Rotation"] = new() { ["en"] = "Rotation", ["ja"] = "回転", ["hi"] = "かいてん" },
             ["Scale"] = new() { ["en"] = "Scale", ["ja"] = "スケール", ["hi"] = "おおきさ" },
         };
+        
+        // ================================================================
+        // ツール/ウィンドウ用ヘルパー
+        // ================================================================
+        
+        /// <summary>
+        /// ツールの表示名を取得（フォールバック付き）
+        /// 優先度: ツール自身のローカライズ → 共通辞書 → DisplayName
+        /// </summary>
+        public static string GetToolName(IEditTool tool)
+        {
+            if (tool == null) return "";
+            
+            // 1. ツール自身のローカライズ
+            var localized = tool.GetLocalizedDisplayName();
+            if (!string.IsNullOrEmpty(localized))
+                return localized;
+            
+            // 2. 共通辞書（Tool_XXX形式）
+            string key = "Tool_" + tool.Name;
+            string fromDict = Get(key);
+            if (fromDict != key)  // キーと異なる = 辞書に存在
+                return fromDict;
+            
+            // 3. フォールバック: DisplayName
+            return tool.DisplayName;
+        }
+        
+        /// <summary>
+        /// ウィンドウのタイトルを取得（フォールバック付き）
+        /// 優先度: ウィンドウ自身のローカライズ → 共通辞書 → Title
+        /// </summary>
+        public static string GetWindowTitle(IToolWindow window)
+        {
+            if (window == null) return "";
+            
+            // 1. ウィンドウ自身のローカライズ
+            var localized = window.GetLocalizedTitle();
+            if (!string.IsNullOrEmpty(localized))
+                return localized;
+            
+            // 2. 共通辞書（Window_XXX形式）
+            string key = "Window_" + window.Name;
+            string fromDict = Get(key);
+            if (fromDict != key)  // キーと異なる = 辞書に存在
+                return fromDict;
+            
+            // 3. フォールバック: Title
+            return window.Title;
+        }
         
         // ================================================================
         // 動的テキスト生成

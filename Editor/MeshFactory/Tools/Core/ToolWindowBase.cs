@@ -22,7 +22,7 @@ namespace MeshFactory.Tools
         /// <summary>ウィンドウ識別名</summary>
         string Name { get; }
 
-        /// <summary>表示タイトル</summary>
+        /// <summary>表示タイトル（英語、フォールバック用）</summary>
         string Title { get; }
 
         /// <summary>設定（Undo対応、不要ならnull）</summary>
@@ -30,6 +30,14 @@ namespace MeshFactory.Tools
 
         /// <summary>コンテキスト設定</summary>
         void SetContext(ToolContext ctx);
+
+        /// <summary>
+        /// ローカライズされたタイトルを取得
+        /// ウィンドウ自身がローカライズに対応する場合はオーバーライド
+        /// 対応しない場合はnullを返す（外部でフォールバック処理）
+        /// </summary>
+        /// <returns>ローカライズされたタイトル、または null</returns>
+        string GetLocalizedTitle() => null;
     }
 
     /// <summary>
@@ -50,6 +58,12 @@ namespace MeshFactory.Tools
 
         /// <summary>設定（Undo対応、不要ならnull）</summary>
         public virtual IToolSettings Settings => null;
+
+        /// <summary>
+        /// ローカライズされたタイトルを取得
+        /// 派生クラスでオーバーライドしてローカライズ対応可能
+        /// </summary>
+        public virtual string GetLocalizedTitle() => null;
 
         // ================================================================
         // コンテキスト管理

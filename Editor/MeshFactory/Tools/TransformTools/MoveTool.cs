@@ -3,6 +3,7 @@
 // 改善版: 正確な軸方向表示、中央ドラッグ対応
 // Edge/Face/Line選択時も移動可能
 // IToolSettings対応版
+// ローカライズ対応版
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +13,7 @@ using MeshFactory.Data;
 using MeshFactory.Transforms;
 using MeshFactory.UndoSystem;
 using MeshFactory.Selection;
+using MeshFactory.Localization;
 
 namespace MeshFactory.Tools
 {
@@ -23,6 +25,31 @@ namespace MeshFactory.Tools
         public string Name => "Move";
         public string DisplayName => "Move";
         //public ToolCategory Category => ToolCategory.Transform;  
+
+        /// <summary>
+        /// ローカライズされた表示名を取得
+        /// </summary>
+        public string GetLocalizedDisplayName() => L.Get("Tool_Move");
+
+        // ================================================================
+        // ツール固有ローカライズ辞書
+        // ================================================================
+        
+        private static readonly Dictionary<string, Dictionary<string, string>> _localize = new()
+        {
+            ["Magnet"] = new() { ["en"] = "Magnet", ["ja"] = "マグネット", ["hi"] = "じしゃく" },
+            ["Enable"] = new() { ["en"] = "Enable", ["ja"] = "有効", ["hi"] = "つかう" },
+            ["Radius"] = new() { ["en"] = "Radius", ["ja"] = "半径", ["hi"] = "はんけい" },
+            ["Falloff"] = new() { ["en"] = "Falloff", ["ja"] = "減衰", ["hi"] = "よわまりかた" },
+            ["Gizmo"] = new() { ["en"] = "Gizmo", ["ja"] = "ギズモ", ["hi"] = "ギズモ" },
+            ["OffsetX"] = new() { ["en"] = "Offset X", ["ja"] = "オフセット X", ["hi"] = "ずれ X" },
+            ["OffsetY"] = new() { ["en"] = "Offset Y", ["ja"] = "オフセット Y", ["hi"] = "ずれ Y" },
+            ["TargetVertices"] = new() { ["en"] = "Target: {0} vertices", ["ja"] = "移動対象: {0} 頂点", ["hi"] = "うごかすてん: {0}こ" },
+        };
+        
+        /// <summary>ツール内ローカライズ取得</summary>
+        private static string T(string key) => L.GetFrom(_localize, key);
+        private static string T(string key, params object[] args) => L.GetFrom(_localize, key, args);  
 
         // ================================================================
         // 設定（IToolSettings対応）
@@ -379,28 +406,28 @@ namespace MeshFactory.Tools
 
         public void DrawSettingsUI()
         {
-            EditorGUILayout.LabelField("Magnet", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField(T("Magnet"), EditorStyles.miniBoldLabel);
 
             // MoveSettingsを直接編集（Undo検出はGUI_Tools側で行う）
-            _settings.UseMagnet = EditorGUILayout.Toggle("Enable", _settings.UseMagnet);
+            _settings.UseMagnet = EditorGUILayout.Toggle(T("Enable"), _settings.UseMagnet);
 
             using (new EditorGUI.DisabledScope(!_settings.UseMagnet))
             {
-                _settings.MagnetRadius = EditorGUILayout.Slider("Radius", _settings.MagnetRadius, 0.01f, 2f);
-                _settings.MagnetFalloff = (FalloffType)EditorGUILayout.EnumPopup("Falloff", _settings.MagnetFalloff);
+                _settings.MagnetRadius = EditorGUILayout.Slider(T("Radius"), _settings.MagnetRadius, 0.01f, 2f);
+                _settings.MagnetFalloff = (FalloffType)EditorGUILayout.EnumPopup(T("Falloff"), _settings.MagnetFalloff);
             }
 
             // ギズモ設定（Undo対象外）
             EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField("Gizmo", EditorStyles.miniBoldLabel);
-            _gizmoScreenOffset.x = EditorGUILayout.Slider("Offset X", _gizmoScreenOffset.x, -100f, 100f);
-            _gizmoScreenOffset.y = EditorGUILayout.Slider("Offset Y", _gizmoScreenOffset.y, -100f, 100f);
+            EditorGUILayout.LabelField(T("Gizmo"), EditorStyles.miniBoldLabel);
+            _gizmoScreenOffset.x = EditorGUILayout.Slider(T("OffsetX"), _gizmoScreenOffset.x, -100f, 100f);
+            _gizmoScreenOffset.y = EditorGUILayout.Slider(T("OffsetY"), _gizmoScreenOffset.y, -100f, 100f);
 
             // 選択情報表示
             EditorGUILayout.Space(5);
             if (_affectedVertices.Count > 0)
             {
-                EditorGUILayout.HelpBox($"移動対象: {_affectedVertices.Count} 頂点", MessageType.None);
+                EditorGUILayout.HelpBox(T("TargetVertices", _affectedVertices.Count), MessageType.None);
             }
         }
 
