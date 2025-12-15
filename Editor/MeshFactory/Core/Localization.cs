@@ -164,7 +164,7 @@ namespace MeshFactory.Localization
             ["Tools"] = new() { ["en"] = "Tools", ["ja"] = "ツール", ["hi"] = "どうぐ" },
             ["Selection"] = new() { ["en"] = "Selection", ["ja"] = "選択", ["hi"] = "せんたく" },
             ["Symmetry"] = new() { ["en"] = "Symmetry (Mirror)", ["ja"] = "対称（ミラー）", ["hi"] = "たいしょう（かがみ）" },
-            ["ToolWindows"] = new() { ["en"] = "Tool Windows", ["ja"] = "ツールウィンドウ", ["hi"] = "どうぐまど" },
+            ["ToolPanels"] = new() { ["en"] = "Tool Panels", ["ja"] = "ツールパネル", ["hi"] = "どうぐいれ" },
             ["Materials"] = new() { ["en"] = "Materials", ["ja"] = "マテリアル", ["hi"] = "ざいりょう" },
             ["Save"] = new() { ["en"] = "Save", ["ja"] = "保存", ["hi"] = "ほぞん" },
             ["ModelFile"] = new() { ["en"] = "Model File", ["ja"] = "モデルファイル", ["hi"] = "もでるふぁいる" },
@@ -172,7 +172,7 @@ namespace MeshFactory.Localization
             ["MeshList"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュリスト", ["hi"] = "めっしゅりすと" },
             
             // ============================================================
-            // ウィンドウタイトル（キーは "Window_" + IToolWindow.Name）
+            // ウィンドウタイトル（キーは "Window_" + IToolPanel.Name）
             // ============================================================
             ["Window_MeshContextList"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュオブジェクトリスト", ["hi"] = "ずけいりすと" },
             
@@ -317,23 +317,23 @@ namespace MeshFactory.Localization
         /// ウィンドウのタイトルを取得（フォールバック付き）
         /// 優先度: ウィンドウ自身のローカライズ → 共通辞書 → Title
         /// </summary>
-        public static string GetWindowTitle(IToolWindow window)
+        public static string GetWindowTitle(IToolPanel toolPanel)
         {
-            if (window == null) return "";
+            if (toolPanel == null) return "";
             
             // 1. ウィンドウ自身のローカライズ
-            var localized = window.GetLocalizedTitle();
+            var localized = toolPanel.GetLocalizedTitle();
             if (!string.IsNullOrEmpty(localized))
                 return localized;
             
             // 2. 共通辞書（Window_XXX形式）
-            string key = "Window_" + window.Name;
+            string key = "Window_" + toolPanel.Name;
             string fromDict = Get(key);
             if (fromDict != key)  // キーと異なる = 辞書に存在
                 return fromDict;
             
             // 3. フォールバック: Title
-            return window.Title;
+            return toolPanel.Title;
         }
         
         // ================================================================

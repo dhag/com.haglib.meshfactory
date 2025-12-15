@@ -1,6 +1,7 @@
 // Assets/Editor/SimpleMeshFactory.Tools.cs
 // Phase 2: 設定フィールド削除・ToolManager統合版
 // ツール設定はToolSettingsStorage経由で永続化
+// Phase 4: PrimitiveMeshTool対応（メッシュ作成コールバック追加）
 
 using System;
 using System.Collections.Generic;
@@ -48,6 +49,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private LineExtrudeTool _lineExtrudeTool => _toolManager?.GetTool<LineExtrudeTool>();
     private FlipFaceTool _flipFaceTool => _toolManager?.GetTool<FlipFaceTool>();
     private PivotOffsetTool _pivotOffsetTool => _toolManager?.GetTool<PivotOffsetTool>();
+    private PrimitiveMeshTool _primitiveMeshTool => _toolManager?.GetTool<PrimitiveMeshTool>();
 
     // ================================================================
     // 【削除】ツール設定フィールド
@@ -99,6 +101,10 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.SelectionState = _selectionState;
         ctx.TopologyCache = _meshTopology;
         ctx.SelectionOps = _selectionOps;
+
+        // Phase 4追加: メッシュ作成コールバック
+        ctx.CreateNewMeshContext = OnMeshDataCreatedAsNew;
+        ctx.AddMeshDataToCurrentMesh = OnMeshDataCreatedAddToCurrent;
     }
 
     /// <summary>
@@ -191,6 +197,10 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.DuplicateMeshContent = DuplicateMeshContentWithUndo;
         ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
 
+        // Phase 4追加: メッシュ作成コールバック
+        ctx.CreateNewMeshContext = OnMeshDataCreatedAsNew;
+        ctx.AddMeshDataToCurrentMesh = OnMeshDataCreatedAddToCurrent;
+
         // UndoコンテキストにもMaterialsを同期
         if (_undoController?.MeshContext != null && meshContext != null)
         {
@@ -243,6 +253,28 @@ public partial class SimpleMeshFactory : EditorWindow
         {
             lineExtrudeTool.OnSelectionChanged();
         }
+    }
+
+    // ================================================================
+    // メッシュ作成コールバック（Phase 4追加）
+    // ================================================================
+
+    /// <summary>
+    /// MeshDataから新しいMeshContextを作成（PrimitiveMeshTool用ラッパー）
+    /// </summary>
+    private void OnMeshDataCreatedAsNew(MeshData meshData, string name)
+    {
+        // SimpleMeshFactory_MeshIO.csのCreateNewMeshContextを呼び出し
+        CreateNewMeshContext(meshData, name);
+    }
+
+    /// <summary>
+    /// 現在選択中のメッシュにMeshDataを追加（PrimitiveMeshTool用ラッパー）
+    /// </summary>
+    private void OnMeshDataCreatedAddToCurrent(MeshData meshData, string name)
+    {
+        // SimpleMeshFactory_MeshIO.csのAddMeshDataToCurrentを呼び出し
+        AddMeshDataToCurrent(meshData, name);
     }
 
     // ================================================================

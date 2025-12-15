@@ -1,5 +1,6 @@
 // Assets/Editor/SimpleMeshFactory.GUI.cs
 // 左ペインUI描画（DrawMeshList、ツールバー）
+// Phase 4: 図形生成ボタンをPrimitiveMeshToolに移動
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -137,7 +138,7 @@ public partial class SimpleMeshFactory
             EditorGUILayout.Space(3);
 
             // ================================================================
-            // Primitive セクション
+            // Primitive セクション（図形生成ボタンはPrimitiveMeshToolに移動）
             // ================================================================
             _foldPrimitive = DrawFoldoutWithUndo("Primitive", L.Get("Primitive"), true);
             if (_foldPrimitive)
@@ -177,111 +178,10 @@ public partial class SimpleMeshFactory
                     LoadMeshFromSelection();
                 }
 
-                EditorGUILayout.Space(3);
-
-                // Create UnityMesh
-                EditorGUILayout.LabelField(L.Get("CreateMesh"), EditorStyles.miniBoldLabel);
-
-                // ★追加モードUI（Undo対応）
-                EditorGUILayout.BeginHorizontal();
-                EditorGUI.BeginChangeCheck();
-                bool newAddToCurrentMesh = EditorGUILayout.ToggleLeft(L.Get("AddToCurrent"), _addToCurrentMesh, GUILayout.Width(110));
-                if (EditorGUI.EndChangeCheck() && newAddToCurrentMesh != _addToCurrentMesh)
-                {
-                    if (_undoController != null)
-                    {
-                        _undoController.BeginEditorStateDrag();
-                    }
-                    _addToCurrentMesh = newAddToCurrentMesh;
-                    if (_undoController != null)
-                    {
-                        _undoController.EditorState.AddToCurrentMesh = _addToCurrentMesh;
-                        _undoController.EndEditorStateDrag("Toggle Add to Current");
-                    }
-                }
-
-                // 追加先がない場合は警告
-                if (_addToCurrentMesh && !_model.HasValidSelection)
-                {
-                    EditorGUILayout.LabelField(L.Get("NoMeshSelected"), EditorStyles.miniLabel);
-                }
-                EditorGUILayout.EndHorizontal();
-
-                // 自動マージUI（Undo対応）
-                EditorGUILayout.BeginHorizontal();
-                EditorGUI.BeginChangeCheck();
-                bool newAutoMergeOnCreate = EditorGUILayout.ToggleLeft(L.Get("AutoMerge"), _autoMergeOnCreate, GUILayout.Width(90));
-                if (EditorGUI.EndChangeCheck() && newAutoMergeOnCreate != _autoMergeOnCreate)
-                {
-                    if (_undoController != null)
-                    {
-                        _undoController.BeginEditorStateDrag();
-                    }
-                    _autoMergeOnCreate = newAutoMergeOnCreate;
-                    if (_undoController != null)
-                    {
-                        _undoController.EditorState.AutoMergeOnCreate = _autoMergeOnCreate;
-                        _undoController.EndEditorStateDrag("Toggle Auto Merge");
-                    }
-                }
-                EditorGUI.BeginDisabledGroup(!_autoMergeOnCreate);
-                EditorGUI.BeginChangeCheck();
-                float newAutoMergeThreshold = EditorGUILayout.FloatField(_autoMergeThreshold, GUILayout.Width(60));
-                if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newAutoMergeThreshold, _autoMergeThreshold))
-                {
-                    if (_undoController != null)
-                    {
-                        _undoController.BeginEditorStateDrag();
-                    }
-                    _autoMergeThreshold = newAutoMergeThreshold;
-                    if (_undoController != null)
-                    {
-                        _undoController.EditorState.AutoMergeThreshold = _autoMergeThreshold;
-                        _undoController.EndEditorStateDrag("Change Auto Merge Threshold");
-                    }
-                }
-                EditorGUI.EndDisabledGroup();
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.Space(3);
-
-                // 生成用のボタン（+ Cube... など）
-                if (GUILayout.Button("+ Cube..."))
-                {
-                    CubeMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ Plane..."))
-                {
-                    PlaneMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ Pyramid..."))
-                {
-                    PyramidMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ Capsule..."))
-                {
-                    CapsuleMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ Cylinder..."))
-                {
-                    CylinderMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ Sphere..."))
-                {
-                    SphereMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ Revolution..."))
-                {
-                    RevolutionMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ 2D Profile..."))
-                {
-                    Profile2DExtrudeWindow.Open(OnMeshDataCreated);
-                }
-                if (GUILayout.Button("+ NohMask..."))
-                {
-                    NohMaskMeshCreatorWindow.Open(OnMeshDataCreated);
-                }
+                // ================================================================
+                // 図形生成ボタンは削除（PrimitiveMeshToolに移動）
+                // Toolsセクションで「Primitive」ツールを選択すると表示される
+                // ================================================================
 
                 EditorGUI.indentLevel--;
             }
@@ -366,9 +266,9 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.Space(3);
 
                 // ================================================================
-                // Tool Windows セクション（Phase 4追加）
+                // Tool Panel セクション（Phase 4追加）
                 // ================================================================
-                DrawToolWindowsSection();
+                DrawToolPanelsSection();
 
                 EditorGUILayout.Space(3);
 

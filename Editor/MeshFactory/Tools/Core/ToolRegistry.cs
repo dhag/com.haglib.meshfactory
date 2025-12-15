@@ -2,6 +2,7 @@
 // 全ツールの登録を一箇所で管理
 // 新しいツールを追加する際はここだけ修正すればよい
 // ToolCategoryはIEditTool.csに移動
+// Phase 4: PrimitiveMeshTool追加
 
 using System;
 using System.Collections.Generic;
@@ -51,6 +52,9 @@ namespace MeshFactory.Tools
 
             // Utility
             () => new PivotOffsetTool(),
+
+            // Primitive (Phase 4追加)
+            () => new PrimitiveMeshTool(),
         };
 
         // ================================================================

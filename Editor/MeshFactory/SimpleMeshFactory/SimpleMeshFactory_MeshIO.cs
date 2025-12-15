@@ -3,6 +3,7 @@
 // Phase2: マルチマテリアル対応版
 // DefaultMaterials対応版
 // 追加モード・自動マージ対応版
+// Phase4: MeshMergeHelper使用に変更
 
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +13,7 @@ using MeshFactory.Data;
 using MeshFactory.Tools;
 using MeshFactory.Serialization;
 using MeshFactory.UndoSystem;
+using MeshFactory.Utilities;
 
 public partial class SimpleMeshFactory
 {
@@ -279,10 +281,10 @@ public partial class SimpleMeshFactory
             }
         }
 
-        // 自動マージ（全頂点対象）
+        // 自動マージ（全頂点対象）- MeshMergeHelper使用
         if (_autoMergeOnCreate && meshContext.Data.VertexCount >= 2)
         {
-            var result = MergeVerticesTool.MergeAllVerticesAtSamePosition(meshContext.Data, _autoMergeThreshold);
+            var result = MeshMergeHelper.MergeAllVerticesAtSamePosition(meshContext.Data, _autoMergeThreshold);
             if (result.RemovedVertexCount > 0)
             {
                 Debug.Log($"[CreateNewMeshContext] Auto-merged {result.RemovedVertexCount} vertices");
@@ -371,11 +373,11 @@ public partial class SimpleMeshFactory
             meshContext.Data.Faces.Add(newFace);
         }
 
-        // 自動マージ（追加した頂点と既存頂点の境界をマージ）
+        // 自動マージ（追加した頂点と既存頂点の境界をマージ）- MeshMergeHelper使用
         if (_autoMergeOnCreate && meshContext.Data.VertexCount >= 2)
         {
             var allVertices = new HashSet<int>(Enumerable.Range(0, meshContext.Data.VertexCount));
-            var result = MergeVerticesTool.MergeVerticesAtSamePosition(meshContext.Data, allVertices, _autoMergeThreshold);
+            var result = MeshMergeHelper.MergeVerticesAtSamePosition(meshContext.Data, allVertices, _autoMergeThreshold);
 
             if (result.RemovedVertexCount > 0)
             {

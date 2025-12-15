@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Tools;
-using MeshFactory.Tools.Windows;
+using MeshFactory.Tools.Panels;
 using MeshFactory.Selection;
 using MeshFactory.Localization;
 
@@ -192,7 +192,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ToolWindowsセクションを描画
     /// </summary>
-    private void DrawToolWindowsSection()
+    private void DrawToolPanelsSection()
     {
         _foldToolWindows = DrawFoldoutWithUndo("ToolWindows", L.Get("ToolWindows"), false);
         if (!_foldToolWindows)
@@ -203,11 +203,11 @@ public partial class SimpleMeshFactory
         // UnityMesh List Window（統合版）
         if (GUILayout.Button(L.Get("Window_MeshContextList")))
         {
-            MeshListWindow.Open(_toolManager?.toolContext);
+            MeshListPanel.Open(_toolManager?.toolContext);
         }
 
         // 登録されたToolWindow
-        var windows = ToolWindowRegistry.Windows;
+        var windows = ToolPanelRegistry.Windows;
         if (windows != null && windows.Length > 0)
         {
             EditorGUILayout.Space(3);

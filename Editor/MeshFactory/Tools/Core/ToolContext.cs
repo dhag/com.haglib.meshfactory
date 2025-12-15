@@ -2,6 +2,7 @@
 // 編集ツールに渡されるコンテキスト
 // SelectionState/TopologyCache対応版
 // Phase 3: ModelContext統合
+// Phase 4: PrimitiveMeshTool対応（メッシュ作成コールバック追加）
 
 using System;
 using System.Collections.Generic;
@@ -115,6 +116,14 @@ namespace MeshFactory.Tools
 
         /// <summary>メッシュの順序を変更（Undo対応）</summary>
         public Action<int, int> ReorderMeshContext { get; set; }
+
+        // === メッシュ作成コールバック（Phase 4: PrimitiveMeshTool対応） ===
+
+        /// <summary>MeshDataから新しいMeshContextを作成（Undo対応）</summary>
+        public Action<MeshData, string> CreateNewMeshContext { get; set; }
+
+        /// <summary>現在選択中のメッシュにMeshDataを追加（Undo対応）</summary>
+        public Action<MeshData, string> AddMeshDataToCurrentMesh { get; set; }
 
         // === コールバック ===
 

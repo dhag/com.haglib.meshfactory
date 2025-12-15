@@ -122,7 +122,7 @@ namespace MeshFactory.UndoSystem
             _editorStateContext.WorkPlane = _workPlane;
 
             // サブウインドウグループ
-            _subWindowGroup = new UndoGroup($"{windowId}/SubWindows", "Sub Windows");
+            _subWindowGroup = new UndoGroup($"{windowId}/SubWindows", "Sub Panels");
             _mainGroup.AddChild(_subWindowGroup);
 
             // イベント購読

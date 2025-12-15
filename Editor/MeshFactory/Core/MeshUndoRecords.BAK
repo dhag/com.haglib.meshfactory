@@ -1545,18 +1545,15 @@ namespace MeshFactory.UndoSystem
         /// <summary>Undo/Redo実行後のコールバック（UI更新等）</summary>
         public System.Action OnListChanged;
     }
-//-------------------------
 
     /// <summary>
     /// MeshContextの完全なスナップショット
-    /// HideFlags.HideAndDontSave のオブジェクトを適切に処理
     /// </summary>
     public class MeshContextSnapshot
     {
         public string Name;
         public MeshData Data;                    // Clone
-        public List<string> MaterialPaths;      // マテリアルはアセットパスで保持
-        public List<Material> RuntimeMaterials; // ランタイム専用（アセット化されていないマテリアル）
+        public List<Material> Materials;
         public int CurrentMaterialIndex;
         public ExportSettings ExportSettings;
         public Vector3[] OriginalPositions;
@@ -1564,59 +1561,21 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// MeshContextからスナップショットを作成
         /// </summary>
-        public static MeshContextSnapshot Capture(SimpleMeshFactory.MeshContext meshContext)
+        public static MeshContextSnapshot Capture(SimpleMeshFactory.MeshContext ｍeshContext)
         {
-            if (meshContext == null) return null;
+            if (ｍeshContext == null) return null;
 
-            var snapshot = new MeshContextSnapshot
+            return new MeshContextSnapshot
             {
-                Name = meshContext.Name,
-                Data = meshContext.Data?.Clone(),
-                MaterialPaths = new List<string>(),
-                RuntimeMaterials = new List<Material>(),
-                CurrentMaterialIndex = meshContext.CurrentMaterialIndex,
-                ExportSettings = meshContext.ExportSettings != null ? new ExportSettings(meshContext.ExportSettings) : null,
-                OriginalPositions = meshContext.OriginalPositions != null 
-                    ? (Vector3[])meshContext.OriginalPositions.Clone() 
+                Name = ｍeshContext.Name,
+                Data = ｍeshContext.Data?.Clone(),
+                Materials = ｍeshContext.Materials != null ? new List<Material>(ｍeshContext.Materials) : new List<Material>(),
+                CurrentMaterialIndex = ｍeshContext.CurrentMaterialIndex,
+                ExportSettings = ｍeshContext.ExportSettings != null ? new ExportSettings(ｍeshContext.ExportSettings) : null,
+                OriginalPositions = ｍeshContext.OriginalPositions != null 
+                    ? (Vector3[])ｍeshContext.OriginalPositions.Clone() 
                     : null
             };
-
-            // マテリアルを安全に保存
-            if (meshContext.Materials != null)
-            {
-                foreach (var mat in meshContext.Materials)
-                {
-                    if (mat == null)
-                    {
-                        // null マテリアル
-                        snapshot.MaterialPaths.Add(null);
-                        snapshot.RuntimeMaterials.Add(null);
-                    }
-                    else if (UnityEditor.AssetDatabase.Contains(mat))
-                    {
-                        // アセット化されたマテリアル → パスを保存
-                        string path = UnityEditor.AssetDatabase.GetAssetPath(mat);
-                        snapshot.MaterialPaths.Add(path);
-                        snapshot.RuntimeMaterials.Add(null);
-                    }
-                    else if ((mat.hideFlags & HideFlags.DontSaveInEditor) != 0)
-                    {
-                        // HideAndDontSave のマテリアル → 保存しない（復元時にnullになる）
-                        // これが問題の原因だったので、参照を保持しない
-                        snapshot.MaterialPaths.Add(null);
-                        snapshot.RuntimeMaterials.Add(null);
-                    }
-                    else
-                    {
-                        // その他のランタイムマテリアル → 直接参照を保持
-                        // （シーン内のマテリアルなど）
-                        snapshot.MaterialPaths.Add(null);
-                        snapshot.RuntimeMaterials.Add(mat);
-                    }
-                }
-            }
-
-            return snapshot;
         }
 
         /// <summary>
@@ -1628,42 +1587,13 @@ namespace MeshFactory.UndoSystem
             {
                 Name = Name,
                 Data = Data?.Clone(),
-                Materials = new List<Material>(),
+                Materials = Materials != null ? new List<Material>(Materials) : new List<Material>(),
                 CurrentMaterialIndex = CurrentMaterialIndex,
                 ExportSettings = ExportSettings != null ? new ExportSettings(ExportSettings) : null,
                 OriginalPositions = OriginalPositions != null 
                     ? (Vector3[])OriginalPositions.Clone() 
                     : null
             };
-
-            // マテリアルを復元
-            if (MaterialPaths != null)
-            {
-                for (int i = 0; i < MaterialPaths.Count; i++)
-                {
-                    Material mat = null;
-                    string path = MaterialPaths[i];
-
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        // アセットパスから復元
-                        mat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
-                    }
-                    else if (RuntimeMaterials != null && i < RuntimeMaterials.Count)
-                    {
-                        // ランタイムマテリアル参照から復元
-                        mat = RuntimeMaterials[i];
-                    }
-
-                    meshContext.Materials.Add(mat);
-                }
-            }
-
-            // マテリアルリストが空の場合はデフォルトを追加
-            if (meshContext.Materials.Count == 0)
-            {
-                meshContext.Materials.Add(null);
-            }
 
             // Unity Meshを再生成
             if (meshContext.Data != null)
@@ -1676,7 +1606,7 @@ namespace MeshFactory.UndoSystem
             return meshContext;
         }
     }
-//-----------------
+
     /// <summary>
     /// メッシュリスト用Undo記録の基底クラス
     /// </summary>

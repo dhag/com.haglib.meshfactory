@@ -1,5 +1,6 @@
 // Tools/MergeVerticesTool.cs
 // 頂点マージツール - 選択頂点のうち距離がしきい値以下のものを統合
+// Phase 4: MeshMergeHelper使用に変更
 
 using System;
 using System.Collections.Generic;
@@ -8,6 +9,7 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using MeshFactory.Utilities;
 
 namespace MeshFactory.Tools
 {
@@ -271,7 +273,8 @@ namespace MeshFactory.Tools
                 ? MeshDataSnapshot.Capture(ctx.UndoController.MeshContext)
                 : default;
 
-            var result = MergeVertices(ctx.MeshData, ctx.SelectedVertices, Threshold);
+            // MeshMergeHelper使用
+            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.MeshData, ctx.SelectedVertices, Threshold);
 
             if (result.Success)
             {
@@ -357,23 +360,7 @@ namespace MeshFactory.Tools
         }
 
         // ================================================================
-        // マージ実行（内部）
-        // ================================================================
-
-        public struct MergeResult
-        {
-            public bool Success;
-            public int RemovedVertexCount;
-            public string Message;
-        }
-
-        private MergeResult MergeVertices(MeshData meshData, HashSet<int> selectedVertices, float threshold)
-        {
-            return MergeVerticesInternal(meshData, selectedVertices, threshold);
-        }
-
-        // ================================================================
-        // 静的マージメソッド（外部から呼び出し可能）
+        // 静的マージメソッド（外部から呼び出し可能）- MeshMergeHelperへのラッパー
         // ================================================================
 
         /// <summary>
@@ -385,7 +372,7 @@ namespace MeshFactory.Tools
         /// <returns>マージ結果</returns>
         public static MergeResult MergeVerticesAtSamePosition(MeshData meshData, HashSet<int> targetVertices, float threshold = 0.001f)
         {
-            return MergeVerticesInternal(meshData, targetVertices, threshold);
+            return MeshMergeHelper.MergeVerticesAtSamePosition(meshData, targetVertices, threshold);
         }
 
         /// <summary>
@@ -396,191 +383,7 @@ namespace MeshFactory.Tools
         /// <returns>マージ結果</returns>
         public static MergeResult MergeAllVerticesAtSamePosition(MeshData meshData, float threshold = 0.001f)
         {
-            if (meshData == null || meshData.VertexCount < 2)
-                return new MergeResult { Success = false, Message = "Not enough vertices" };
-
-            var allVertices = new HashSet<int>(Enumerable.Range(0, meshData.VertexCount));
-            return MergeVerticesInternal(meshData, allVertices, threshold);
-        }
-
-        /// <summary>
-        /// マージ処理の内部実装
-        /// </summary>
-        private static MergeResult MergeVerticesInternal(MeshData meshData, HashSet<int> selectedVertices, float threshold)
-        {
-            var result = new MergeResult { Success = false };
-
-            if (meshData == null || selectedVertices == null || selectedVertices.Count < 2)
-            {
-                result.Message = "Not enough vertices selected";
-                return result;
-            }
-
-            var validSelected = selectedVertices
-                .Where(v => v >= 0 && v < meshData.VertexCount)
-                .ToList();
-
-            if (validSelected.Count < 2)
-            {
-                result.Message = "Not enough valid vertices";
-                return result;
-            }
-
-            // Union-Find
-            var parent = new int[meshData.VertexCount];
-            var rank = new int[meshData.VertexCount];
-            for (int i = 0; i < parent.Length; i++) parent[i] = i;
-
-            int Find(int x)
-            {
-                if (parent[x] != x) parent[x] = Find(parent[x]);
-                return parent[x];
-            }
-
-            void Unite(int x, int y)
-            {
-                int rx = Find(x), ry = Find(y);
-                if (rx == ry) return;
-                if (rank[rx] < rank[ry]) parent[rx] = ry;
-                else if (rank[rx] > rank[ry]) parent[ry] = rx;
-                else { parent[ry] = rx; rank[rx]++; }
-            }
-
-            // 距離計算
-            for (int i = 0; i < validSelected.Count; i++)
-            {
-                for (int j = i + 1; j < validSelected.Count; j++)
-                {
-                    float dist = Vector3.Distance(
-                        meshData.Vertices[validSelected[i]].Position,
-                        meshData.Vertices[validSelected[j]].Position);
-
-                    if (dist <= threshold)
-                        Unite(validSelected[i], validSelected[j]);
-                }
-            }
-
-            // グループ収集
-            var groups = new Dictionary<int, List<int>>();
-            foreach (int v in validSelected)
-            {
-                int root = Find(v);
-                if (!groups.ContainsKey(root))
-                    groups[root] = new List<int>();
-                groups[root].Add(v);
-            }
-
-            var mergeGroups = groups.Values.Where(g => g.Count >= 2).ToList();
-
-            if (mergeGroups.Count == 0)
-            {
-                result.Message = "No vertices within threshold";
-                result.Success = true;  // エラーではない
-                result.RemovedVertexCount = 0;
-                return result;
-            }
-
-            // 頂点リマップを構築
-            var vertexRemap = new Dictionary<int, int>();
-            var verticesToRemove = new HashSet<int>();
-
-            foreach (var group in mergeGroups)
-            {
-                int representative = group.Min();
-
-                // 重心を計算
-                Vector3 centroid = Vector3.zero;
-                foreach (int v in group)
-                    centroid += meshData.Vertices[v].Position;
-                centroid /= group.Count;
-
-                meshData.Vertices[representative].Position = centroid;
-
-                foreach (int v in group)
-                {
-                    if (v != representative)
-                    {
-                        vertexRemap[v] = representative;
-                        verticesToRemove.Add(v);
-                    }
-                }
-            }
-
-            // Faceの頂点インデックスを更新
-            foreach (var face in meshData.Faces)
-            {
-                for (int i = 0; i < face.VertexIndices.Count; i++)
-                {
-                    if (vertexRemap.TryGetValue(face.VertexIndices[i], out int newIdx))
-                        face.VertexIndices[i] = newIdx;
-                }
-            }
-
-            // 縮退面を削除
-            RemoveDegenerateFaces(meshData);
-
-            // 不要頂点を削除
-            if (verticesToRemove.Count > 0)
-                RemoveVertices(meshData, verticesToRemove);
-
-            result.Success = true;
-            result.RemovedVertexCount = verticesToRemove.Count;
-            result.Message = $"Merged {verticesToRemove.Count} vertices into {mergeGroups.Count} groups";
-
-            return result;
-        }
-
-        private static void RemoveDegenerateFaces(MeshData meshData)
-        {
-            var toRemove = new List<int>();
-
-            for (int i = 0; i < meshData.FaceCount; i++)
-            {
-                var face = meshData.Faces[i];
-                var unique = new HashSet<int>(face.VertexIndices);
-
-                if (unique.Count < 2 || (face.VertexCount >= 3 && unique.Count < 3))
-                    toRemove.Add(i);
-            }
-
-            for (int i = toRemove.Count - 1; i >= 0; i--)
-                meshData.Faces.RemoveAt(toRemove[i]);
-
-            if (toRemove.Count > 0)
-                Debug.Log($"[MergeVertices] Removed {toRemove.Count} degenerate faces");
-        }
-
-        private static void RemoveVertices(MeshData meshData, HashSet<int> verticesToRemove)
-        {
-            var indexRemap = new Dictionary<int, int>();
-            int newIndex = 0;
-
-            for (int i = 0; i < meshData.VertexCount; i++)
-            {
-                if (!verticesToRemove.Contains(i))
-                {
-                    indexRemap[i] = newIndex;
-                    newIndex++;
-                }
-            }
-
-            var newVertices = new List<Vertex>();
-            for (int i = 0; i < meshData.VertexCount; i++)
-            {
-                if (!verticesToRemove.Contains(i))
-                    newVertices.Add(meshData.Vertices[i]);
-            }
-            meshData.Vertices.Clear();
-            meshData.Vertices.AddRange(newVertices);
-
-            foreach (var face in meshData.Faces)
-            {
-                for (int i = 0; i < face.VertexIndices.Count; i++)
-                {
-                    if (indexRemap.TryGetValue(face.VertexIndices[i], out int newIdx))
-                        face.VertexIndices[i] = newIdx;
-                }
-            }
+            return MeshMergeHelper.MergeAllVerticesAtSamePosition(meshData, threshold);
         }
     }
 
