@@ -8,6 +8,8 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Symmetry;
 using MeshFactory.Localization;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public partial class SimpleMeshFactory
 {
@@ -240,10 +242,10 @@ public partial class SimpleMeshFactory
             }
         }
 
-        Handles.BeginGUI();
+        UnityEditor_Handles.BeginGUI();
 
         // 通常のエッジを描画（シアン、やや薄く）
-        Handles.color = new Color(0f, 0.8f, 0.8f, alpha);
+        UnityEditor_Handles.color = new Color(0f, 0.8f, 0.8f, alpha);
         foreach (var edge in edges)
         {
             Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[edge.Item1].Position);
@@ -254,14 +256,14 @@ public partial class SimpleMeshFactory
 
             if (previewRect.Contains(p1) || previewRect.Contains(p2))
             {
-                Handles.DrawLine(
+                UnityEditor_Handles.DrawLine(
                     new Vector3(p1.x, p1.y, 0),
                     new Vector3(p2.x, p2.y, 0));
             }
         }
 
         // 補助線を描画（ピンク、やや薄く）
-        Handles.color = new Color(1f, 0.5f, 0.8f, alpha);
+        UnityEditor_Handles.color = new Color(1f, 0.5f, 0.8f, alpha);
         foreach (var line in lines)
         {
             if (line.Item1 < 0 || line.Item1 >= meshData.VertexCount ||
@@ -276,13 +278,13 @@ public partial class SimpleMeshFactory
 
             if (previewRect.Contains(p1) || previewRect.Contains(p2))
             {
-                Handles.DrawAAPolyLine(3f,
+                UnityEditor_Handles.DrawAAPolyLine(3f,
                     new Vector3(p1.x, p1.y, 0),
                     new Vector3(p2.x, p2.y, 0));
             }
         }
 
-        Handles.EndGUI();
+        UnityEditor_Handles.EndGUI();
     }
 
     // ================================================================
@@ -326,7 +328,7 @@ public partial class SimpleMeshFactory
                 break;
         }
 
-        Handles.BeginGUI();
+        UnityEditor_Handles.BeginGUI();
 
         // 平面の四隅
         Vector3[] corners = new Vector3[4];
@@ -346,11 +348,11 @@ public partial class SimpleMeshFactory
         DrawFilledPolygon(screenCorners, fillColor);
 
         // 枠線を描画
-        Handles.color = new Color(planeColor.r, planeColor.g, planeColor.b, 0.6f);
+        UnityEditor_Handles.color = new Color(planeColor.r, planeColor.g, planeColor.b, 0.6f);
         for (int i = 0; i < 4; i++)
         {
             int next = (i + 1) % 4;
-            Handles.DrawAAPolyLine(2f,
+            UnityEditor_Handles.DrawAAPolyLine(2f,
                 new Vector3(screenCorners[i].x, screenCorners[i].y, 0),
                 new Vector3(screenCorners[next].x, screenCorners[next].y, 0));
         }
@@ -370,14 +372,14 @@ public partial class SimpleMeshFactory
         if (previewRect.Contains(center))
         {
             float markerSize = 6f;
-            EditorGUI.DrawRect(new Rect(
+            UnityEditor_Handles.DrawRect(new Rect(
                 center.x - markerSize / 2,
                 center.y - markerSize / 2,
                 markerSize,
                 markerSize), planeColor);
         }
 
-        Handles.EndGUI();
+        UnityEditor_Handles.EndGUI();
     }
 
     // ================================================================

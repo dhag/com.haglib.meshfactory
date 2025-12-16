@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Selection;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -119,7 +121,7 @@ namespace MeshFactory.Tools
         {
             if (ctx.MeshData == null) return;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             Color previewColor = AddToSelection ? new Color(0, 1, 0, 0.7f) : new Color(1, 0, 0, 0.7f);
 
@@ -134,14 +136,14 @@ namespace MeshFactory.Tools
             }
 
             // プレビューエッジを描画
-            Handles.color = previewColor;
+            UnityEditor_Handles.color = previewColor;
             foreach (var edge in _ctx.PreviewEdges)
             {
                 if (edge.V1 < 0 || edge.V1 >= ctx.MeshData.VertexCount) continue;
                 if (edge.V2 < 0 || edge.V2 >= ctx.MeshData.VertexCount) continue;
                 Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V1].Position);
                 Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V2].Position);
-                Handles.DrawAAPolyLine(3f, sp1, sp2);
+                UnityEditor_Handles.DrawAAPolyLine(3f, sp1, sp2);
             }
 
             // プレビュー面を描画
@@ -151,7 +153,7 @@ namespace MeshFactory.Tools
             }
 
             // プレビューラインを描画
-            Handles.color = new Color(previewColor.r, previewColor.g, previewColor.b, 0.9f);
+            UnityEditor_Handles.color = new Color(previewColor.r, previewColor.g, previewColor.b, 0.9f);
             foreach (int lineIdx in _ctx.PreviewLines)
             {
                 DrawLinePreview(ctx, lineIdx);
@@ -160,7 +162,7 @@ namespace MeshFactory.Tools
             // 最短パスのプレビュー
             if (Mode == AdvancedSelectMode.ShortestPath && _ctx.PreviewPath.Count > 1)
             {
-                Handles.color = previewColor;
+                UnityEditor_Handles.color = previewColor;
                 for (int i = 0; i < _ctx.PreviewPath.Count - 1; i++)
                 {
                     int v1 = _ctx.PreviewPath[i];
@@ -170,7 +172,7 @@ namespace MeshFactory.Tools
 
                     Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
                     Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[v2].Position);
-                    Handles.DrawAAPolyLine(3f, sp1, sp2);
+                    UnityEditor_Handles.DrawAAPolyLine(3f, sp1, sp2);
                 }
 
                 GUI.color = previewColor;
@@ -199,14 +201,14 @@ namespace MeshFactory.Tools
             // ホバー中のエッジをハイライト
             if (_ctx.HoveredEdgePair.HasValue)
             {
-                Handles.color = Color.cyan;
+                UnityEditor_Handles.color = Color.cyan;
                 var edge = _ctx.HoveredEdgePair.Value;
                 if (edge.V1 >= 0 && edge.V1 < ctx.MeshData.VertexCount &&
                     edge.V2 >= 0 && edge.V2 < ctx.MeshData.VertexCount)
                 {
                     Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V1].Position);
                     Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V2].Position);
-                    Handles.DrawAAPolyLine(4f, sp1, sp2);
+                    UnityEditor_Handles.DrawAAPolyLine(4f, sp1, sp2);
                 }
             }
 
@@ -217,7 +219,7 @@ namespace MeshFactory.Tools
             }
 
             GUI.color = Color.white;
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()
@@ -302,7 +304,7 @@ namespace MeshFactory.Tools
             var face = ctx.MeshData.Faces[faceIdx];
             if (face.VertexCount < 3) return;
 
-            Handles.color = color;
+            UnityEditor_Handles.color = color;
             for (int i = 0; i < face.VertexCount; i++)
             {
                 int v1 = face.VertexIndices[i];
@@ -311,7 +313,7 @@ namespace MeshFactory.Tools
                 if (v2 < 0 || v2 >= ctx.MeshData.VertexCount) continue;
                 Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
                 Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[v2].Position);
-                Handles.DrawAAPolyLine(2f, sp1, sp2);
+                UnityEditor_Handles.DrawAAPolyLine(2f, sp1, sp2);
             }
         }
 
@@ -328,7 +330,7 @@ namespace MeshFactory.Tools
 
             Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
             Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[v2].Position);
-            Handles.DrawAAPolyLine(4f, sp1, sp2);
+            UnityEditor_Handles.DrawAAPolyLine(4f, sp1, sp2);
         }
     }
 }

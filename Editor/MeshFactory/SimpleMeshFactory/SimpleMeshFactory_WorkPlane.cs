@@ -4,6 +4,8 @@
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Tools;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public partial class SimpleMeshFactory
 {
@@ -185,7 +187,7 @@ public partial class SimpleMeshFactory
             gridSize = Mathf.Max(bounds.size.magnitude * 0.3f, 0.3f);
         }
 
-        Handles.BeginGUI();
+        UnityEditor_Handles.BeginGUI();
 
         // グリッド線の色
         Color gridColor;
@@ -201,7 +203,7 @@ public partial class SimpleMeshFactory
         {
             gridColor = new Color(0.5f, 0.8f, 1f, 0.15f);  // 通常は水色
         }
-        Handles.color = gridColor;
+        UnityEditor_Handles.color = gridColor;
 
         int gridLines = 5;
         float halfSize = gridSize * 0.5f;
@@ -217,7 +219,7 @@ public partial class SimpleMeshFactory
             Vector2 endUScreen = WorldToPreviewPos(endU, previewRect, camPos, lookAt);
             if (previewRect.Contains(startUScreen) || previewRect.Contains(endUScreen))
             {
-                Handles.DrawAAPolyLine(1f,
+                UnityEditor_Handles.DrawAAPolyLine(1f,
                     new Vector3(startUScreen.x, startUScreen.y, 0),
                     new Vector3(endUScreen.x, endUScreen.y, 0));
             }
@@ -229,7 +231,7 @@ public partial class SimpleMeshFactory
             Vector2 endVScreen = WorldToPreviewPos(endV, previewRect, camPos, lookAt);
             if (previewRect.Contains(startVScreen) || previewRect.Contains(endVScreen))
             {
-                Handles.DrawAAPolyLine(1f,
+                UnityEditor_Handles.DrawAAPolyLine(1f,
                     new Vector3(startVScreen.x, startVScreen.y, 0),
                     new Vector3(endVScreen.x, endVScreen.y, 0));
             }
@@ -241,22 +243,22 @@ public partial class SimpleMeshFactory
         // U軸（赤）
         Vector2 originScreen = WorldToPreviewPos(origin, previewRect, camPos, lookAt);
         Vector2 uEndScreen = WorldToPreviewPos(origin + axisU * axisLen, previewRect, camPos, lookAt);
-        Handles.color = new Color(1f, 0.3f, 0.3f, 0.8f);
-        Handles.DrawAAPolyLine(2f,
+        UnityEditor_Handles.color = new Color(1f, 0.3f, 0.3f, 0.8f);
+        UnityEditor_Handles.DrawAAPolyLine(2f,
             new Vector3(originScreen.x, originScreen.y, 0),
             new Vector3(uEndScreen.x, uEndScreen.y, 0));
 
         // V軸（緑）
         Vector2 vEndScreen = WorldToPreviewPos(origin + axisV * axisLen, previewRect, camPos, lookAt);
-        Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
-        Handles.DrawAAPolyLine(2f,
+        UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
+        UnityEditor_Handles.DrawAAPolyLine(2f,
             new Vector3(originScreen.x, originScreen.y, 0),
             new Vector3(vEndScreen.x, vEndScreen.y, 0));
 
         // 法線（青）
         Vector2 nEndScreen = WorldToPreviewPos(origin + normal * axisLen * 0.5f, previewRect, camPos, lookAt);
-        Handles.color = new Color(0.3f, 0.5f, 1f, 0.6f);
-        Handles.DrawAAPolyLine(2f,
+        UnityEditor_Handles.color = new Color(0.3f, 0.5f, 1f, 0.6f);
+        UnityEditor_Handles.DrawAAPolyLine(2f,
             new Vector3(originScreen.x, originScreen.y, 0),
             new Vector3(nEndScreen.x, nEndScreen.y, 0));
 
@@ -267,13 +269,13 @@ public partial class SimpleMeshFactory
                 ? new Color(1f, 0.6f, 0.2f, 0.9f)
                 : new Color(0.5f, 0.9f, 1f, 0.9f);
             float markerSize = 6f;
-            EditorGUI.DrawRect(new Rect(
+            UnityEditor_Handles.DrawRect(new Rect(
                 originScreen.x - markerSize / 2,
                 originScreen.y - markerSize / 2,
                 markerSize,
                 markerSize), markerColor);
         }
 
-        Handles.EndGUI();
+        UnityEditor_Handles.EndGUI();
     }
 }

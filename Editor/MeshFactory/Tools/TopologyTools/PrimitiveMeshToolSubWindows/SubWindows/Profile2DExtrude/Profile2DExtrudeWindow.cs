@@ -11,6 +11,7 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
 using MeshFactory.Profile2DExtrude;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public class Profile2DExtrudeWindow : EditorWindow
 {
@@ -334,10 +335,12 @@ public class Profile2DExtrudeWindow : EditorWindow
     private void DrawSplitter()
     {
         Rect splitterRect = GUILayoutUtility.GetRect(SPLITTER_WIDTH, SPLITTER_WIDTH, GUILayout.ExpandHeight(true));
-        
-        EditorGUI.DrawRect(splitterRect, new Color(0.1f, 0.1f, 0.1f, 1f));
+
+        UnityEditor_Handles.BeginGUI();
+        UnityEditor_Handles.DrawRect(splitterRect, new Color(0.1f, 0.1f, 0.1f, 1f));//?
         Rect lineRect = new Rect(splitterRect.x + 2, splitterRect.y, 2, splitterRect.height);
-        EditorGUI.DrawRect(lineRect, new Color(0.3f, 0.3f, 0.3f, 1f));
+        UnityEditor_Handles.DrawRect(lineRect, new Color(0.3f, 0.3f, 0.3f, 1f));//?
+        UnityEditor_Handles.EndGUI();
 
         EditorGUIUtility.AddCursorRect(splitterRect, MouseCursor.ResizeHorizontal);
 
@@ -632,7 +635,9 @@ public class Profile2DExtrudeWindow : EditorWindow
 
         if (_preview == null || _previewMesh == null)
         {
-            EditorGUI.DrawRect(rect, new Color(0.15f, 0.15f, 0.18f));
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.DrawRect(rect, new Color(0.15f, 0.15f, 0.18f));//?
+            UnityEditor_Handles.EndGUI();
             return;
         }
 

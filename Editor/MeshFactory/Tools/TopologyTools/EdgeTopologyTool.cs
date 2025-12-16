@@ -8,6 +8,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -845,7 +847,7 @@ namespace MeshFactory.Tools
 
             var edge = _hoveredEdge.Value;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             // 辺の状態に応じた色を決定
             Color edgeColor;
@@ -878,17 +880,17 @@ namespace MeshFactory.Tools
             }
 
             // 辺を描画
-            Handles.color = edgeColor;
-            Handles.DrawAAPolyLine(lineWidth,
+            UnityEditor_Handles.color = edgeColor;
+            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
                 new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0),
                 new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0));
 
             // 端点を描画
             float size = edge.IsShared && edge.CanFlip(ctx.MeshData) ? 8f : 5f;
-            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
-            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
+            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
+            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         /// <summary>
@@ -924,7 +926,7 @@ namespace MeshFactory.Tools
                 Vector2 sp2 = ctx.WorldToScreenPos(ctx.MeshData.Vertices[opposite2].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                 // 新しい対角線を点線で描画
-                Handles.color = new Color(0f, 1f, 1f, 0.8f);
+                UnityEditor_Handles.color = new Color(0f, 1f, 1f, 0.8f);
                 DrawDashedLine(sp1, sp2, 4f, 8f);
             }
         }
@@ -938,7 +940,7 @@ namespace MeshFactory.Tools
 
             var edge = _hoveredEdge.Value;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             Color edgeColor;
             float lineWidth;
@@ -961,17 +963,17 @@ namespace MeshFactory.Tools
             }
 
             // 辺を描画
-            Handles.color = edgeColor;
-            Handles.DrawAAPolyLine(lineWidth,
+            UnityEditor_Handles.color = edgeColor;
+            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
                 new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0),
                 new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0));
 
             // 端点
             float size = edge.IsShared ? 8f : 5f;
-            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
-            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
+            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
+            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         /// <summary>
@@ -991,8 +993,8 @@ namespace MeshFactory.Tools
                 screenPoints[i] = new Vector3(sp.x, sp.y, 0);
             }
 
-            Handles.color = color;
-            Handles.DrawAAConvexPolygon(screenPoints);
+            UnityEditor_Handles.color = color;
+            UnityEditor_Handles.DrawAAConvexPolygon(screenPoints);
         }
 
         /// <summary>
@@ -1014,7 +1016,7 @@ namespace MeshFactory.Tools
                 {
                     Vector2 p1 = start + dir * current;
                     Vector2 p2 = start + dir * nextPos;
-                    Handles.DrawAAPolyLine(3f, new Vector3(p1.x, p1.y, 0), new Vector3(p2.x, p2.y, 0));
+                    UnityEditor_Handles.DrawAAPolyLine(3f, new Vector3(p1.x, p1.y, 0), new Vector3(p2.x, p2.y, 0));
                 }
 
                 current = nextPos;
@@ -1027,7 +1029,7 @@ namespace MeshFactory.Tools
         /// </summary>
         private void DrawSplitPreview(ToolContext ctx)
         {
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             // 開始位置が選択されている場合
             if (_startWorldPos.HasValue)
@@ -1036,15 +1038,15 @@ namespace MeshFactory.Tools
                 Vector2 startScreen = ctx.WorldToScreenPos(startWorldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                 // 開始位置を黄色で表示
-                Handles.color = Color.yellow;
-                Handles.DrawSolidDisc(new Vector3(startScreen.x, startScreen.y, 0), Vector3.forward, 6f);
+                UnityEditor_Handles.color = Color.yellow;
+                UnityEditor_Handles.DrawSolidDisc(new Vector3(startScreen.x, startScreen.y, 0), Vector3.forward, 6f);
 
                 // 対角頂点候補を取得（開始位置と同位置の全頂点から）
                 var candidates = GetOppositeVertexCandidates(ctx, startWorldPos);
 
                 if (candidates.Count == 0)
                 {
-                    Handles.EndGUI();
+                    UnityEditor_Handles.EndGUI();
                     return;
                 }
 
@@ -1085,35 +1087,35 @@ namespace MeshFactory.Tools
                         if (isSnapped)
                         {
                             // スナップ状態：白で大きく
-                            Handles.color = Color.white;
-                            Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 8f);
+                            UnityEditor_Handles.color = Color.white;
+                            UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 8f);
 
                             // 対角線を太く
-                            Handles.color = Color.white;
-                            Handles.DrawAAPolyLine(4f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
+                            UnityEditor_Handles.color = Color.white;
+                            UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
                         }
                         else if (isNear)
                         {
                             // 接近中：緑
-                            Handles.color = Color.green;
-                            Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 6f);
+                            UnityEditor_Handles.color = Color.green;
+                            UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 6f);
 
                             // 対角線プレビュー（細め）
-                            Handles.color = new Color(0f, 1f, 0f, 0.6f);
-                            Handles.DrawAAPolyLine(2f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
+                            UnityEditor_Handles.color = new Color(0f, 1f, 0f, 0.6f);
+                            UnityEditor_Handles.DrawAAPolyLine(2f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
                         }
                         else
                         {
                             // 遠い：灰色（線なし）
-                            Handles.color = new Color(0.5f, 0.5f, 0.5f, 0.8f);
-                            Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 5f);
+                            UnityEditor_Handles.color = new Color(0.5f, 0.5f, 0.5f, 0.8f);
+                            UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 5f);
                         }
                     }
                     else
                     {
                         // その他の候補は小さく灰色
-                        Handles.color = new Color(0.6f, 0.6f, 0.6f, 0.4f);
-                        Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 3f);
+                        UnityEditor_Handles.color = new Color(0.6f, 0.6f, 0.6f, 0.4f);
+                        UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 3f);
                     }
                 }
 
@@ -1138,11 +1140,11 @@ namespace MeshFactory.Tools
             else if (_hoveredVertexIndex >= 0)
             {
                 Vector2 hoverScreen = ctx.WorldToScreenPos(ctx.MeshData.Vertices[_hoveredVertexIndex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                Handles.color = Color.white;
-                Handles.DrawSolidDisc(new Vector3(hoverScreen.x, hoverScreen.y, 0), Vector3.forward, 7f);
+                UnityEditor_Handles.color = Color.white;
+                UnityEditor_Handles.DrawSolidDisc(new Vector3(hoverScreen.x, hoverScreen.y, 0), Vector3.forward, 7f);
             }
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         /// <summary>

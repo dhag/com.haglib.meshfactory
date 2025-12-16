@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -688,7 +690,7 @@ namespace MeshFactory.Tools
 
             // 平面グリッド
             Color gridColor = new Color(0.5f, 0.8f, 1f, alpha);
-            Handles.color = gridColor;
+            UnityEditor_Handles.color = gridColor;
 
             int gridLines = 5;
             float halfSize = size * 0.5f;
@@ -699,25 +701,25 @@ namespace MeshFactory.Tools
                 // U方向の線
                 Vector3 startU = origin + axisV * (t * size) - axisU * halfSize;
                 Vector3 endU = origin + axisV * (t * size) + axisU * halfSize;
-                Handles.DrawLine(startU, endU);
+                UnityEditor_Handles.DrawLine(startU, endU);
 
                 // V方向の線
                 Vector3 startV = origin + axisU * (t * size) - axisV * halfSize;
                 Vector3 endV = origin + axisU * (t * size) + axisV * halfSize;
-                Handles.DrawLine(startV, endV);
+                UnityEditor_Handles.DrawLine(startV, endV);
             }
 
             // 軸
-            Handles.color = Color.red;
-            Handles.DrawLine(origin, origin + axisU * size * 0.3f);
-            Handles.color = Color.green;
-            Handles.DrawLine(origin, origin + axisV * size * 0.3f);
-            Handles.color = Color.blue;
-            Handles.DrawLine(origin, origin + normal * size * 0.15f);
+            UnityEditor_Handles.color = Color.red;
+            UnityEditor_Handles.DrawLine(origin, origin + axisU * size * 0.3f);
+            UnityEditor_Handles.color = Color.green;
+            UnityEditor_Handles.DrawLine(origin, origin + axisV * size * 0.3f);
+            UnityEditor_Handles.color = Color.blue;
+            UnityEditor_Handles.DrawLine(origin, origin + normal * size * 0.15f);
 
             // 原点マーカー
-            Handles.color = Color.yellow;
-            Handles.DrawWireDisc(origin, normal, size * 0.05f);
+            UnityEditor_Handles.color = Color.yellow;
+            UnityEditor_Handles.DrawWireDisc(origin, normal, size * 0.05f);
         }
     }
 }

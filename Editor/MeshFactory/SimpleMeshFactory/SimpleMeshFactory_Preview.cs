@@ -7,6 +7,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public partial class SimpleMeshFactory
 {
@@ -24,8 +26,10 @@ public partial class SimpleMeshFactory
         var meshContext = _model.CurrentMeshContext;
         if (meshContext == null || _preview == null)
         {
-            EditorGUI.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));//?
             EditorGUI.LabelField(rect, "Select a mesh", EditorStyles.centeredGreyMiniLabel);
+            UnityEditor_Handles.EndGUI();
             return;
         }
 
@@ -160,13 +164,15 @@ public partial class SimpleMeshFactory
         Vector2 zScreen = WorldToPreviewPos(zEnd, previewRect, camPos, lookAt);
         DrawDottedLine(originScreen, zScreen, new Color(0.3f, 0.3f, 1f, 0.7f));
 
+        UnityEditor_Handles.BeginGUI();
         // 中心点（小さめ）
         float centerSize = 4f;
-        EditorGUI.DrawRect(new Rect(
+        UnityEditor_Handles.DrawRect(new Rect( //?
             originScreen.x - centerSize / 2,
             originScreen.y - centerSize / 2,
             centerSize,
             centerSize), new Color(1f, 1f, 1f, 0.7f));
+        UnityEditor_Handles.EndGUI();
     }
 
     /// <summary>
@@ -174,8 +180,8 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void DrawDottedLine(Vector2 from, Vector2 to, Color color)
     {
-        Handles.BeginGUI();
-        Handles.color = color;
+        UnityEditor_Handles.BeginGUI();
+        UnityEditor_Handles.color = color;
 
         Vector2 dir = to - from;
         float length = dir.magnitude;
@@ -190,13 +196,13 @@ public partial class SimpleMeshFactory
             float dashEnd = Mathf.Min(pos + dashLength, length);
             Vector2 dashStart = from + dir * pos;
             Vector2 dashEndPos = from + dir * dashEnd;
-            Handles.DrawAAPolyLine(2f,
+            UnityEditor_Handles.DrawAAPolyLine(2f,
                 new Vector3(dashStart.x, dashStart.y, 0),
                 new Vector3(dashEndPos.x, dashEndPos.y, 0));
             pos += dashLength + gapLength;
         }
 
-        Handles.EndGUI();
+        UnityEditor_Handles.EndGUI();
     }
 
 
@@ -232,10 +238,10 @@ public partial class SimpleMeshFactory
             }
         }
 
-        Handles.BeginGUI();
+        UnityEditor_Handles.BeginGUI();
 
         // 通常のエッジを描画（緑）
-        Handles.color = new Color(0f, 1f, 0.5f, 0.9f);
+        UnityEditor_Handles.color = new Color(0f, 1f, 0.5f, 0.9f);
         foreach (var edge in edges)
         {
             Vector3 p1World = meshData.Vertices[edge.Item1].Position;
@@ -246,14 +252,14 @@ public partial class SimpleMeshFactory
 
             if (previewRect.Contains(p1) || previewRect.Contains(p2))
             {
-                Handles.DrawLine(
+                UnityEditor_Handles.DrawLine(
                     new Vector3(p1.x, p1.y, 0),
                     new Vector3(p2.x, p2.y, 0));
             }
         }
 
         // 補助線を描画（マゼンタ、点線風に太め）
-        Handles.color = new Color(1f, 0.3f, 1f, 0.9f);
+        UnityEditor_Handles.color = new Color(1f, 0.3f, 1f, 0.9f);
         foreach (var line in lines)
         {
             if (line.Item1 < 0 || line.Item1 >= meshData.VertexCount ||
@@ -268,13 +274,13 @@ public partial class SimpleMeshFactory
 
             if (previewRect.Contains(p1) || previewRect.Contains(p2))
             {
-                Handles.DrawAAPolyLine(2f,
+                UnityEditor_Handles.DrawAAPolyLine(2f,
                     new Vector3(p1.x, p1.y, 0),
                     new Vector3(p2.x, p2.y, 0));
             }
         }
 
-        Handles.EndGUI();
+        UnityEditor_Handles.EndGUI();
     }
     /// <summary>
     /// 選択状態のオーバーレイを描画（Edge/Face/Line）
@@ -286,7 +292,7 @@ public partial class SimpleMeshFactory
 
         try
         {
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             // 選択された面を描画（半透明ポリゴン）
             DrawSelectedFaces(previewRect, meshData, camPos, lookAt);
@@ -299,7 +305,7 @@ public partial class SimpleMeshFactory
         }
         finally
         {
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
     }
 
@@ -343,11 +349,11 @@ public partial class SimpleMeshFactory
             DrawFilledPolygon(screenPoints, faceColor);
 
             // エッジ描画
-            Handles.color = edgeColor;
+            UnityEditor_Handles.color = edgeColor;
             for (int i = 0; i < face.VertexCount; i++)
             {
                 int next = (i + 1) % face.VertexCount;
-                Handles.DrawAAPolyLine(3f,
+                UnityEditor_Handles.DrawAAPolyLine(3f,
                     new Vector3(screenPoints[i].x, screenPoints[i].y, 0),
                     new Vector3(screenPoints[next].x, screenPoints[next].y, 0));
             }
@@ -363,7 +369,7 @@ public partial class SimpleMeshFactory
             return;
 
         // エッジのハイライト色（シアン）
-        Handles.color = new Color(0f, 1f, 1f, 1f);
+        UnityEditor_Handles.color = new Color(0f, 1f, 1f, 1f);
 
         foreach (var edge in _selectionState.Edges)
         {
@@ -379,7 +385,7 @@ public partial class SimpleMeshFactory
 
             if (previewRect.Contains(p1) || previewRect.Contains(p2))
             {
-                Handles.DrawAAPolyLine(4f,
+                UnityEditor_Handles.DrawAAPolyLine(4f,
                     new Vector3(p1.x, p1.y, 0),
                     new Vector3(p2.x, p2.y, 0));
             }
@@ -395,7 +401,7 @@ public partial class SimpleMeshFactory
             return;
 
         // 補助線のハイライト色（黄色）
-        Handles.color = new Color(1f, 1f, 0f, 1f);
+        UnityEditor_Handles.color = new Color(1f, 1f, 0f, 1f);
 
         foreach (int lineIdx in _selectionState.Lines)
         {
@@ -414,7 +420,7 @@ public partial class SimpleMeshFactory
 
             if (previewRect.Contains(p1) || previewRect.Contains(p2))
             {
-                Handles.DrawAAPolyLine(4f,
+                UnityEditor_Handles.DrawAAPolyLine(4f,
                     new Vector3(p1.x, p1.y, 0),
                     new Vector3(p2.x, p2.y, 0));
             }
@@ -591,15 +597,20 @@ public partial class SimpleMeshFactory
             bool vertexModeEnabled = _selectionState != null && _selectionState.Mode.Has(MeshSelectMode.Vertex);
             float alpha = vertexModeEnabled ? 1f : 0.4f;
 
+            UnityEditor_Handles.BeginGUI();
+
             Color col = isSelected
                 ? new Color(1f, 0.8f, 0f, alpha)      // 選択=オレンジ黄
                 : new Color(1f, 1f, 1f, alpha);       // 未選択=白
-            EditorGUI.DrawRect(handleRect, col);
+            UnityEditor_Handles.DrawRect(handleRect, col);//?
 
             Color borderCol = isSelected
                 ? new Color(1f, 0f, 0f, alpha)
                 : new Color(0.5f, 0.5f, 0.5f, alpha);
             DrawRectBorder(handleRect, borderCol);
+
+
+            UnityEditor_Handles.EndGUI();
 
             GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16), i.ToString(), EditorStyles.miniLabel);
         }
@@ -616,6 +627,7 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void DrawBoxSelectOverlay()
     {
+        UnityEditor_Handles.BeginGUI();
         Rect selectRect = new Rect(
             Mathf.Min(_boxSelectStart.x, _boxSelectEnd.x),
             Mathf.Min(_boxSelectStart.y, _boxSelectEnd.y),
@@ -625,19 +637,21 @@ public partial class SimpleMeshFactory
 
         // 半透明の塗りつぶし
         Color fillColor = new Color(0.3f, 0.6f, 1f, 0.2f);
-        EditorGUI.DrawRect(selectRect, fillColor);
+        UnityEditor_Handles.DrawRect(selectRect, fillColor);//?
 
         // 枠線
         Color borderColor = new Color(0.3f, 0.6f, 1f, 0.8f);
         DrawRectBorder(selectRect, borderColor);
+
+        UnityEditor_Handles.EndGUI();
     }
 
     private void DrawRectBorder(Rect rect, Color color)
     {
-        EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 1), color);
-        EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - 1, rect.width, 1), color);
-        EditorGUI.DrawRect(new Rect(rect.x, rect.y, 1, rect.height), color);
-        EditorGUI.DrawRect(new Rect(rect.xMax - 1, rect.y, 1, rect.height), color);
+        UnityEditor_Handles.DrawRect(new Rect(rect.x, rect.y, rect.width, 1), color);//?
+        UnityEditor_Handles.DrawRect(new Rect(rect.x, rect.yMax - 1, rect.width, 1), color);//?
+        UnityEditor_Handles.DrawRect(new Rect(rect.x, rect.y, 1, rect.height), color);//?
+        UnityEditor_Handles.DrawRect(new Rect(rect.xMax - 1, rect.y, 1, rect.height), color);//?
     }
 
 }

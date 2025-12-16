@@ -11,7 +11,7 @@ using MeshFactory.Data;
 using MeshFactory.Tools;
 using MeshFactory.UndoSystem;
 using MeshFactory.Localization;
-
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 public partial class SimpleMeshFactory
 {
     // ================================================================
@@ -478,6 +478,7 @@ public partial class SimpleMeshFactory
     {
         EditorGUILayout.Space(4);
 
+
         // ドロップエリアの矩形
         Rect dropArea = GUILayoutUtility.GetRect(0, 40, GUILayout.ExpandWidth(true));
 
@@ -490,10 +491,12 @@ public partial class SimpleMeshFactory
         bool isDragging = DragAndDrop.objectReferences.Length > 0 &&
                           dropArea.Contains(Event.current.mousePosition);
 
+        UnityEditor_Handles.BeginGUI();
         if (isDragging)
         {
-            EditorGUI.DrawRect(dropArea, new Color(0.3f, 0.5f, 0.8f, 0.3f));
+            UnityEditor_Handles.DrawRect(dropArea, new Color(0.3f, 0.5f, 0.8f, 0.3f));//?
         }
+        UnityEditor_Handles.EndGUI();
 
         GUI.Box(dropArea, "Drop Materials Here\n(複数選択可)", dropStyle);
 

@@ -6,6 +6,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -99,16 +101,16 @@ namespace MeshFactory.Tools
 
         private void DrawVertexDragGizmo(ToolContext ctx)
         {
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             if (_isDragging && _firstVertexWorldPos.HasValue)
             {
                 var sp = ctx.WorldToScreenPos(_firstVertexWorldPos.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                Handles.color = Color.yellow;
-                Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
+                UnityEditor_Handles.color = Color.yellow;
+                UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
 
-                Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
-                Handles.DrawAAPolyLine(2f, new Vector3(sp.x, sp.y, 0), new Vector3(_currentScreenPos.x, _currentScreenPos.y, 0));
+                UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
+                UnityEditor_Handles.DrawAAPolyLine(2f, new Vector3(sp.x, sp.y, 0), new Vector3(_currentScreenPos.x, _currentScreenPos.y, 0));
 
                 var candidates = FindNonAdjacentEdgesForVertex(ctx, _firstVertexWorldPos.Value);
                 foreach (var (faceIdx, edgeLocalIdx, edgePos) in candidates)
@@ -116,17 +118,17 @@ namespace MeshFactory.Tools
                     bool isTarget = _targetEdgeWorldPos.HasValue && IsSameEdgePosition(edgePos, _targetEdgeWorldPos.Value);
                     if (isTarget)
                     {
-                        Handles.color = Color.cyan;
+                        UnityEditor_Handles.color = Color.cyan;
                         DrawEdgeByWorldPos(ctx, edgePos);
                         float cutRatio = GetVertexCutRatio(ctx, _currentScreenPos, edgePos);
                         var midPoint = Vector3.Lerp(edgePos.Item1, edgePos.Item2, cutRatio);
                         var midSp = ctx.WorldToScreenPos(midPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                        Handles.color = Color.green;
-                        Handles.DrawAAPolyLine(3f, new Vector3(sp.x, sp.y, 0), new Vector3(midSp.x, midSp.y, 0));
+                        UnityEditor_Handles.color = Color.green;
+                        UnityEditor_Handles.DrawAAPolyLine(3f, new Vector3(sp.x, sp.y, 0), new Vector3(midSp.x, midSp.y, 0));
                     }
                     else
                     {
-                        Handles.color = new Color(0f, 1f, 0f, 0.3f);
+                        UnityEditor_Handles.color = new Color(0f, 1f, 0f, 0.3f);
                         DrawEdgeByWorldPos(ctx, edgePos);
                     }
                 }
@@ -134,8 +136,8 @@ namespace MeshFactory.Tools
             else if (ChainMode && !AutoChain && _firstVertexWorldPos.HasValue)
             {
                 var sp = ctx.WorldToScreenPos(_firstVertexWorldPos.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                Handles.color = Color.yellow;
-                Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
+                UnityEditor_Handles.color = Color.yellow;
+                UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
             }
             else
             {
@@ -143,12 +145,12 @@ namespace MeshFactory.Tools
                 if (hoveredVertex.HasValue)
                 {
                     var sp = ctx.WorldToScreenPos(hoveredVertex.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                    Handles.color = Color.white;
-                    Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 6f);
+                    UnityEditor_Handles.color = Color.white;
+                    UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 6f);
                 }
             }
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         // ================================================================
@@ -229,13 +231,13 @@ namespace MeshFactory.Tools
 
         private void DrawVertexEdgeSelectGizmo(ToolContext ctx)
         {
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             if (_firstVertexWorldPos.HasValue)
             {
                 var sp = ctx.WorldToScreenPos(_firstVertexWorldPos.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                Handles.color = Color.yellow;
-                Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
+                UnityEditor_Handles.color = Color.yellow;
+                UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
 
                 var candidates = FindNonAdjacentEdgesForVertex(ctx, _firstVertexWorldPos.Value);
                 foreach (var (faceIdx, edgeLocalIdx, edgePos) in candidates)
@@ -243,17 +245,17 @@ namespace MeshFactory.Tools
                     bool isHovered = _targetEdgeWorldPos.HasValue && IsSameEdgePosition(edgePos, _targetEdgeWorldPos.Value);
                     if (isHovered)
                     {
-                        Handles.color = Color.cyan;
+                        UnityEditor_Handles.color = Color.cyan;
                         DrawEdgeByWorldPos(ctx, edgePos);
                         float cutRatio = GetVertexCutRatio(ctx, Event.current.mousePosition, edgePos);
                         var midPoint = Vector3.Lerp(edgePos.Item1, edgePos.Item2, cutRatio);
                         var midSp = ctx.WorldToScreenPos(midPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                        Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
-                        Handles.DrawAAPolyLine(3f, new Vector3(sp.x, sp.y, 0), new Vector3(midSp.x, midSp.y, 0));
+                        UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
+                        UnityEditor_Handles.DrawAAPolyLine(3f, new Vector3(sp.x, sp.y, 0), new Vector3(midSp.x, midSp.y, 0));
                     }
                     else
                     {
-                        Handles.color = new Color(0f, 1f, 0f, 0.4f);
+                        UnityEditor_Handles.color = new Color(0f, 1f, 0f, 0.4f);
                         DrawEdgeByWorldPos(ctx, edgePos);
                     }
                 }
@@ -264,12 +266,12 @@ namespace MeshFactory.Tools
                 if (hoveredVertex.HasValue)
                 {
                     var sp = ctx.WorldToScreenPos(hoveredVertex.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                    Handles.color = Color.white;
-                    Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 6f);
+                    UnityEditor_Handles.color = Color.white;
+                    UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 6f);
                 }
             }
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         // ================================================================

@@ -10,6 +10,8 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
 using MeshFactory.Utilities;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -73,7 +75,7 @@ namespace MeshFactory.Tools
             if (ctx.MeshData == null || !ShowPreview) return;
             if (_preview.Groups == null || _preview.Groups.Count == 0) return;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             // マージグループをプレビュー表示
             Color[] groupColors = {
@@ -105,12 +107,12 @@ namespace MeshFactory.Tools
                     Vector2 centroidScreen = ctx.WorldToScreen(centroid);
 
                     // 各頂点から重心への線を描画
-                    Handles.color = color;
+                    UnityEditor_Handles.color = color;
                     foreach (int vIdx in group)
                     {
                         if (vIdx < 0 || vIdx >= ctx.MeshData.VertexCount) continue;
                         Vector2 vScreen = ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position);
-                        Handles.DrawAAPolyLine(2f, vScreen, centroidScreen);
+                        UnityEditor_Handles.DrawAAPolyLine(2f, vScreen, centroidScreen);
                     }
 
                     // 重心にマーカー
@@ -133,7 +135,7 @@ namespace MeshFactory.Tools
             }
 
             GUI.color = Color.white;
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()

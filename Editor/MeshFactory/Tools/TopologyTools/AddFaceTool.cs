@@ -7,6 +7,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -198,7 +200,7 @@ namespace MeshFactory.Tools
         {
             if (ctx.MeshData == null) return;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             // 連続線分モードの開始点を描画
             if (Mode == AddFaceMode.Line && ContinuousLine && _lastLinePoint.HasValue && _points.Count == 0)
@@ -210,7 +212,8 @@ namespace MeshFactory.Tools
                 // 開始点（オレンジ）
                 Color startColor = new Color(1f, 0.5f, 0f, 0.9f);
                 float size = 12f;
-                EditorGUI.DrawRect(new Rect(
+
+                UnityEditor_Handles.DrawRect(new Rect(
                     startScreen.x - size / 2,
                     startScreen.y - size / 2,
                     size, size), startColor);
@@ -225,8 +228,8 @@ namespace MeshFactory.Tools
                         _previewPoint, ctx.PreviewRect,
                         ctx.CameraPosition, ctx.CameraTarget);
 
-                    Handles.color = new Color(1f, 0.5f, 0f, 0.5f);
-                    Handles.DrawAAPolyLine(2f,
+                    UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.5f);
+                    UnityEditor_Handles.DrawAAPolyLine(2f,
                         new Vector3(startScreen.x, startScreen.y, 0),
                         new Vector3(previewScreen.x, previewScreen.y, 0));
                 }
@@ -246,10 +249,13 @@ namespace MeshFactory.Tools
 
                 // 点を描画
                 float size = 10f;
-                EditorGUI.DrawRect(new Rect(
+
+                UnityEditor_Handles.DrawRect(new Rect(
                     screenPos.x - size / 2,
                     screenPos.y - size / 2,
                     size, size), pointColor);
+
+            
 
                 // 番号を表示
                 GUI.Label(new Rect(screenPos.x + 8, screenPos.y - 8, 20, 16),
@@ -262,8 +268,8 @@ namespace MeshFactory.Tools
                         _points[i - 1].Position, ctx.PreviewRect,
                         ctx.CameraPosition, ctx.CameraTarget);
 
-                    Handles.color = new Color(1f, 0.8f, 0.2f, 0.8f);
-                    Handles.DrawAAPolyLine(2f,
+                    UnityEditor_Handles.color = new Color(1f, 0.8f, 0.2f, 0.8f);
+                    UnityEditor_Handles.DrawAAPolyLine(2f,
                         new Vector3(prevScreen.x, prevScreen.y, 0),
                         new Vector3(screenPos.x, screenPos.y, 0));
                 }
@@ -282,17 +288,16 @@ namespace MeshFactory.Tools
                     : new Color(1f, 1f, 0f, 0.5f);   // 黄色半透明
 
                 float size = _previewHitVertex >= 0 ? 14f : 10f;  // スナップ時は大きく
-                EditorGUI.DrawRect(new Rect(
+                UnityEditor_Handles.DrawRect(new Rect(
                     previewScreen.x - size / 2,
                     previewScreen.y - size / 2,
                     size, size), previewColor);
-
                 // スナップ時はラベル表示
                 if (_previewHitVertex >= 0)
                 {
                     // スナップインジケーター（円）
-                    Handles.color = new Color(0f, 1f, 1f, 0.6f);
-                    Handles.DrawWireDisc(
+                    UnityEditor_Handles.color = new Color(0f, 1f, 1f, 0.6f);
+                    UnityEditor_Handles.DrawWireDisc(
                         new Vector3(previewScreen.x, previewScreen.y, 0),
                         Vector3.forward, 12f);
 
@@ -307,8 +312,8 @@ namespace MeshFactory.Tools
                         _points[_points.Count - 1].Position, ctx.PreviewRect,
                         ctx.CameraPosition, ctx.CameraTarget);
 
-                    Handles.color = new Color(1f, 0.8f, 0.2f, 0.4f);
-                    Handles.DrawAAPolyLine(2f,
+                    UnityEditor_Handles.color = new Color(1f, 0.8f, 0.2f, 0.4f);
+                    UnityEditor_Handles.DrawAAPolyLine(2f,
                         new Vector3(lastScreen.x, lastScreen.y, 0),
                         new Vector3(previewScreen.x, previewScreen.y, 0));
                 }
@@ -320,14 +325,14 @@ namespace MeshFactory.Tools
                         _points[0].Position, ctx.PreviewRect,
                         ctx.CameraPosition, ctx.CameraTarget);
 
-                    Handles.color = new Color(1f, 0.8f, 0.2f, 0.3f);
-                    Handles.DrawAAPolyLine(1f,
+                    UnityEditor_Handles.color = new Color(1f, 0.8f, 0.2f, 0.3f);
+                    UnityEditor_Handles.DrawAAPolyLine(1f,
                         new Vector3(previewScreen.x, previewScreen.y, 0),
                         new Vector3(firstScreen.x, firstScreen.y, 0));
                 }
             }
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()

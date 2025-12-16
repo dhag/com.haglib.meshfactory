@@ -11,6 +11,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -55,10 +57,10 @@ namespace MeshFactory.Tools
             if (ctx.MeshData == null) return;
             if (_selectedLineIndices.Count == 0) return;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             // 選択ラインをハイライト
-            Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
+            UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
             foreach (int lineIdx in _selectedLineIndices)
             {
                 if (lineIdx < 0 || lineIdx >= ctx.MeshData.FaceCount) continue;
@@ -71,7 +73,7 @@ namespace MeshFactory.Tools
                 Vector2 sp0 = ctx.WorldToScreen(p0);
                 Vector2 sp1 = ctx.WorldToScreen(p1);
 
-                Handles.DrawAAPolyLine(4f, sp0, sp1);
+                UnityEditor_Handles.DrawAAPolyLine(4f, sp0, sp1);
             }
 
             // 検出されたループを表示
@@ -82,7 +84,7 @@ namespace MeshFactory.Tools
             {
                 Color col = loopColors[loopColorIdx % loopColors.Length];
                 col.a = 0.6f;
-                Handles.color = col;
+                UnityEditor_Handles.color = col;
                 
                 for (int i = 0; i < loop.VertexIndices.Count; i++)
                 {
@@ -96,14 +98,14 @@ namespace MeshFactory.Tools
                         Vector3 p1 = ctx.MeshData.Vertices[v1].Position;
                         Vector2 sp0 = ctx.WorldToScreen(p0);
                         Vector2 sp1 = ctx.WorldToScreen(p1);
-                        Handles.DrawAAPolyLine(2f, sp0, sp1);
+                        UnityEditor_Handles.DrawAAPolyLine(2f, sp0, sp1);
                     }
                 }
                 loopColorIdx++;
             }
 
             GUI.color = Color.white;
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()

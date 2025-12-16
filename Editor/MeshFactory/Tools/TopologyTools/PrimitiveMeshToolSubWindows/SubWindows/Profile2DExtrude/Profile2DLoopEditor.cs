@@ -1,6 +1,8 @@
 // Assets/Editor/MeshCreators/Profile2DExtrude/Profile2DLoopEditor.cs
 // 2D閉曲線エディタコンポーネント
 
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -170,14 +172,14 @@ namespace MeshFactory.Profile2DExtrude
         {
             if (Event.current.type != EventType.Repaint)
                 return;
+            UnityEditor_Handles.BeginGUI();
 
             // 背景
-            EditorGUI.DrawRect(rect, new Color(0.15f, 0.15f, 0.18f, 1f));
+            UnityEditor_Handles.DrawRect(rect, new Color(0.15f, 0.15f, 0.18f, 1f));//?
 
             if (_loops == null || _loops.Count == 0)
                 return;
 
-            Handles.BeginGUI();
 
             // グリッド
             DrawEditorGrid(rect);
@@ -198,7 +200,7 @@ namespace MeshFactory.Profile2DExtrude
                 else
                     lineColor = Color.cyan;
 
-                Handles.color = lineColor;
+                UnityEditor_Handles.color = lineColor;
 
                 // 線を描画
                 for (int i = 0; i < loop.Points.Count; i++)
@@ -209,13 +211,13 @@ namespace MeshFactory.Profile2DExtrude
                     // ホバー中のエッジは太く緑でハイライト
                     if (li == _hoverEdgeLoop && i == _hoverEdgeIndex)
                     {
-                        Handles.color = Color.green;
-                        Handles.DrawAAPolyLine(4f, new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
-                        Handles.color = lineColor;
+                        UnityEditor_Handles.color = Color.green;
+                        UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
+                        UnityEditor_Handles.color = lineColor;
                     }
                     else
                     {
-                        Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
+                        UnityEditor_Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
                     }
                 }
 
@@ -224,8 +226,8 @@ namespace MeshFactory.Profile2DExtrude
                 {
                     Vector2 screenPos = WorldToScreen(loop.Points[i], rect);
                     Color pointColor = (li == _selectedLoopIndex && i == _selectedPointIndex) ? Color.white : lineColor;
-                    Handles.color = pointColor;
-                    Handles.DrawSolidDisc(new Vector3(screenPos.x, screenPos.y, 0), Vector3.forward, 4f);
+                    UnityEditor_Handles.color = pointColor;
+                    UnityEditor_Handles.DrawSolidDisc(new Vector3(screenPos.x, screenPos.y, 0), Vector3.forward, 4f);
 
                     // インデックス
                     if (li == _selectedLoopIndex)
@@ -235,12 +237,12 @@ namespace MeshFactory.Profile2DExtrude
                 }
             }
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         private void DrawEditorGrid(Rect rect)
         {
-            Handles.color = new Color(0.3f, 0.3f, 0.35f, 1f);
+            UnityEditor_Handles.color = new Color(0.3f, 0.3f, 0.35f, 1f);
 
             // グリッド線
             for (float x = -5f; x <= 5f; x += 0.5f)
@@ -248,7 +250,7 @@ namespace MeshFactory.Profile2DExtrude
                 Vector2 p0 = WorldToScreen(new Vector2(x, -5f), rect);
                 Vector2 p1 = WorldToScreen(new Vector2(x, 5f), rect);
                 if (p0.x >= rect.xMin && p0.x <= rect.xMax)
-                    Handles.DrawLine(new Vector3(p0.x, Mathf.Max(p0.y, rect.yMin)), new Vector3(p1.x, Mathf.Min(p1.y, rect.yMax)));
+                    UnityEditor_Handles.DrawLine(new Vector3(p0.x, Mathf.Max(p0.y, rect.yMin)), new Vector3(p1.x, Mathf.Min(p1.y, rect.yMax)));
             }
 
             for (float y = -5f; y <= 5f; y += 0.5f)
@@ -256,18 +258,18 @@ namespace MeshFactory.Profile2DExtrude
                 Vector2 p0 = WorldToScreen(new Vector2(-5f, y), rect);
                 Vector2 p1 = WorldToScreen(new Vector2(5f, y), rect);
                 if (p0.y >= rect.yMin && p0.y <= rect.yMax)
-                    Handles.DrawLine(new Vector3(Mathf.Max(p0.x, rect.xMin), p0.y), new Vector3(Mathf.Min(p1.x, rect.xMax), p1.y));
+                    UnityEditor_Handles.DrawLine(new Vector3(Mathf.Max(p0.x, rect.xMin), p0.y), new Vector3(Mathf.Min(p1.x, rect.xMax), p1.y));
             }
 
             // 軸線
-            Handles.color = new Color(0.5f, 0.5f, 0.55f, 1f);
+            UnityEditor_Handles.color = new Color(0.5f, 0.5f, 0.55f, 1f);
             Vector2 axisX0 = WorldToScreen(new Vector2(-5f, 0f), rect);
             Vector2 axisX1 = WorldToScreen(new Vector2(5f, 0f), rect);
-            Handles.DrawLine(new Vector3(axisX0.x, axisX0.y), new Vector3(axisX1.x, axisX1.y));
+            UnityEditor_Handles.DrawLine(new Vector3(axisX0.x, axisX0.y), new Vector3(axisX1.x, axisX1.y));
 
             Vector2 axisY0 = WorldToScreen(new Vector2(0f, -5f), rect);
             Vector2 axisY1 = WorldToScreen(new Vector2(0f, 5f), rect);
-            Handles.DrawLine(new Vector3(axisY0.x, axisY0.y), new Vector3(axisY1.x, axisY1.y));
+            UnityEditor_Handles.DrawLine(new Vector3(axisY0.x, axisY0.y), new Vector3(axisY1.x, axisY1.y));
         }
 
         private void HandleEditorInput(Rect rect)

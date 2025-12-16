@@ -6,6 +6,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -58,15 +60,15 @@ namespace MeshFactory.Tools
 
         private void DrawEraseGizmo(ToolContext ctx)
         {
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             if (_hoveredEdge.Item1 >= 0)
             {
-                Handles.color = Color.red;
+                UnityEditor_Handles.color = Color.red;
                 DrawEdge(ctx, _hoveredEdge);
             }
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         // ================================================================
@@ -238,7 +240,7 @@ namespace MeshFactory.Tools
             var p2 = ctx.MeshData.Vertices[edge.Item2].Position;
             var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Handles.DrawAAPolyLine(4f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));
+            UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));
         }
     }
 }

@@ -15,7 +15,7 @@ using MeshFactory.Serialization;
 using MeshFactory.Selection;
 using MeshFactory.Model;
 using MeshFactory.Localization;
-
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 
 
@@ -1003,6 +1003,7 @@ public partial class SimpleMeshFactory : EditorWindow
                 break;
                 
             case EventType.Repaint:
+                UnityEditor_Handles.BeginGUI();
                 // 背景色
                 bool isDragging = GUIUtility.hotControl == controlId;
                 bool isHovering = splitterRect.Contains(e.mousePosition);
@@ -1020,9 +1021,8 @@ public partial class SimpleMeshFactory : EditorWindow
                 {
                     splitterColor = new Color(0.3f, 0.3f, 0.3f, 0.3f);  // 通常：薄いグレー
                 }
-                
-                EditorGUI.DrawRect(splitterRect, splitterColor);
-                
+                UnityEditor_Handles.DrawRect(splitterRect, splitterColor);//?
+
                 // 中央にグリップを描画
                 float centerX = splitterRect.x + splitterRect.width / 2;
                 float gripHeight = Mathf.Min(splitterRect.height * 0.3f, 60f);
@@ -1035,8 +1035,9 @@ public partial class SimpleMeshFactory : EditorWindow
                 for (int i = 0; i < 3; i++)
                 {
                     float y = gripTop + i * (gripHeight / 2);
-                    EditorGUI.DrawRect(new Rect(centerX - 1, y, 2, 2), gripColor);
+                    UnityEditor_Handles.DrawRect(new Rect(centerX - 1, y, 2, 2), gripColor);//?
                 }
+                UnityEditor_Handles.EndGUI();
                 break;
         }
         

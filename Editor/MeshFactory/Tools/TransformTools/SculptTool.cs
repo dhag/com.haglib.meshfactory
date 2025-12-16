@@ -8,6 +8,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -148,11 +150,11 @@ namespace MeshFactory.Tools
         {
             if (ctx.MeshData == null) return;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             // ブラシ円を描画
             Color brushColor = Invert ? new Color(1f, 0.5f, 0.5f, 0.5f) : new Color(0.5f, 0.8f, 1f, 0.5f);
-            Handles.color = brushColor;
+            UnityEditor_Handles.color = brushColor;
 
             // ブラシサイズをスクリーン座標で近似（中心から少し離れた点で計算）
             Vector2 centerScreen = _currentScreenPos;
@@ -168,7 +170,7 @@ namespace MeshFactory.Tools
             string modeText = Mode.ToString() + (Invert ? " (Invert)" : "");
             GUI.Label(new Rect(centerScreen.x + screenRadius + 5, centerScreen.y - 10, 100, 20), modeText);
 
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()
@@ -555,7 +557,7 @@ namespace MeshFactory.Tools
             {
                 float angle = (float)i / segments * Mathf.PI * 2f;
                 Vector2 point = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
-                Handles.DrawAAPolyLine(2f, prevPoint, point);
+                UnityEditor_Handles.DrawAAPolyLine(2f, prevPoint, point);
                 prevPoint = point;
             }
         }

@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using MeshFactory.Data;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -424,7 +426,7 @@ namespace MeshFactory.Tools
         {
             var sp1 = ctx.WorldToScreenPos(edgePos.Item1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             var sp2 = ctx.WorldToScreenPos(edgePos.Item2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            UnityEditor.Handles.DrawAAPolyLine(4f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));
+            UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));
         }
     }
 }

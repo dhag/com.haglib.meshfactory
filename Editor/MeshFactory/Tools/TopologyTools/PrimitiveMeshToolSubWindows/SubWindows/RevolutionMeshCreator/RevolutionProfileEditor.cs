@@ -1,6 +1,8 @@
 // Assets/Editor/MeshCreators/Revolution/RevolutionProfileEditor.cs
 // 回転体メッシュ用の2D断面プロファイルエディタ
 
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -108,8 +110,10 @@ namespace MeshFactory.Revolution
 
         private void DrawProfileEditorArea(Rect rect, bool closeLoop)
         {
+            UnityEditor_Handles.BeginGUI();
+
             // 背景
-            EditorGUI.DrawRect(rect, new Color(0.15f, 0.15f, 0.18f, 1f));
+            UnityEditor_Handles.DrawRect(rect, new Color(0.15f, 0.15f, 0.18f, 1f));//?
 
             // グリッド描画
             DrawProfileGrid(rect);
@@ -122,49 +126,51 @@ namespace MeshFactory.Revolution
 
             // 入力処理
             HandleProfileEditorInput(rect);
+            UnityEditor_Handles.EndGUI();
+
         }
 
         private void DrawProfileGrid(Rect rect)
         {
-            Handles.color = new Color(0.3f, 0.3f, 0.35f, 1f);
+            UnityEditor_Handles.color = new Color(0.3f, 0.3f, 0.35f, 1f);
 
             // 0.5刻みのグリッド
             for (float x = 0f; x <= 2f; x += 0.5f)
             {
                 Vector2 p0 = ProfileToScreen(new Vector2(x, -1f), rect);
                 Vector2 p1 = ProfileToScreen(new Vector2(x, 2f), rect);
-                Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
+                UnityEditor_Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
             }
 
             for (float y = -1f; y <= 2f; y += 0.5f)
             {
                 Vector2 p0 = ProfileToScreen(new Vector2(0f, y), rect);
                 Vector2 p1 = ProfileToScreen(new Vector2(2f, y), rect);
-                Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
+                UnityEditor_Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
             }
 
             // 軸線
-            Handles.color = new Color(0.5f, 0.5f, 0.55f, 1f);
+            UnityEditor_Handles.color = new Color(0.5f, 0.5f, 0.55f, 1f);
             Vector2 axisY0 = ProfileToScreen(new Vector2(0f, -1f), rect);
             Vector2 axisY1 = ProfileToScreen(new Vector2(0f, 2f), rect);
-            Handles.DrawLine(new Vector3(axisY0.x, axisY0.y), new Vector3(axisY1.x, axisY1.y));
+            UnityEditor_Handles.DrawLine(new Vector3(axisY0.x, axisY0.y), new Vector3(axisY1.x, axisY1.y));
 
             Vector2 axisX0 = ProfileToScreen(new Vector2(0f, 0f), rect);
             Vector2 axisX1 = ProfileToScreen(new Vector2(2f, 0f), rect);
-            Handles.DrawLine(new Vector3(axisX0.x, axisX0.y), new Vector3(axisX1.x, axisX1.y));
+            UnityEditor_Handles.DrawLine(new Vector3(axisX0.x, axisX0.y), new Vector3(axisX1.x, axisX1.y));
         }
 
         private void DrawProfileLines(Rect rect, bool closeLoop)
         {
             if (_profile == null || _profile.Count < 2) return;
 
-            Handles.color = Color.cyan;
+            UnityEditor_Handles.color = Color.cyan;
 
             for (int i = 0; i < _profile.Count - 1; i++)
             {
                 Vector2 p0 = ProfileToScreen(_profile[i], rect);
                 Vector2 p1 = ProfileToScreen(_profile[i + 1], rect);
-                Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
+                UnityEditor_Handles.DrawLine(new Vector3(p0.x, p0.y), new Vector3(p1.x, p1.y));
             }
 
             // 閉じたループの場合、最後と最初を結ぶ
@@ -172,7 +178,7 @@ namespace MeshFactory.Revolution
             {
                 Vector2 pLast = ProfileToScreen(_profile[_profile.Count - 1], rect);
                 Vector2 pFirst = ProfileToScreen(_profile[0], rect);
-                Handles.DrawLine(new Vector3(pLast.x, pLast.y), new Vector3(pFirst.x, pFirst.y));
+                UnityEditor_Handles.DrawLine(new Vector3(pLast.x, pLast.y), new Vector3(pFirst.x, pFirst.y));
             }
         }
 
@@ -189,7 +195,7 @@ namespace MeshFactory.Revolution
 
                 // 点を描画
                 Rect pointRect = new Rect(screenPos.x - 5, screenPos.y - 5, 10, 10);
-                EditorGUI.DrawRect(pointRect, pointColor);
+                UnityEditor_Handles.DrawRect(pointRect, pointColor);//?
 
                 // インデックス表示
                 GUI.Label(new Rect(screenPos.x + 8, screenPos.y - 8, 30, 20), i.ToString(), EditorStyles.miniLabel);

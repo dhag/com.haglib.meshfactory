@@ -6,6 +6,8 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -407,10 +409,10 @@ namespace MeshFactory.Tools
         /// </summary>
         private void DrawWire(ToolContext ctx)
         {
-            Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
+            UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
             var start = new Vector3(_startScreenPos.x, _startScreenPos.y, 0);
             var end = new Vector3(_currentScreenPos.x, _currentScreenPos.y, 0);
-            Handles.DrawLine(start, end, 2f);
+            UnityEditor_Handles.DrawLine(start, end, 2f);
         }
 
         /// <summary>
@@ -420,10 +422,10 @@ namespace MeshFactory.Tools
         {
             if (_intersections.Count < 2) return;
 
-            Handles.color = Color.green;
+            UnityEditor_Handles.color = Color.green;
             var p0 = new Vector3(_intersections[0].ScreenPos.x, _intersections[0].ScreenPos.y, 0);
             var p1 = new Vector3(_intersections[1].ScreenPos.x, _intersections[1].ScreenPos.y, 0);
-            Handles.DrawLine(p0, p1, 3f);
+            UnityEditor_Handles.DrawLine(p0, p1, 3f);
         }
 
         /// <summary>
@@ -436,7 +438,7 @@ namespace MeshFactory.Tools
             var face = ctx.MeshData.Faces[_targetFaceIndex];
             if (face.VertexCount < 3) return;
 
-            Handles.color = new Color(0f, 1f, 1f, 0.3f);
+            UnityEditor_Handles.color = new Color(0f, 1f, 1f, 0.3f);
 
             var points = new Vector3[face.VertexCount + 1];
             for (int i = 0; i < face.VertexCount; i++)
@@ -447,7 +449,7 @@ namespace MeshFactory.Tools
             }
             points[face.VertexCount] = points[0];
 
-            Handles.DrawAAPolyLine(3f, points);
+            UnityEditor_Handles.DrawAAPolyLine(3f, points);
         }
     }
 }

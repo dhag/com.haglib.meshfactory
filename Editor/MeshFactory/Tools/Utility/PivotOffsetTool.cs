@@ -8,6 +8,8 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -346,13 +348,13 @@ namespace MeshFactory.Tools
                 originScreen.y - currentCenterSize / 2,
                 currentCenterSize,
                 currentCenterSize);
-            EditorGUI.DrawRect(centerRect, centerColor);
 
             // 中央の枠線
-            Handles.BeginGUI();
-            Handles.color = centerHovered ? Color.white : new Color(0.8f, 0.5f, 0f);
-            Handles.DrawSolidRectangleWithOutline(centerRect, Color.clear, Handles.color);
-            Handles.EndGUI();
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.DrawRect(centerRect, centerColor);// 中心点
+            UnityEditor_Handles.color = centerHovered ? Color.white : new Color(0.8f, 0.5f, 0f);
+            UnityEditor_Handles.DrawSolidRectangleWithOutline(centerRect, Color.clear, UnityEditor_Handles.color);
+            UnityEditor_Handles.EndGUI();
 
             // ラベル
             GUIStyle labelStyle = new GUIStyle(EditorStyles.miniLabel);
@@ -380,12 +382,12 @@ namespace MeshFactory.Tools
 
         private void DrawAxisLine(Vector2 from, Vector2 to, Color color, float lineWidth)
         {
-            Handles.BeginGUI();
-            Handles.color = color;
-            Handles.DrawAAPolyLine(lineWidth,
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.color = color;
+            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
                 new Vector3(from.x, from.y, 0),
                 new Vector3(to.x, to.y, 0));
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         private void DrawAxisHandle(Vector2 pos, Color color, bool hovered, string label)
@@ -393,12 +395,12 @@ namespace MeshFactory.Tools
             float size = hovered ? _handleSize * 1.3f : _handleSize;
 
             Rect handleRect = new Rect(pos.x - size / 2, pos.y - size / 2, size, size);
-            EditorGUI.DrawRect(handleRect, color);
 
-            Handles.BeginGUI();
-            Handles.color = Color.white;
-            Handles.DrawSolidRectangleWithOutline(handleRect, Color.clear, Color.white);
-            Handles.EndGUI();
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.DrawRect(handleRect, color);
+            UnityEditor_Handles.color = Color.white;
+            UnityEditor_Handles.DrawSolidRectangleWithOutline(handleRect, Color.clear, Color.white);
+            UnityEditor_Handles.EndGUI();
 
             GUIStyle style = new GUIStyle(EditorStyles.miniLabel);
             style.normal.textColor = color;

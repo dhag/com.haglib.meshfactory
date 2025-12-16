@@ -9,6 +9,8 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -179,7 +181,7 @@ namespace MeshFactory.Tools
                 _hoverFace = -1;
             }
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             if (_state == ExtrudeState.Extruding)
             {
@@ -214,8 +216,8 @@ namespace MeshFactory.Tools
                 }
             }
 
-            Handles.color = Color.white;
-            Handles.EndGUI();
+            UnityEditor_Handles.color = Color.white;
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()
@@ -619,7 +621,7 @@ namespace MeshFactory.Tools
             {
                 int vertCount = faceInfo.VertexIndices.Count;
 
-                Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
+                UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
                 for (int i = 0; i < vertCount; i++)
                 {
                     int next = (i + 1) % vertCount;
@@ -630,7 +632,7 @@ namespace MeshFactory.Tools
                     DrawThickLine(p0, p1, 2f);
                 }
 
-                Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
+                UnityEditor_Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
                 for (int i = 0; i < vertCount; i++)
                 {
                     int vIdx = faceInfo.VertexIndices[i];
@@ -658,10 +660,10 @@ namespace MeshFactory.Tools
 
             if (screenPoints.Count >= 3)
             {
-                Handles.color = color;
+                UnityEditor_Handles.color = color;
                 DrawPolygon(screenPoints);
 
-                Handles.color = new Color(color.r, color.g, color.b, 0.8f);
+                UnityEditor_Handles.color = new Color(color.r, color.g, color.b, 0.8f);
                 for (int i = 0; i < screenPoints.Count; i++)
                 {
                     int next = (i + 1) % screenPoints.Count;
@@ -677,7 +679,7 @@ namespace MeshFactory.Tools
             for (int i = 1; i < points.Count - 1; i++)
             {
                 Vector3[] verts = new Vector3[] { points[0], points[i], points[i + 1] };
-                Handles.DrawAAConvexPolygon(verts);
+                UnityEditor_Handles.DrawAAConvexPolygon(verts);
             }
         }
 
@@ -688,7 +690,7 @@ namespace MeshFactory.Tools
             dir.Normalize();
 
             Vector2 perp = new Vector2(-dir.y, dir.x) * thickness * 0.5f;
-            Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
+            UnityEditor_Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
         }
     }
 }

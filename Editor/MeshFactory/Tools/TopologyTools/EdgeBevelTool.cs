@@ -9,6 +9,8 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -164,11 +166,11 @@ namespace MeshFactory.Tools
                 _hoverEdge = null;
             }
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             if (_state == BevelState.Beveling)
             {
-                Handles.color = new Color(1f, 0.5f, 0f, 1f);
+                UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 1f);
                 foreach (var edge in _targetEdges)
                 {
                     if (edge.V0 < 0 || edge.V0 >= ctx.MeshData.VertexCount) continue;
@@ -193,7 +195,7 @@ namespace MeshFactory.Tools
                     if (v0 >= 0 && v0 < ctx.MeshData.VertexCount &&
                         v1 >= 0 && v1 < ctx.MeshData.VertexCount)
                     {
-                        Handles.color = Color.white;
+                        UnityEditor_Handles.color = Color.white;
                         Vector2 p0 = ctx.WorldToScreen(ctx.MeshData.Vertices[v0].Position);
                         Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
                         DrawThickLine(p0, p1, 5f);
@@ -201,8 +203,8 @@ namespace MeshFactory.Tools
                 }
             }
 
-            Handles.color = Color.white;
-            Handles.EndGUI();
+            UnityEditor_Handles.color = Color.white;
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()
@@ -617,7 +619,7 @@ namespace MeshFactory.Tools
 
         private void DrawBevelPreview(ToolContext ctx)
         {
-            Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
+            UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
 
             foreach (var edge in _targetEdges)
             {
@@ -646,10 +648,10 @@ namespace MeshFactory.Tools
                 Vector2 sB1 = ctx.WorldToScreen(newB1);
                 DrawThickLine(sB0, sB1, 2f);
 
-                Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
+                UnityEditor_Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
                 DrawThickLine(sA0, sB0, 1f);
                 DrawThickLine(sA1, sB1, 1f);
-                Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
+                UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
             }
         }
 
@@ -660,7 +662,7 @@ namespace MeshFactory.Tools
             dir.Normalize();
 
             Vector2 perp = new Vector2(-dir.y, dir.x) * thickness * 0.5f;
-            Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
+            UnityEditor_Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
         }
     }
 }

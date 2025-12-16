@@ -9,6 +9,8 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
 using MeshFactory.UndoSystem;
+using static MeshFactory.Gizmo.HandlesGizmoDrawer;
+using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools
 {
@@ -177,11 +179,11 @@ namespace MeshFactory.Tools
                 _hoverLine = -1;
             }
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
 
             if (_state == ExtrudeState.Extruding)
             {
-                Handles.color = new Color(1f, 0.5f, 0f, 1f);
+                UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 1f);
 
                 foreach (var e in _targetEdges)
                 {
@@ -216,7 +218,7 @@ namespace MeshFactory.Tools
                         v1 >= 0 && v1 < ctx.MeshData.VertexCount)
                     {
                         bool isSelected = ctx.SelectionState.Edges.Contains(_hoverEdge.Value);
-                        Handles.color = isSelected ? new Color(0.5f, 0.8f, 1f) : Color.white;
+                        UnityEditor_Handles.color = isSelected ? new Color(0.5f, 0.8f, 1f) : Color.white;
                         Vector2 p0 = ctx.WorldToScreen(ctx.MeshData.Vertices[v0].Position);
                         Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
                         DrawThickLine(p0, p1, 5f);
@@ -229,7 +231,7 @@ namespace MeshFactory.Tools
                     if (face.VertexCount == 2)
                     {
                         bool isSelected = ctx.SelectionState.Lines.Contains(_hoverLine);
-                        Handles.color = isSelected ? new Color(0.5f, 0.8f, 1f) : Color.white;
+                        UnityEditor_Handles.color = isSelected ? new Color(0.5f, 0.8f, 1f) : Color.white;
                         Vector2 p0 = ctx.WorldToScreen(ctx.MeshData.Vertices[face.VertexIndices[0]].Position);
                         Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[face.VertexIndices[1]].Position);
                         DrawThickLine(p0, p1, 5f);
@@ -237,8 +239,8 @@ namespace MeshFactory.Tools
                 }
             }
 
-            Handles.color = Color.white;
-            Handles.EndGUI();
+            UnityEditor_Handles.color = Color.white;
+            UnityEditor_Handles.EndGUI();
         }
 
         public void DrawSettingsUI()
@@ -636,7 +638,7 @@ namespace MeshFactory.Tools
         {
             int idx = 0;
 
-            Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
+            UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
             for (int i = 0; i < _targetEdges.Count && idx + 1 < _previewNewPositions.Count; i++)
             {
                 Vector2 np0 = ctx.WorldToScreen(_previewNewPositions[idx++]);
@@ -650,7 +652,7 @@ namespace MeshFactory.Tools
                 DrawThickLine(np0, np1, 2f);
             }
 
-            Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
+            UnityEditor_Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
             idx = 0;
             foreach (var e in _targetEdges)
             {
@@ -751,7 +753,7 @@ namespace MeshFactory.Tools
             if (d.magnitude < 0.001f) return;
             d.Normalize();
             Vector2 perp = new Vector2(-d.y, d.x) * t * 0.5f;
-            Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
+            UnityEditor_Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
         }
     }
 }
