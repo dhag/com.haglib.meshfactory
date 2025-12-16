@@ -929,6 +929,8 @@ namespace MeshFactory.UndoSystem
         // 表示設定
         public bool ShowWireframe = true;
         public bool ShowVertices = true;
+        public bool ShowSelectedMeshOnly = true;
+        public bool ShowVertexIndices = true;
 
         // 編集モード
         public bool VertexEditMode = false;
@@ -983,6 +985,8 @@ namespace MeshFactory.UndoSystem
                 CameraTarget = CameraTarget,
                 ShowWireframe = ShowWireframe,
                 ShowVertices = ShowVertices,
+                ShowSelectedMeshOnly = ShowSelectedMeshOnly,
+                ShowVertexIndices = ShowVertexIndices,
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
                 AddToCurrentMesh = AddToCurrentMesh,
@@ -1015,6 +1019,8 @@ namespace MeshFactory.UndoSystem
             CameraTarget = snapshot.CameraTarget;
             ShowWireframe = snapshot.ShowWireframe;
             ShowVertices = snapshot.ShowVertices;
+            ShowSelectedMeshOnly = snapshot.ShowSelectedMeshOnly;
+            ShowVertexIndices = snapshot.ShowVertexIndices;
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
             AddToCurrentMesh = snapshot.AddToCurrentMesh;
@@ -1055,6 +1061,7 @@ namespace MeshFactory.UndoSystem
         public float RotationX, RotationY, CameraDistance;
         public Vector3 CameraTarget;
         public bool ShowWireframe, ShowVertices, VertexEditMode;
+        public bool ShowSelectedMeshOnly, ShowVertexIndices;
         public string CurrentToolName;
 
         // メッシュ作成設定
@@ -1081,6 +1088,8 @@ namespace MeshFactory.UndoSystem
                 Vector3.Distance(CameraTarget, other.CameraTarget) > 0.0001f ||
                 ShowWireframe != other.ShowWireframe ||
                 ShowVertices != other.ShowVertices ||
+                ShowSelectedMeshOnly != other.ShowSelectedMeshOnly ||
+                ShowVertexIndices != other.ShowVertexIndices ||
                 VertexEditMode != other.VertexEditMode ||
                 CurrentToolName != other.CurrentToolName ||
                 AddToCurrentMesh != other.AddToCurrentMesh ||

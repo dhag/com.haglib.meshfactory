@@ -215,9 +215,9 @@ public partial class SimpleMeshFactory
         }
 
         EditorGUI.BeginDisabledGroup(!_model.HasValidSelection);
-        if (GUILayout.Button("MQO Export..."))
+        if (GUILayout.Button("Export"))
         {
-            // MeshFactory.MQO.MQOExportPanel.Open(_toolManager?.toolContext);  // Phase 2
+            MeshFactory.MQO.MQOExportPanel.Open(_toolManager?.toolContext);
         }
         EditorGUI.EndDisabledGroup();
         /*

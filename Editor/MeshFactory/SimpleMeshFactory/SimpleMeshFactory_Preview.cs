@@ -55,7 +55,25 @@ public partial class SimpleMeshFactory
         _preview.camera.transform.rotation = lookRot * rollRot;
 
         // マルチマテリアル対応描画
-        DrawMeshWithMaterials(meshContext, mesh);
+        //DrawMeshWithMaterials(meshContext, mesh);
+        // メッシュ描画
+        if (_showSelectedMeshOnly)
+        {
+            // 選択中のメッシュのみ描画
+            DrawMeshWithMaterials(meshContext, mesh);
+        }
+        else
+        {
+            // 全メッシュ描画
+            for (int i = 0; i < _meshContextList.Count; i++)
+            {
+                var ctx = _meshContextList[i];
+                if (ctx?.UnityMesh == null) continue;
+
+                bool isSelected = (i == _selectedIndex);
+                DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f);
+            }
+        }
 
 
         // ★ミラーメッシュ描画を追加
@@ -72,7 +90,21 @@ public partial class SimpleMeshFactory
         if (_showWireframe)
         {
             // ワイヤーフレーム描画
-            DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget);
+            if (_showSelectedMeshOnly)
+            {
+                DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget, true);
+            }
+            else
+            {
+                // 全メッシュのワイヤフレームを描画
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    var ctx = _meshContextList[i];
+                    if (ctx?.Data == null) continue;
+                    bool isActive = (i == _selectedIndex);
+                    DrawWireframeOverlay(rect, ctx.Data, camPos, _cameraTarget, isActive);
+                }
+            }
             // ★ミラーワイヤーフレーム描画
             if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
             {
@@ -83,8 +115,22 @@ public partial class SimpleMeshFactory
         // 選択状態のオーバーレイ描画（追加）
         DrawSelectionOverlay(rect, meshContext.Data, camPos, _cameraTarget);
 
-
-        DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget);
+        // 頂点描画
+        if (_showSelectedMeshOnly)
+        {
+            DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget, true);
+        }
+        else
+        {
+            // 全メッシュの頂点を描画
+            for (int i = 0; i < _meshContextList.Count; i++)
+            {
+                var ctx = _meshContextList[i];
+                if (ctx?.Data == null) continue;
+                bool isActive = (i == _selectedIndex);
+                DrawVertexHandles(rect, ctx.Data, camPos, _cameraTarget, isActive);
+            }
+        }
 
         // ローカル原点マーカー（点線、ドラッグ不可）
         DrawOriginMarker(rect, camPos, _cameraTarget);
@@ -109,7 +155,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マルチマテリアル対応でメッシュを描画
     /// </summary>
-    private void DrawMeshWithMaterials(MeshContext meshContext, Mesh mesh)
+    private void DrawMeshWithMaterials(MeshContext meshContext, Mesh mesh, float alpha = 1f)
     {
         if (mesh == null)
             return;
@@ -131,6 +177,8 @@ public partial class SimpleMeshFactory
             {
                 mat = defaultMat;
             }
+            //_preview.DrawMesh(mesh, Matrix4x4.identity, mat, i);
+            // 既存のDrawMesh呼び出しはそのまま（Material側で制御が必要なら別途対応）
             _preview.DrawMesh(mesh, Matrix4x4.identity, mat, i);
         }
     }
@@ -209,7 +257,7 @@ public partial class SimpleMeshFactory
     /// ワイヤーフレーム描画（MeshDataベース）
     /// 3頂点以上の面のエッジと、2頂点の補助線（Line）を描画
     /// </summary>
-    private void DrawWireframeOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawWireframeOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
     {
         if (meshData == null)
             return;
@@ -239,8 +287,10 @@ public partial class SimpleMeshFactory
 
         UnityEditor_Handles.BeginGUI();
 
-        // 通常のエッジを描画（緑）
-        UnityEditor_Handles.color = new Color(0f, 1f, 0.5f, 0.9f);
+        // 通常のエッジを描画（選択中は緑、非選択はグレー）
+        UnityEditor_Handles.color = isActiveMesh
+            ? new Color(0f, 1f, 0.5f, 0.9f)    // 選択中：緑
+            : new Color(0.4f, 0.4f, 0.4f, 0.5f); // 非選択：グレー
         foreach (var edge in edges)
         {
             Vector3 p1World = meshData.Vertices[edge.Item1].Position;
@@ -569,12 +619,12 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 頂点ハンドル描画（MeshDataベース）
     /// </summary>
-    private void DrawVertexHandles(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawVertexHandles(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
     {
         if (!_showVertices || meshData == null)
             return;
 
-        float handleSize = 8f;
+        float handleSize = isActiveMesh ? 8f : 4f;  // 非選択メッシュは小さく
 
         for (int i = 0; i < meshData.VertexCount; i++)
         {
@@ -589,33 +639,49 @@ public partial class SimpleMeshFactory
                 handleSize,
                 handleSize);
 
-            // 選択状態で色分け
-            bool isSelected = _selectedVertices.Contains(i);
+            // 選択状態で色分け（選択中のメッシュのみ）
+            bool isSelected = isActiveMesh && _selectedVertices.Contains(i);
 
             // Vertex モードが有効でない場合は頂点を薄く表示
             bool vertexModeEnabled = _selectionState != null && _selectionState.Mode.Has(MeshSelectMode.Vertex);
             float alpha = vertexModeEnabled ? 1f : 0.4f;
+            if (!isActiveMesh) alpha *= 0.5f;  // 非選択メッシュはさらに薄く
 
             UnityEditor_Handles.BeginGUI();
 
-            Color col = isSelected
-                ? new Color(1f, 0.8f, 0f, alpha)      // 選択=オレンジ黄
-                : new Color(1f, 1f, 1f, alpha);       // 未選択=白
-            UnityEditor_Handles.DrawRect(handleRect, col);//?
-
-            Color borderCol = isSelected
-                ? new Color(1f, 0f, 0f, alpha)
-                : new Color(0.5f, 0.5f, 0.5f, alpha);
+            Color col;
+            Color borderCol;
+            if (!isActiveMesh)
+            {
+                // 非選択メッシュ：グレー
+                col = new Color(0.5f, 0.5f, 0.5f, alpha);
+                borderCol = new Color(0.3f, 0.3f, 0.3f, alpha);
+            }
+            else if (isSelected)
+            {
+                // 選択中メッシュの選択頂点：オレンジ黄
+                col = new Color(1f, 0.8f, 0f, alpha);
+                borderCol = new Color(1f, 0f, 0f, alpha);
+            }
+            else
+            {
+                // 選択中メッシュの未選択頂点：白
+                col = new Color(1f, 1f, 1f, alpha);
+                borderCol = new Color(0.5f, 0.5f, 0.5f, alpha);
+            }
+            UnityEditor_Handles.DrawRect(handleRect, col);
             DrawRectBorder(handleRect, borderCol);
-
 
             UnityEditor_Handles.EndGUI();
 
-            GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16), i.ToString(), EditorStyles.miniLabel);
+            if (_showVertexIndices && isActiveMesh)
+            {//インデックスの表示（選択中メッシュのみ）
+                GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16), i.ToString(), EditorStyles.miniLabel);
+            }
         }
 
-        // 矩形選択オーバーレイ
-        if (_editState == VertexEditState.BoxSelecting)
+        // 矩形選択オーバーレイ（選択中メッシュのみ）
+        if (isActiveMesh && _editState == VertexEditState.BoxSelecting)
         {
             DrawBoxSelectOverlay();
         }

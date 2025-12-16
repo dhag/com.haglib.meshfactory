@@ -176,8 +176,9 @@ public partial class SimpleMeshFactory : EditorWindow
     // 表示設定
     private bool _showWireframe = true;
     private bool _showVertices = true;
-    private bool _vertexEditMode = true;  // Show Verticesと連動
-
+    private bool _vertexEditMode = true;  // Show Verticesと連動  
+    private bool _showSelectedMeshOnly = true;  // ★追加
+    private bool _showVertexIndices = true;     // ★追加
     /// <summary>
     /// ツールの状態
     /// </summary>
@@ -295,6 +296,8 @@ public partial class SimpleMeshFactory : EditorWindow
         {
             _undoController.EditorState.ShowWireframe = _showWireframe;
             _undoController.EditorState.ShowVertices = _showVertices;
+            _undoController.EditorState.ShowSelectedMeshOnly = _showSelectedMeshOnly;
+            _undoController.EditorState.ShowVertexIndices = _showVertexIndices;
             _undoController.EditorState.AddToCurrentMesh = _addToCurrentMesh;
             _undoController.EditorState.AutoMergeOnCreate = _autoMergeOnCreate;
             _undoController.EditorState.AutoMergeThreshold = _autoMergeThreshold;
@@ -485,6 +488,8 @@ public partial class SimpleMeshFactory : EditorWindow
         _cameraTarget = editorState.CameraTarget;
         _showWireframe = editorState.ShowWireframe;
         _showVertices = editorState.ShowVertices;
+        _showSelectedMeshOnly = editorState.ShowSelectedMeshOnly;
+        _showVertexIndices = editorState.ShowVertexIndices;
         _addToCurrentMesh = editorState.AddToCurrentMesh;
         _autoMergeOnCreate = editorState.AutoMergeOnCreate;
         _autoMergeThreshold = editorState.AutoMergeThreshold;

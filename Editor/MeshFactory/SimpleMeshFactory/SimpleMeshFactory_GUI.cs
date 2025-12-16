@@ -64,6 +64,8 @@ public partial class SimpleMeshFactory
                 EditorGUI.BeginChangeCheck();
                 bool newShowWireframe = EditorGUILayout.Toggle(L.Get("Wireframe"), _showWireframe);
                 bool newShowVertices = EditorGUILayout.Toggle(L.Get("ShowVertices"), _showVertices);
+                bool newShowVertexIndices = EditorGUILayout.Toggle(L.Get("ShowVertexIndices"), _showVertexIndices);  // ★追加
+                bool newShowSelectedMeshOnly = EditorGUILayout.Toggle(L.Get("ShowSelectedMeshOnly"), _showSelectedMeshOnly);  // ★追加
                 bool newVertexEditMode = newShowVertices;
 
                 if (EditorGUI.EndChangeCheck())
@@ -71,6 +73,8 @@ public partial class SimpleMeshFactory
                     bool hasDisplayChange =
                         newShowWireframe != _showWireframe ||
                         newShowVertices != _showVertices ||
+                        newShowVertexIndices != _showVertexIndices ||      // ★追加
+                        newShowSelectedMeshOnly != _showSelectedMeshOnly || // ★追加
                         newVertexEditMode != _vertexEditMode;
 
                     if (hasDisplayChange && _undoController != null)
@@ -80,12 +84,16 @@ public partial class SimpleMeshFactory
 
                     _showWireframe = newShowWireframe;
                     _showVertices = newShowVertices;
+                    _showVertexIndices = newShowVertexIndices;          // ★追加
+                    _showSelectedMeshOnly = newShowSelectedMeshOnly;    // ★追加
                     _vertexEditMode = newVertexEditMode;
 
                     if (_undoController != null)
                     {
                         _undoController.EditorState.ShowWireframe = _showWireframe;
                         _undoController.EditorState.ShowVertices = _showVertices;
+                        _undoController.EditorState.ShowSelectedMeshOnly = _showSelectedMeshOnly;
+                        _undoController.EditorState.ShowVertexIndices = _showVertexIndices;
                         _undoController.EditorState.VertexEditMode = _vertexEditMode;
                         _undoController.EndEditorStateDrag("Change Display Settings");
                     }

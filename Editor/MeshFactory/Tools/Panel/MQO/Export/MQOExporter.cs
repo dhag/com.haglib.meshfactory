@@ -1,0 +1,540 @@
+// Assets/Editor/MeshFactory/MQO/Export/MQOExporter.cs
+// MQOエクスポーター
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using UnityEngine;
+using MeshFactory.Data;
+
+namespace MeshFactory.MQO
+{
+    /// <summary>
+    /// MQOエクスポーター
+    /// </summary>
+    public static class MQOExporter
+    {
+        // ================================================================
+        // パブリックAPI
+        // ================================================================
+
+        /// <summary>
+        /// MeshContextリストをMQOファイルに出力
+        /// </summary>
+        public static MQOExportResult ExportFile(
+            string filePath,
+            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            MQOExportSettings settings = null)
+        {
+            var result = new MQOExportResult();
+
+            if (meshContexts == null || meshContexts.Count == 0)
+            {
+                result.Success = false;
+                result.ErrorMessage = "No mesh contexts to export";
+                return result;
+            }
+
+            settings = settings ?? new MQOExportSettings();
+
+            try
+            {
+                // MQOドキュメント作成
+                var document = ConvertToDocument(meshContexts, settings, result.Stats);
+
+                // テキスト生成
+                string mqoText = GenerateMQOText(document, settings);
+
+                // ファイル出力
+                Encoding encoding = settings.UseShiftJIS
+                    ? Encoding.GetEncoding("shift_jis")
+                    : Encoding.UTF8;
+
+                File.WriteAllText(filePath, mqoText, encoding);
+
+                result.Success = true;
+                result.FilePath = filePath;
+                result.Stats.ObjectCount = document.Objects.Count;
+                result.Stats.MaterialCount = document.Materials.Count;
+
+                Debug.Log($"[MQOExporter] Export successful: {filePath}");
+                Debug.Log($"  - Objects: {result.Stats.ObjectCount}");
+                Debug.Log($"  - Vertices: {result.Stats.TotalVertices}");
+                Debug.Log($"  - Faces: {result.Stats.TotalFaces}");
+                Debug.Log($"  - Materials: {result.Stats.MaterialCount}");
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.ErrorMessage = ex.Message;
+                Debug.LogError($"[MQOExporter] Export failed: {ex}");
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 単一のMeshContextをMQOファイルに出力
+        /// </summary>
+        public static MQOExportResult ExportFile(
+            string filePath,
+            SimpleMeshFactory.MeshContext meshContext,
+            MQOExportSettings settings = null)
+        {
+            return ExportFile(filePath, new[] { meshContext }, settings);
+        }
+
+        // ================================================================
+        // ドキュメント変換
+        // ================================================================
+
+        private static MQODocument ConvertToDocument(
+            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            MQOExportSettings settings,
+            MQOExportStats stats)
+        {
+            var document = new MQODocument
+            {
+                Version = 1.1m,
+            };
+
+            // デフォルトシーン情報
+            document.Scene = CreateDefaultScene();
+
+            // マテリアル収集
+            var materialMap = new Dictionary<Material, int>();
+            if (settings.ExportMaterials)
+            {
+                foreach (var mc in meshContexts)
+                {
+                    if (mc?.Materials == null) continue;
+                    foreach (var mat in mc.Materials)
+                    {
+                        if (mat != null && !materialMap.ContainsKey(mat))
+                        {
+                            materialMap[mat] = document.Materials.Count;
+                            document.Materials.Add(ConvertMaterial(mat));
+                        }
+                    }
+                }
+            }
+
+            // デフォルトマテリアルがない場合は追加
+            if (document.Materials.Count == 0)
+            {
+                document.Materials.Add(new MQOMaterial
+                {
+                    Name = "Default",
+                    Color = Color.white,
+                    Diffuse = 0.8f,
+                    Ambient = 0.6f,
+                });
+            }
+
+            // オブジェクト変換
+            if (settings.MergeObjects)
+            {
+                // 全メッシュを統合
+                var merged = MergeMeshContexts(meshContexts, "MergedObject");
+                var mqoObj = ConvertObject(merged, materialMap, settings, stats);
+                if (mqoObj != null)
+                {
+                    document.Objects.Add(mqoObj);
+                }
+            }
+            else
+            {
+                // 個別にエクスポート
+                foreach (var mc in meshContexts)
+                {
+                    if (mc?.Data == null) continue;
+
+                    // 空オブジェクトスキップ
+                    if (settings.SkipEmptyObjects && mc.Data.VertexCount == 0 && mc.Data.FaceCount == 0)
+                        continue;
+
+                    var mqoObj = ConvertObject(mc, materialMap, settings, stats);
+                    if (mqoObj != null)
+                    {
+                        document.Objects.Add(mqoObj);
+                    }
+                }
+            }
+
+            return document;
+        }
+
+        private static MQOScene CreateDefaultScene()
+        {
+            var scene = new MQOScene();
+            scene.Attributes.Add(new MQOAttribute("pos", 0, 0, 1500));
+            scene.Attributes.Add(new MQOAttribute("lookat", 0, 0, 0));
+            scene.Attributes.Add(new MQOAttribute("head", -0.5236f));
+            scene.Attributes.Add(new MQOAttribute("pich", 0.5236f));
+            scene.Attributes.Add(new MQOAttribute("ortho", 0));
+            scene.Attributes.Add(new MQOAttribute("zoom2", 5));
+            scene.Attributes.Add(new MQOAttribute("amb", 0.25f, 0.25f, 0.25f));
+            return scene;
+        }
+
+        private static MQOMaterial ConvertMaterial(Material mat)
+        {
+            var mqoMat = new MQOMaterial
+            {
+                Name = mat.name,
+                Color = mat.HasProperty("_Color") ? mat.color : Color.white,
+                Diffuse = 0.8f,
+                Ambient = 0.6f,
+                Specular = mat.HasProperty("_SpecColor") ? mat.GetColor("_SpecColor").grayscale : 0f,
+                Power = mat.HasProperty("_Shininess") ? mat.GetFloat("_Shininess") : 5f,
+            };
+
+            // テクスチャパス
+            if (mat.HasProperty("_MainTex") && mat.mainTexture != null)
+            {
+                mqoMat.TexturePath = mat.mainTexture.name;
+            }
+
+            return mqoMat;
+        }
+
+        private static MQOObject ConvertObject(
+            SimpleMeshFactory.MeshContext meshContext,
+            Dictionary<Material, int> materialMap,
+            MQOExportSettings settings,
+            MQOExportStats stats)
+        {
+            var meshData = meshContext.Data;
+            if (meshData == null) return null;
+
+            var mqoObj = new MQOObject
+            {
+                Name = meshContext.Name ?? "Object",
+            };
+
+            // 属性設定
+            mqoObj.Attributes.Add(new MQOAttribute("visible", 15));
+            mqoObj.Attributes.Add(new MQOAttribute("locking", 0));
+            mqoObj.Attributes.Add(new MQOAttribute("shading", 1));
+            mqoObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+            mqoObj.Attributes.Add(new MQOAttribute("color", 1, 1, 1));
+            mqoObj.Attributes.Add(new MQOAttribute("color_type", 0));
+
+            // 頂点変換
+            foreach (var v in meshData.Vertices)
+            {
+                var mqoVert = new MQOVertex
+                {
+                    Position = ConvertPosition(v.Position, settings),
+                    Index = mqoObj.Vertices.Count,
+                };
+                mqoObj.Vertices.Add(mqoVert);
+                stats.TotalVertices++;
+            }
+
+            // 面変換
+            foreach (var face in meshData.Faces)
+            {
+                if (face.VertexIndices == null || face.VertexIndices.Count == 0)
+                    continue;
+
+                var mqoFace = new MQOFace
+                {
+                    VertexIndices = face.VertexIndices.ToArray(),
+                    MaterialIndex = GetMaterialIndex(meshContext, face.MaterialIndex, materialMap),
+                };
+
+                // UV変換
+                if (face.UVIndices != null && face.UVIndices.Count > 0)
+                {
+                    var uvs = new Vector2[face.UVIndices.Count];
+                    for (int i = 0; i < face.UVIndices.Count; i++)
+                    {
+                        int vertIdx = face.VertexIndices[i];
+                        int uvIdx = face.UVIndices[i];
+                        if (vertIdx >= 0 && vertIdx < meshData.Vertices.Count)
+                        {
+                            var vertex = meshData.Vertices[vertIdx];
+                            // UVインデックスが有効範囲内か確認
+                            Vector2 uv = (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
+                                ? vertex.UVs[uvIdx]
+                                : (vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero);
+                            uvs[i] = ConvertUV(uv, settings);
+                        }
+                    }
+                    mqoFace.UVs = uvs;
+                }
+
+                mqoObj.Faces.Add(mqoFace);
+                stats.TotalFaces++;
+            }
+
+            return mqoObj;
+        }
+
+        private static int GetMaterialIndex(
+            SimpleMeshFactory.MeshContext meshContext,
+            int localIndex,
+            Dictionary<Material, int> materialMap)
+        {
+            if (meshContext.Materials == null || localIndex < 0 || localIndex >= meshContext.Materials.Count)
+                return 0;
+
+            var mat = meshContext.Materials[localIndex];
+            if (mat != null && materialMap.TryGetValue(mat, out int globalIndex))
+                return globalIndex;
+
+            return 0;
+        }
+
+        // ================================================================
+        // 座標変換
+        // ================================================================
+
+        private static Vector3 ConvertPosition(Vector3 pos, MQOExportSettings settings)
+        {
+            // スケール
+            pos *= settings.Scale;
+
+            // Y-Z入れ替え（Unity Y-up → MQO Z-up）
+            if (settings.SwapYZ)
+            {
+                pos = new Vector3(pos.x, pos.z, pos.y);
+            }
+
+            // Z反転
+            if (settings.FlipZ)
+            {
+                pos.z = -pos.z;
+            }
+
+            return pos;
+        }
+
+        private static Vector2 ConvertUV(Vector2 uv, MQOExportSettings settings)
+        {
+            if (settings.FlipUV_V)
+            {
+                uv.y = 1f - uv.y;
+            }
+            return uv;
+        }
+
+        // ================================================================
+        // メッシュ統合
+        // ================================================================
+
+        private static SimpleMeshFactory.MeshContext MergeMeshContexts(
+            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            string name)
+        {
+            var mergedData = new MeshData(name);
+            var mergedMaterials = new List<Material>();
+
+            foreach (var mc in meshContexts)
+            {
+                if (mc?.Data == null) continue;
+
+                int vertexOffset = mergedData.VertexCount;
+
+                // 頂点コピー
+                foreach (var v in mc.Data.Vertices)
+                {
+                    Vector2 uv = v.UVs.Count > 0 ? v.UVs[0] : Vector2.zero;
+                    Vector3 normal = v.Normals.Count > 0 ? v.Normals[0] : Vector3.zero;
+                    mergedData.AddVertex(v.Position, uv, normal);
+                }
+
+                // 面コピー（インデックスオフセット）
+                foreach (var face in mc.Data.Faces)
+                {
+                    var newFace = new Face
+                    {
+                        MaterialIndex = face.MaterialIndex
+                    };
+                    foreach (int idx in face.VertexIndices)
+                    {
+                        newFace.VertexIndices.Add(idx + vertexOffset);
+                    }
+                    // UVインデックスもコピー（オフセットなし、頂点内インデックスのため）
+                    newFace.UVIndices.AddRange(face.UVIndices);
+                    newFace.NormalIndices.AddRange(face.NormalIndices);
+                    mergedData.AddFace(newFace);
+                }
+
+                // マテリアルコピー
+                if (mc.Materials != null)
+                {
+                    foreach (var mat in mc.Materials)
+                    {
+                        if (mat != null && !mergedMaterials.Contains(mat))
+                        {
+                            mergedMaterials.Add(mat);
+                        }
+                    }
+                }
+            }
+
+            return new SimpleMeshFactory.MeshContext
+            {
+                Name = name,
+                Data = mergedData,
+                Materials = mergedMaterials,
+            };
+        }
+
+        // ================================================================
+        // テキスト生成
+        // ================================================================
+
+        private static string GenerateMQOText(MQODocument document, MQOExportSettings settings)
+        {
+            var sb = new StringBuilder();
+            string fmt = $"F{settings.DecimalPrecision}";
+
+            // ヘッダー
+            sb.AppendLine("Metasequoia Document");
+            sb.AppendLine("Format Text Ver 1.1");
+            sb.AppendLine();
+
+            // Scene
+            sb.AppendLine("Scene {");
+            foreach (var attr in document.Scene.Attributes)
+            {
+                sb.Append($"\t{attr.Name}");
+                foreach (var v in attr.Values)
+                {
+                    sb.Append($" {v.ToString(fmt, CultureInfo.InvariantCulture)}");
+                }
+                sb.AppendLine();
+            }
+            sb.AppendLine("}");
+
+            // Material
+            if (document.Materials.Count > 0)
+            {
+                sb.AppendLine($"Material {document.Materials.Count} {{");
+                foreach (var mat in document.Materials)
+                {
+                    sb.Append($"\t\"{mat.Name}\"");
+                    sb.Append($" col({mat.Color.r.ToString(fmt, CultureInfo.InvariantCulture)}");
+                    sb.Append($" {mat.Color.g.ToString(fmt, CultureInfo.InvariantCulture)}");
+                    sb.Append($" {mat.Color.b.ToString(fmt, CultureInfo.InvariantCulture)}");
+                    sb.Append($" {mat.Color.a.ToString(fmt, CultureInfo.InvariantCulture)})");
+                    sb.Append($" dif({mat.Diffuse.ToString(fmt, CultureInfo.InvariantCulture)})");
+                    sb.Append($" amb({mat.Ambient.ToString(fmt, CultureInfo.InvariantCulture)})");
+                    sb.Append($" emi({mat.Emissive.ToString(fmt, CultureInfo.InvariantCulture)})");
+                    sb.Append($" spc({mat.Specular.ToString(fmt, CultureInfo.InvariantCulture)})");
+                    sb.Append($" power({mat.Power.ToString("F2", CultureInfo.InvariantCulture)})");
+                    if (!string.IsNullOrEmpty(mat.TexturePath))
+                    {
+                        sb.Append($" tex(\"{mat.TexturePath}\")");
+                    }
+                    sb.AppendLine();
+                }
+                sb.AppendLine("}");
+            }
+
+            // Objects
+            foreach (var obj in document.Objects)
+            {
+                sb.AppendLine($"Object \"{obj.Name}\" {{");
+
+                // 属性
+                foreach (var attr in obj.Attributes)
+                {
+                    sb.Append($"\t{attr.Name}");
+                    foreach (var v in attr.Values)
+                    {
+                        if (v == (int)v)
+                            sb.Append($" {(int)v}");
+                        else
+                            sb.Append($" {v.ToString(fmt, CultureInfo.InvariantCulture)}");
+                    }
+                    sb.AppendLine();
+                }
+
+                // 頂点
+                sb.AppendLine($"\tvertex {obj.Vertices.Count} {{");
+                foreach (var v in obj.Vertices)
+                {
+                    sb.Append("\t\t");
+                    sb.Append(v.Position.x.ToString(fmt, CultureInfo.InvariantCulture));
+                    sb.Append(" ");
+                    sb.Append(v.Position.y.ToString(fmt, CultureInfo.InvariantCulture));
+                    sb.Append(" ");
+                    sb.AppendLine(v.Position.z.ToString(fmt, CultureInfo.InvariantCulture));
+                }
+                sb.AppendLine("\t}");
+
+                // 面
+                sb.AppendLine($"\tface {obj.Faces.Count} {{");
+                foreach (var face in obj.Faces)
+                {
+                    sb.Append($"\t\t{face.VertexCount} V(");
+                    for (int i = 0; i < face.VertexCount; i++)
+                    {
+                        if (i > 0) sb.Append(" ");
+                        sb.Append(face.VertexIndices[i]);
+                    }
+                    sb.Append(")");
+
+                    if (face.MaterialIndex >= 0)
+                    {
+                        sb.Append($" M({face.MaterialIndex})");
+                    }
+
+                    if (face.UVs != null && face.UVs.Length > 0)
+                    {
+                        sb.Append(" UV(");
+                        for (int i = 0; i < face.UVs.Length; i++)
+                        {
+                            if (i > 0) sb.Append(" ");
+                            sb.Append(face.UVs[i].x.ToString(fmt, CultureInfo.InvariantCulture));
+                            sb.Append(" ");
+                            sb.Append(face.UVs[i].y.ToString(fmt, CultureInfo.InvariantCulture));
+                        }
+                        sb.Append(")");
+                    }
+
+                    sb.AppendLine();
+                }
+                sb.AppendLine("\t}");
+
+                sb.AppendLine("}");
+            }
+
+            sb.AppendLine("Eof");
+
+            return sb.ToString();
+        }
+    }
+
+    // ================================================================
+    // 結果クラス
+    // ================================================================
+
+    /// <summary>
+    /// エクスポート結果
+    /// </summary>
+    public class MQOExportResult
+    {
+        public bool Success { get; set; }
+        public string ErrorMessage { get; set; }
+        public string FilePath { get; set; }
+        public MQOExportStats Stats { get; } = new MQOExportStats();
+    }
+
+    /// <summary>
+    /// エクスポート統計
+    /// </summary>
+    public class MQOExportStats
+    {
+        public int ObjectCount { get; set; }
+        public int TotalVertices { get; set; }
+        public int TotalFaces { get; set; }
+        public int MaterialCount { get; set; }
+    }
+}
