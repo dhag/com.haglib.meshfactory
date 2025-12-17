@@ -325,6 +325,9 @@ public partial class SimpleMeshFactory : EditorWindow
         // ExportSettings UIイベントハンドラ設定
         SetupExportSettingsEventHandlers();
 
+        // ★GPU描画初期化
+        InitializeDrawCache();
+
         _drawCache = new MeshDrawCache();
     }
 
@@ -414,7 +417,8 @@ public partial class SimpleMeshFactory : EditorWindow
         // ★ミラーリソースのクリーンアップ
         CleanupMirrorResources();
 
-
+        // ★GPU描画クリーンアップ
+        CleanupDrawCache();
 
         // WorkPlane UIイベントハンドラ解除
         CleanupWorkPlaneEventHandlers();

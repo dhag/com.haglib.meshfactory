@@ -1,6 +1,5 @@
-// Assets/Editor/MeshFactory/Rendering/MeshGPURenderer.cs
-// GPU描画管理クラス
-// Compute Shader + DrawProceduralでメッシュエディタの描画を高速化
+// Editor/MeshFactory/Core/MeshGPURenderer.cs
+// IMGUI対応版 GPU描画レンダラー
 
 using System;
 using System.Collections.Generic;
@@ -10,147 +9,106 @@ using MeshFactory.Data;
 
 namespace MeshFactory.Rendering
 {
-    /// <summary>
-    /// GPU描画管理クラス
-    /// </summary>
     public class MeshGPURenderer : IDisposable
     {
-        // ================================================================
-        // Compute Shader
-        // ================================================================
-
+        // シェーダー・マテリアル
         private ComputeShader _computeShader;
-        private int _kernelClear;
-        private int _kernelScreenPos;
-        private int _kernelFaceVisibility;
-        private int _kernelLineVisibility;
-
-        // ================================================================
-        // 描画用マテリアル
-        // ================================================================
-
-        private Material _pointMaterial;
-        private Material _lineMaterial;
-
-        // ================================================================
-        // GPU バッファ
-        // ================================================================
-
-        // 入力バッファ（メッシュ変更時に更新）
+        private int _kernelClear, _kernelScreenPos, _kernelFaceVisibility, _kernelLineVisibility;
+        private Material _pointMaterial, _lineMaterial;
+        
+        // バッファ
         private ComputeBuffer _positionBuffer;
         private ComputeBuffer _lineBuffer;
         private ComputeBuffer _faceVertexIndexBuffer;
         private ComputeBuffer _faceVertexOffsetBuffer;
         private ComputeBuffer _faceVertexCountBuffer;
-
-        // 出力バッファ（毎フレーム更新）
         private ComputeBuffer _screenPositionBuffer;
         private ComputeBuffer _vertexVisibilityBuffer;
         private ComputeBuffer _faceVisibilityBuffer;
         private ComputeBuffer _lineVisibilityBuffer;
-
-        // 選択状態バッファ
         private ComputeBuffer _selectionBuffer;
+        private ComputeBuffer _lineSelectionBuffer;
+        
         private uint[] _selectionData;
-
-        // ================================================================
-        // 状態
-        // ================================================================
-
+        private uint[] _lineSelectionData;
         private bool _initialized;
-        private int _vertexCount;
-        private int _faceCount;
-        private int _lineCount;
+        private int _vertexCount, _faceCount, _lineCount;
         private MeshData _cachedMeshData;
 
-        // ================================================================
-        // 公開プロパティ
-        // ================================================================
-
-        /// <summary>GPUレンダリングが利用可能か</summary>
         public bool IsAvailable => _initialized && SystemInfo.supportsComputeShaders;
-
-        /// <summary>現在のカリングが有効か</summary>
         public bool CullingEnabled { get; set; } = true;
 
-        // ================================================================
-        // 初期化
-        // ================================================================
-
-        /// <summary>
-        /// 初期化
-        /// </summary>
-        /// <param name="computeShader">Compute2D_GPU.compute</param>
-        /// <param name="pointShader">MeshFactory/Point シェーダー</param>
-        /// <param name="lineShader">MeshFactory/Line シェーダー</param>
         public bool Initialize(ComputeShader computeShader, Shader pointShader, Shader lineShader)
         {
-            if (_initialized)
-                return true;
-
+            if (_initialized) return true;
+            
             if (!SystemInfo.supportsComputeShaders)
             {
-                Debug.LogWarning("MeshGPURenderer: Compute Shaders not supported");
+                Debug.LogWarning("MeshGPURenderer: Compute shaders not supported");
                 return false;
             }
-
-            if (computeShader == null || pointShader == null || lineShader == null)
+            
+            if (computeShader == null)
             {
-                Debug.LogWarning("MeshGPURenderer: Missing shaders");
+                Debug.LogWarning("MeshGPURenderer: Compute shader is null");
+                return false;
+            }
+            
+            if (pointShader == null)
+            {
+                Debug.LogWarning("MeshGPURenderer: Point shader is null");
+                return false;
+            }
+            
+            if (lineShader == null)
+            {
+                Debug.LogWarning("MeshGPURenderer: Line shader is null");
                 return false;
             }
 
             _computeShader = computeShader;
+            
+            try
+            {
+                _kernelClear = _computeShader.FindKernel("ClearBuffers");
+                _kernelScreenPos = _computeShader.FindKernel("ComputeScreenPositions");
+                _kernelFaceVisibility = _computeShader.FindKernel("ComputeFaceVisibility");
+                _kernelLineVisibility = _computeShader.FindKernel("ComputeLineVisibility");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"MeshGPURenderer: Failed to find compute kernels: {e.Message}");
+                return false;
+            }
 
-            // カーネル取得
-            _kernelClear = _computeShader.FindKernel("ClearBuffers");
-            _kernelScreenPos = _computeShader.FindKernel("ComputeScreenPositions");
-            _kernelFaceVisibility = _computeShader.FindKernel("ComputeFaceVisibility");
-            _kernelLineVisibility = _computeShader.FindKernel("ComputeLineVisibility");
-
-            // マテリアル作成
-            _pointMaterial = new Material(pointShader);
-            _pointMaterial.hideFlags = HideFlags.HideAndDontSave;
-
-            _lineMaterial = new Material(lineShader);
-            _lineMaterial.hideFlags = HideFlags.HideAndDontSave;
-
+            _pointMaterial = new Material(pointShader) { hideFlags = HideFlags.HideAndDontSave };
+            _lineMaterial = new Material(lineShader) { hideFlags = HideFlags.HideAndDontSave };
+            
             _initialized = true;
+            Debug.Log("MeshGPURenderer: Initialized successfully");
             return true;
         }
 
-        // ================================================================
-        // バッファ更新（メッシュ変更時）
-        // ================================================================
-
-        /// <summary>
-        /// メッシュデータからGPUバッファを構築
-        /// </summary>
         public void UpdateBuffers(MeshData meshData, MeshEdgeCache edgeCache)
         {
-            if (!_initialized || meshData == null || edgeCache == null)
-                return;
-
-            // 同じメッシュなら更新不要
-            if (_cachedMeshData == meshData && _vertexCount == meshData.VertexCount)
-                return;
+            if (!_initialized || meshData == null || edgeCache == null) return;
+            
+            // キャッシュが有効な場合はスキップ
+            if (_cachedMeshData == meshData && _vertexCount == meshData.VertexCount) return;
 
             _cachedMeshData = meshData;
-
-            // 既存バッファを解放
             ReleaseBuffers();
-
+            
             _vertexCount = meshData.VertexCount;
             _faceCount = meshData.FaceCount;
-
-            if (_vertexCount == 0)
-                return;
+            
+            if (_vertexCount == 0) return;
 
             // エッジキャッシュを更新
             edgeCache.Update(meshData, force: true);
             _lineCount = edgeCache.LineCount;
 
-            // === 頂点バッファ ===
+            // 頂点位置バッファ
             var positions = new Vector3[_vertexCount];
             for (int i = 0; i < _vertexCount; i++)
             {
@@ -159,87 +117,83 @@ namespace MeshFactory.Rendering
             _positionBuffer = new ComputeBuffer(_vertexCount, sizeof(float) * 3);
             _positionBuffer.SetData(positions);
 
-            // === 線分バッファ ===
+            // 線分バッファ
             if (_lineCount > 0)
             {
                 _lineBuffer = new ComputeBuffer(_lineCount, LineData.SizeInBytes);
                 _lineBuffer.SetData(edgeCache.Lines);
             }
 
-            // === 面データバッファ ===
+            // 面バッファ
             BuildFaceBuffers(meshData);
 
-            // === 出力バッファ ===
+            // 出力バッファ
             _screenPositionBuffer = new ComputeBuffer(_vertexCount, sizeof(float) * 4);
             _vertexVisibilityBuffer = new ComputeBuffer(_vertexCount, sizeof(float));
-
+            
             if (_faceCount > 0)
             {
                 _faceVisibilityBuffer = new ComputeBuffer(_faceCount, sizeof(float));
             }
-
+            
             if (_lineCount > 0)
             {
                 _lineVisibilityBuffer = new ComputeBuffer(_lineCount, sizeof(float));
             }
-
-            // === 選択バッファ ===
+            
+            // 選択バッファ
             _selectionBuffer = new ComputeBuffer(_vertexCount, sizeof(uint));
             _selectionData = new uint[_vertexCount];
+            
+            // 線分選択バッファ
+            if (_lineCount > 0)
+            {
+                _lineSelectionBuffer = new ComputeBuffer(_lineCount, sizeof(uint));
+                _lineSelectionData = new uint[_lineCount];
+            }
         }
 
         private void BuildFaceBuffers(MeshData meshData)
         {
-            if (_faceCount == 0)
-                return;
-
+            if (_faceCount == 0) return;
+            
             var indices = new List<int>();
             var offsets = new int[_faceCount];
             var counts = new int[_faceCount];
-
+            
             int offset = 0;
             for (int f = 0; f < _faceCount; f++)
             {
                 var face = meshData.Faces[f];
                 offsets[f] = offset;
                 counts[f] = face.VertexCount;
-
+                
                 foreach (int vIdx in face.VertexIndices)
                 {
                     indices.Add(vIdx);
                 }
                 offset += face.VertexCount;
             }
-
+            
             if (indices.Count > 0)
             {
                 _faceVertexIndexBuffer = new ComputeBuffer(indices.Count, sizeof(int));
                 _faceVertexIndexBuffer.SetData(indices.ToArray());
             }
-
+            
             _faceVertexOffsetBuffer = new ComputeBuffer(_faceCount, sizeof(int));
             _faceVertexOffsetBuffer.SetData(offsets);
-
+            
             _faceVertexCountBuffer = new ComputeBuffer(_faceCount, sizeof(int));
             _faceVertexCountBuffer.SetData(counts);
         }
 
-        // ================================================================
-        // 選択状態更新
-        // ================================================================
-
-        /// <summary>
-        /// 選択頂点を更新
-        /// </summary>
         public void UpdateSelection(HashSet<int> selectedVertices)
         {
-            if (!_initialized || _selectionBuffer == null || _selectionData == null)
-                return;
-
-            // クリア
+            if (!_initialized || _selectionBuffer == null || _selectionData == null) return;
+            
             Array.Clear(_selectionData, 0, _selectionData.Length);
-
-            // 選択頂点をマーク
+            
             if (selectedVertices != null)
             {
                 foreach (int idx in selectedVertices)
@@ -250,75 +204,87 @@ namespace MeshFactory.Rendering
                     }
                 }
             }
-
+            
             _selectionBuffer.SetData(_selectionData);
         }
 
-        // ================================================================
-        // Compute Shader 実行
-        // ================================================================
-
-        /// <summary>
-        /// Compute Shader を実行（カリング計算）
-        /// </summary>
-        public void DispatchCompute(Matrix4x4 mvp, Rect previewRect)
+        public void UpdateLineSelection(HashSet<(int, int)> selectedEdges, MeshEdgeCache edgeCache)
         {
-            if (!_initialized || _vertexCount == 0)
-                return;
+            if (!_initialized || _lineSelectionBuffer == null || _lineSelectionData == null) return;
+            
+            Array.Clear(_lineSelectionData, 0, _lineSelectionData.Length);
+            
+            if (selectedEdges != null && selectedEdges.Count > 0 && edgeCache != null)
+            {
+                var lines = edgeCache.Lines;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    var line = lines[i];
+                    // エッジは正規化して比較（小さい方が先）
+                    int v1 = line.V1 < line.V2 ? line.V1 : line.V2;
+                    int v2 = line.V1 < line.V2 ? line.V2 : line.V1;
+                    
+                    if (selectedEdges.Contains((v1, v2)))
+                    {
+                        _lineSelectionData[i] = 1;
+                    }
+                }
+            }
+            
+            _lineSelectionBuffer.SetData(_lineSelectionData);
+        }
 
-            // 共通パラメータ
+        public void DispatchCompute(Matrix4x4 mvp, Rect previewRect, Vector2 windowSize)
+        {
+            if (!_initialized || _vertexCount == 0) return;
+
+            // 共通パラメータ設定
             _computeShader.SetMatrix("_MATRIX_MVP", mvp);
-            _computeShader.SetVector("_ScreenParams",
-                new Vector4(previewRect.width, previewRect.height, 0, 0));
+            _computeShader.SetVector("_ScreenParams", new Vector4(windowSize.x, windowSize.y, 0, 0));
+            _computeShader.SetVector("_PreviewRect", new Vector4(previewRect.x, previewRect.y, previewRect.width, previewRect.height));
             _computeShader.SetInt("_VertexCount", _vertexCount);
             _computeShader.SetInt("_FaceCount", _faceCount);
             _computeShader.SetInt("_LineCount", _lineCount);
 
-            int threadGroups64(int count) => Mathf.CeilToInt(count / 64f);
+            int threadGroups(int count) => Mathf.CeilToInt(count / 64f);
 
-            // Pass 0: クリア
-            SetBufferSafe(_kernelClear, "_VertexVisibilityBuffer", _vertexVisibilityBuffer);
-            SetBufferSafe(_kernelClear, "_ScreenPositionBuffer", _screenPositionBuffer);
-            SetBufferSafe(_kernelClear, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
-            SetBufferSafe(_kernelClear, "_LineVisibilityBuffer", _lineVisibilityBuffer);
-
+            // 1. バッファクリア
+            SetBuffer(_kernelClear, "_VertexVisibilityBuffer", _vertexVisibilityBuffer);
+            SetBuffer(_kernelClear, "_ScreenPositionBuffer", _screenPositionBuffer);
+            SetBuffer(_kernelClear, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
+            SetBuffer(_kernelClear, "_LineVisibilityBuffer", _lineVisibilityBuffer);
+            
             int maxCount = Mathf.Max(_vertexCount, Mathf.Max(_faceCount, _lineCount));
-            _computeShader.Dispatch(_kernelClear, threadGroups64(maxCount), 1, 1);
+            _computeShader.Dispatch(_kernelClear, threadGroups(maxCount), 1, 1);
 
-            // Pass 1: スクリーン座標計算
-            SetBufferSafe(_kernelScreenPos, "_PositionBuffer", _positionBuffer);
-            SetBufferSafe(_kernelScreenPos, "_ScreenPositionBuffer", _screenPositionBuffer);
-            _computeShader.Dispatch(_kernelScreenPos, threadGroups64(_vertexCount), 1, 1);
+            // 2. スクリーン座標計算
+            SetBuffer(_kernelScreenPos, "_PositionBuffer", _positionBuffer);
+            SetBuffer(_kernelScreenPos, "_ScreenPositionBuffer", _screenPositionBuffer);
+            _computeShader.Dispatch(_kernelScreenPos, threadGroups(_vertexCount), 1, 1);
 
+            // 3. 面の可視性計算（カリング）
             if (CullingEnabled && _faceCount > 0)
             {
-                // Pass 2: 面の表裏判定
-                SetBufferSafe(_kernelFaceVisibility, "_ScreenPositionBuffer", _screenPositionBuffer);
-                SetBufferSafe(_kernelFaceVisibility, "_FaceVertexIndexBuffer", _faceVertexIndexBuffer);
-                SetBufferSafe(_kernelFaceVisibility, "_FaceVertexOffsetBuffer", _faceVertexOffsetBuffer);
-                SetBufferSafe(_kernelFaceVisibility, "_FaceVertexCountBuffer", _faceVertexCountBuffer);
-                SetBufferSafe(_kernelFaceVisibility, "_VertexVisibilityBuffer", _vertexVisibilityBuffer);
-                SetBufferSafe(_kernelFaceVisibility, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
-                _computeShader.Dispatch(_kernelFaceVisibility, threadGroups64(_faceCount), 1, 1);
+                SetBuffer(_kernelFaceVisibility, "_ScreenPositionBuffer", _screenPositionBuffer);
+                SetBuffer(_kernelFaceVisibility, "_FaceVertexIndexBuffer", _faceVertexIndexBuffer);
+                SetBuffer(_kernelFaceVisibility, "_FaceVertexOffsetBuffer", _faceVertexOffsetBuffer);
+                SetBuffer(_kernelFaceVisibility, "_FaceVertexCountBuffer", _faceVertexCountBuffer);
+                SetBuffer(_kernelFaceVisibility, "_VertexVisibilityBuffer", _vertexVisibilityBuffer);
+                SetBuffer(_kernelFaceVisibility, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
+                _computeShader.Dispatch(_kernelFaceVisibility, threadGroups(_faceCount), 1, 1);
 
-                // Pass 3: 線分の可視性
+                // 4. 線の可視性計算
                 if (_lineCount > 0)
                 {
-                    SetBufferSafe(_kernelLineVisibility, "_LineBuffer", _lineBuffer);
-                    SetBufferSafe(_kernelLineVisibility, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
-                    SetBufferSafe(_kernelLineVisibility, "_LineVisibilityBuffer", _lineVisibilityBuffer);
-                    _computeShader.Dispatch(_kernelLineVisibility, threadGroups64(_lineCount), 1, 1);
+                    SetBuffer(_kernelLineVisibility, "_LineBuffer", _lineBuffer);
+                    SetBuffer(_kernelLineVisibility, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
+                    SetBuffer(_kernelLineVisibility, "_LineVisibilityBuffer", _lineVisibilityBuffer);
+                    _computeShader.Dispatch(_kernelLineVisibility, threadGroups(_lineCount), 1, 1);
                 }
-            }
-            else
-            {
-                // カリング無効時は全て表示
-                // VertexVisibilityBufferを全て1にする処理が必要だが、
-                // ここでは簡略化してフラグメントシェーダーで対応
             }
         }
 
-        private void SetBufferSafe(int kernel, string name, ComputeBuffer buffer)
+        private void SetBuffer(int kernel, string name, ComputeBuffer buffer)
         {
             if (buffer != null)
             {
@@ -326,61 +292,56 @@ namespace MeshFactory.Rendering
             }
         }
 
-        // ================================================================
-        // 描画
-        // ================================================================
-
-        /// <summary>
-        /// 頂点を描画
-        /// </summary>
-        public void DrawPoints(Rect previewRect, float pointSize = 8f)
+        public void DrawPoints(Rect previewRect, Vector2 windowSize, Vector2 guiOffset, float pointSize = 8f, float alpha = 1f)
         {
-            if (!_initialized || _vertexCount == 0 || _pointMaterial == null)
-                return;
-
+            if (!_initialized || _vertexCount == 0 || _pointMaterial == null) return;
+            
+            // マテリアルにバッファを設定
             _pointMaterial.SetBuffer("_ScreenPositionBuffer", _screenPositionBuffer);
             _pointMaterial.SetBuffer("_VertexVisibilityBuffer", _vertexVisibilityBuffer);
             _pointMaterial.SetBuffer("_SelectionBuffer", _selectionBuffer);
-            _pointMaterial.SetVector("_MeshFactoryScreenSize", new Vector2(previewRect.width, previewRect.height));
+            _pointMaterial.SetVector("_MeshFactoryScreenSize", windowSize);
+            _pointMaterial.SetVector("_PreviewRect", new Vector4(previewRect.x, previewRect.y, previewRect.width, previewRect.height));
+            _pointMaterial.SetVector("_GUIOffset", guiOffset);
             _pointMaterial.SetFloat("_PointSize", pointSize);
-
-            // 1頂点 = 1インスタンス、6頂点/インスタンス (2 triangles)
-            Graphics.DrawProcedural(
-                _pointMaterial,
-                new Bounds(Vector3.zero, Vector3.one * 10000),
-                MeshTopology.Triangles,
-                6,              // 頂点数/インスタンス
-                _vertexCount    // インスタンス数
-            );
+            _pointMaterial.SetFloat("_Alpha", alpha);
+            
+            // IMGUI描画コンテキストで描画
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0, windowSize.x, windowSize.y, 0);
+            
+            _pointMaterial.SetPass(0);
+            Graphics.DrawProceduralNow(MeshTopology.Triangles, 6, _vertexCount);
+            
+            GL.PopMatrix();
         }
 
-        /// <summary>
-        /// 線分を描画
-        /// </summary>
-        public void DrawLines(Rect previewRect, float lineWidth = 2f)
+        public void DrawLines(Rect previewRect, Vector2 windowSize, Vector2 guiOffset, float lineWidth = 2f, float alpha = 1f, Color? edgeColor = null)
         {
-            if (!_initialized || _lineCount == 0 || _lineMaterial == null)
-                return;
-
+            if (!_initialized || _lineCount == 0 || _lineMaterial == null) return;
+            
+            // マテリアルにバッファを設定
             _lineMaterial.SetBuffer("_ScreenPositionBuffer", _screenPositionBuffer);
             _lineMaterial.SetBuffer("_LineBuffer", _lineBuffer);
             _lineMaterial.SetBuffer("_LineVisibilityBuffer", _lineVisibilityBuffer);
-            _lineMaterial.SetVector("_MeshFactoryScreenSize", new Vector2(previewRect.width, previewRect.height));
+            _lineMaterial.SetBuffer("_LineSelectionBuffer", _lineSelectionBuffer);
+            _lineMaterial.SetVector("_MeshFactoryScreenSize", windowSize);
+            _lineMaterial.SetVector("_PreviewRect", new Vector4(previewRect.x, previewRect.y, previewRect.width, previewRect.height));
+            _lineMaterial.SetVector("_GUIOffset", guiOffset);
             _lineMaterial.SetFloat("_LineWidth", lineWidth);
-
-            // 1線分 = 1インスタンス、6頂点/インスタンス (2 triangles)
-            Graphics.DrawProcedural(
-                _lineMaterial,
-                new Bounds(Vector3.zero, Vector3.one * 10000),
-                MeshTopology.Triangles,
-                6,              // 頂点数/インスタンス
-                _lineCount      // インスタンス数
-            );
+            _lineMaterial.SetFloat("_Alpha", alpha);
+            _lineMaterial.SetColor("_EdgeColor", edgeColor ?? new Color(0f, 1f, 0.5f, 0.9f));
+            _lineMaterial.SetColor("_SelectedEdgeColor", new Color(0f, 1f, 1f, 1f)); // シアン
+            
+            // IMGUI描画コンテキストで描画
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0, windowSize.x, windowSize.y, 0);
+            
+            _lineMaterial.SetPass(0);
+            Graphics.DrawProceduralNow(MeshTopology.Triangles, 6, _lineCount);
+            
+            GL.PopMatrix();
         }
-
-        // ================================================================
-        // クリーンアップ
-        // ================================================================
 
         private void ReleaseBuffers()
         {
@@ -394,7 +355,8 @@ namespace MeshFactory.Rendering
             _faceVisibilityBuffer?.Release();
             _lineVisibilityBuffer?.Release();
             _selectionBuffer?.Release();
-
+            _lineSelectionBuffer?.Release();
+            
             _positionBuffer = null;
             _lineBuffer = null;
             _faceVertexIndexBuffer = null;
@@ -405,40 +367,34 @@ namespace MeshFactory.Rendering
             _faceVisibilityBuffer = null;
             _lineVisibilityBuffer = null;
             _selectionBuffer = null;
-
+            _lineSelectionBuffer = null;
+            
             _vertexCount = 0;
             _faceCount = 0;
             _lineCount = 0;
             _cachedMeshData = null;
         }
 
-        /// <summary>
-        /// バッファを無効化（メッシュ変更時）
-        /// </summary>
         public void InvalidateBuffers()
         {
             _cachedMeshData = null;
         }
 
-        /// <summary>
-        /// リソースを解放
-        /// </summary>
         public void Dispose()
         {
             ReleaseBuffers();
-
+            
             if (_pointMaterial != null)
             {
                 UnityEngine.Object.DestroyImmediate(_pointMaterial);
-                _pointMaterial = null;
             }
-
             if (_lineMaterial != null)
             {
                 UnityEngine.Object.DestroyImmediate(_lineMaterial);
-                _lineMaterial = null;
             }
-
+            
+            _pointMaterial = null;
+            _lineMaterial = null;
             _initialized = false;
         }
     }

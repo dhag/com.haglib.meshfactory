@@ -1,5 +1,6 @@
 // Assets/Editor/MeshFactory/SimpleMeshFactory/SimpleMeshFactory_Preview.cs
 // プレビュー描画（ワイヤーフレーム、選択オーバーレイ、頂点ハンドル）
+// GPU描画対応版
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -12,10 +13,13 @@ using static MeshFactory.Gizmo.GLGizmoDrawer;
 public partial class SimpleMeshFactory
 {
     // ================================================================
-    // エッジキャッシュ（Phase 2 GPU描画で使用）
+    // GPU描画
     // ================================================================
 
     private MeshEdgeCache _edgeCache;
+    private MeshGPURenderer _gpuRenderer;
+    private bool _useGPURendering = true;  // GPU描画有効フラグ
+    private bool _gpuRenderingAvailable = false;
 
     /// <summary>
     /// 描画キャッシュを初期化（OnEnableで呼び出し）
@@ -23,6 +27,20 @@ public partial class SimpleMeshFactory
     private void InitializeDrawCache()
     {
         _edgeCache = new MeshEdgeCache();
+
+        // GPU描画初期化
+        _gpuRenderer = new MeshGPURenderer();
+
+        var computeShader = Resources.Load<ComputeShader>("Compute2D_GPU");
+        var pointShader = Shader.Find("MeshFactory/Point");
+        var lineShader = Shader.Find("MeshFactory/Line");
+
+        _gpuRenderingAvailable = _gpuRenderer.Initialize(computeShader, pointShader, lineShader);
+
+        if (!_gpuRenderingAvailable)
+        {
+            Debug.LogWarning("SimpleMeshFactory: GPU Rendering not available, using CPU fallback");
+        }
     }
 
     /// <summary>
@@ -31,6 +49,10 @@ public partial class SimpleMeshFactory
     private void CleanupDrawCache()
     {
         _edgeCache?.Clear();
+
+        _gpuRenderer?.Dispose();
+        _gpuRenderer = null;
+        _gpuRenderingAvailable = false;
 
         if (_polygonMaterial != null)
         {
@@ -41,18 +63,16 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// エッジキャッシュを無効化（メッシュ変更時に呼び出し）
-    /// <summary>
-    /// エッジキャッシュを無効化（メッシュ変更時に呼び出し）
     /// </summary>
     private void InvalidateDrawCache()
     {
         _edgeCache?.Invalidate();
+        _gpuRenderer?.InvalidateBuffers();
     }
 
     // ================================================================
     // 中央ペイン：プレビュー
     // ================================================================
-
     private void DrawPreview()
     {
         Rect rect = GUILayoutUtility.GetRect(
@@ -120,12 +140,58 @@ public partial class SimpleMeshFactory
         Texture result = _preview.EndPreview();
         GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
 
-        // ワイヤーフレーム描画
-        if (_showWireframe)
+        // ================================================================
+        // ワイヤーフレーム・頂点描画（GPU/CPU切り替え）
+        // ================================================================
+        bool useGPU = _useGPURendering && _gpuRenderingAvailable;
+
+        if (useGPU)
         {
             if (_showSelectedMeshOnly)
             {
-                DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget, true);
+                // 選択メッシュのみGPU描画
+                DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+            }
+            else
+            {
+                // 非選択メッシュを先に描画（下のレイヤー）
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    if (i == _selectedIndex) continue;
+                    var ctx = _meshContextList[i];
+                    if (ctx?.Data == null) continue;
+                    DrawWithGPU(rect, ctx, camPos, false);
+                }
+                
+                // 選択メッシュを最後に描画（上のレイヤー）
+                DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+            }
+        }
+        else
+        {
+            // CPU描画（従来方式）
+            if (_showWireframe)
+            {
+                if (_showSelectedMeshOnly)
+                {
+                    DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget, true);
+                }
+                else
+                {
+                    for (int i = 0; i < _meshContextList.Count; i++)
+                    {
+                        var ctx = _meshContextList[i];
+                        if (ctx?.Data == null) continue;
+                        bool isActive = (i == _selectedIndex);
+                        DrawWireframeOverlay(rect, ctx.Data, camPos, _cameraTarget, isActive);
+                    }
+                }
+            }
+
+            // 頂点描画（CPU）
+            if (_showSelectedMeshOnly)
+            {
+                DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget, true);
             }
             else
             {
@@ -134,35 +200,19 @@ public partial class SimpleMeshFactory
                     var ctx = _meshContextList[i];
                     if (ctx?.Data == null) continue;
                     bool isActive = (i == _selectedIndex);
-                    DrawWireframeOverlay(rect, ctx.Data, camPos, _cameraTarget, isActive);
+                    DrawVertexHandles(rect, ctx.Data, camPos, _cameraTarget, isActive);
                 }
             }
+        }
 
-            // ミラーワイヤーフレーム描画
-            if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
-            {
-                DrawMirroredWireframe(rect, meshContext.Data, camPos, _cameraTarget);
-            }
+        // ミラーワイヤーフレーム描画（常にCPU）
+        if (_showWireframe && _symmetrySettings != null && _symmetrySettings.IsEnabled)
+        {
+            DrawMirroredWireframe(rect, meshContext.Data, camPos, _cameraTarget);
         }
 
         // 選択状態のオーバーレイ描画
-        DrawSelectionOverlay(rect, meshContext.Data, camPos, _cameraTarget);
-
-        // 頂点描画
-        if (_showSelectedMeshOnly)
-        {
-            DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget, true);
-        }
-        else
-        {
-            for (int i = 0; i < _meshContextList.Count; i++)
-            {
-                var ctx = _meshContextList[i];
-                if (ctx?.Data == null) continue;
-                bool isActive = (i == _selectedIndex);
-                DrawVertexHandles(rect, ctx.Data, camPos, _cameraTarget, isActive);
-            }
-        }
+        DrawSelectionOverlay(rect, meshContext.Data, camPos, _cameraTarget, useGPU);
 
         // ローカル原点マーカー
         DrawOriginMarker(rect, camPos, _cameraTarget);
@@ -182,6 +232,125 @@ public partial class SimpleMeshFactory
         {
             Bounds meshBounds = meshContext.Data != null ? meshContext.Data.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
             DrawSymmetryPlane(rect, camPos, _cameraTarget, meshBounds);
+        }
+    }
+
+    // ================================================================
+    // GPU描画メソッド
+    // ================================================================
+
+    /// <summary>
+    /// GPU描画（isSelected: trueなら選択メッシュとして明るく描画）
+    /// </summary>
+    private void DrawWithGPU(Rect rect, MeshContext meshContext, Vector3 camPos, bool isSelected, HashSet<int> selectedVertices = null)
+    {
+        if (_gpuRenderer == null || meshContext?.Data == null)
+            return;
+
+        Vector2 windowSize = new Vector2(position.width, position.height);
+        Vector2 guiOffset = Vector2.zero;
+        
+        float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
+        Rect adjustedRect = new Rect(rect.x, rect.y + tabHeight, rect.width, rect.height - tabHeight);
+
+        // バッファ更新（メッシュが変わると自動更新）
+        _gpuRenderer.UpdateBuffers(meshContext.Data, _edgeCache);
+        
+        // 選択状態更新（選択メッシュのみ）
+        _gpuRenderer.UpdateSelection(isSelected ? selectedVertices : null);
+        
+        // 線分選択状態更新（選択メッシュのみ）
+        if (isSelected && _selectionState != null && _selectionState.Edges.Count > 0)
+        {
+            // EdgeをタプルHashSetに変換
+            var edgeTuples = new HashSet<(int, int)>();
+            foreach (var edge in _selectionState.Edges)
+            {
+                int v1 = edge.V1 < edge.V2 ? edge.V1 : edge.V2;
+                int v2 = edge.V1 < edge.V2 ? edge.V2 : edge.V1;
+                edgeTuples.Add((v1, v2));
+            }
+            _gpuRenderer.UpdateLineSelection(edgeTuples, _edgeCache);
+        }
+        else
+        {
+            _gpuRenderer.UpdateLineSelection(null, _edgeCache);
+        }
+
+        Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
+        _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize);
+
+        // アルファ：選択=1.0、非選択=0.4
+        float alpha = isSelected ? 1f : 0.4f;
+        float pointSize = isSelected ? 8f : 4f;
+
+        if (_showWireframe)
+        {
+            // 選択メッシュ: 緑、非選択メッシュ: グレー
+            Color edgeColor = isSelected 
+                ? new Color(0f, 1f, 0.5f, 0.9f)   // 緑
+                : new Color(0.5f, 0.5f, 0.5f, 0.7f); // グレー
+            _gpuRenderer.DrawLines(adjustedRect, windowSize, guiOffset, 2f, alpha, edgeColor);
+        }
+
+        if (_showVertices)
+        {
+            _gpuRenderer.DrawPoints(adjustedRect, windowSize, guiOffset, pointSize, alpha);
+        }
+
+        // インデックス表示は選択メッシュのみ
+        if (_showVertexIndices && isSelected)
+        {
+            DrawVertexIndices(rect, meshContext.Data, camPos, _cameraTarget);
+        }
+        
+        // 矩形選択オーバーレイは選択メッシュのみ
+        if (isSelected && _editState == VertexEditState.BoxSelecting)
+        {
+            DrawBoxSelectOverlay();
+        }
+    }
+
+    /// <summary>
+    /// MVP行列を計算
+    /// </summary>
+    private Matrix4x4 CalculateMVPMatrix(Rect rect, Vector3 camPos)
+    {
+        Vector3 forward = (_cameraTarget - camPos).normalized;
+        Quaternion lookRot = Quaternion.LookRotation(forward, Vector3.up);
+        Quaternion rollRot = Quaternion.AngleAxis(_rotationZ, Vector3.forward);
+        Quaternion camRot = lookRot * rollRot;
+
+        Matrix4x4 camMatrix = Matrix4x4.TRS(camPos, camRot, Vector3.one);
+        Matrix4x4 view = camMatrix.inverse;
+        view.m20 *= -1; view.m21 *= -1; view.m22 *= -1; view.m23 *= -1;
+
+        float aspect = rect.width / rect.height;
+        Matrix4x4 proj = Matrix4x4.Perspective(_preview.cameraFieldOfView, aspect, 0.01f, 100f);
+
+        return proj * view;
+    }
+
+    /// <summary>
+    /// 頂点インデックス表示（GPU描画時のCPUフォールバック）
+    /// </summary>
+    private void DrawVertexIndices(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    {
+        if (meshData == null)
+            return;
+
+        for (int i = 0; i < meshData.VertexCount; i++)
+        {
+            Vector3 worldPos = meshData.Vertices[i].Position;
+            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+
+            if (!previewRect.Contains(screenPos))
+                continue;
+
+            GUI.Label(
+                new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16),
+                i.ToString(),
+                EditorStyles.miniLabel);
         }
     }
 
@@ -212,7 +381,6 @@ public partial class SimpleMeshFactory
             {
                 mat = defaultMat;
             }
-
             _preview.DrawMesh(mesh, Matrix4x4.identity, mat, i);
         }
     }
@@ -230,17 +398,14 @@ public partial class SimpleMeshFactory
 
         float axisLength = 0.2f;
 
-        // X軸（赤）点線
         Vector3 xEnd = origin + Vector3.right * axisLength;
         Vector2 xScreen = WorldToPreviewPos(xEnd, previewRect, camPos, lookAt);
         DrawDottedLine(originScreen, xScreen, new Color(1f, 0.3f, 0.3f, 0.7f));
 
-        // Y軸（緑）点線
         Vector3 yEnd = origin + Vector3.up * axisLength;
         Vector2 yScreen = WorldToPreviewPos(yEnd, previewRect, camPos, lookAt);
         DrawDottedLine(originScreen, yScreen, new Color(0.3f, 1f, 0.3f, 0.7f));
 
-        // Z軸（青）点線
         Vector3 zEnd = origin + Vector3.forward * axisLength;
         Vector2 zScreen = WorldToPreviewPos(zEnd, previewRect, camPos, lookAt);
         DrawDottedLine(originScreen, zScreen, new Color(0.3f, 0.3f, 1f, 0.7f));
@@ -256,66 +421,78 @@ public partial class SimpleMeshFactory
     }
 
     // ================================================================
-    // ワイヤーフレーム描画（最適化版）
+    // ワイヤーフレーム描画（CPU版）
     // ================================================================
 
     /// <summary>
-    /// ワイヤーフレーム描画
+    /// ワイヤーフレーム描画（MeshDataベース）
     /// </summary>
     private void DrawWireframeOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
     {
         if (meshData == null)
             return;
 
-        // 色設定
-        Color edgeColor = isActiveMesh
-            ? new Color(0f, 1f, 0.5f, 0.9f)
-            : new Color(0.4f, 0.4f, 0.4f, 0.5f);
-
-        Color auxLineColor = new Color(1f, 0.3f, 1f, 0.9f);
-
-        UnityEditor_Handles.BeginGUI();
-
-        // エッジ描画（HashSetで重複排除）
         var edges = new HashSet<(int, int)>();
-        
+        var lines = new List<(int, int)>();
+
         foreach (var face in meshData.Faces)
         {
             if (face.VertexCount == 2)
             {
-                // 補助線
-                Vector3 p1World = meshData.Vertices[face.VertexIndices[0]].Position;
-                Vector3 p2World = meshData.Vertices[face.VertexIndices[1]].Position;
-                Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
-                Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
-
-                UnityEditor_Handles.color = auxLineColor;
-                UnityEditor_Handles.DrawAAPolyLine(2f,
-                    new Vector3(p1.x, p1.y, 0),
-                    new Vector3(p2.x, p2.y, 0));
+                lines.Add((face.VertexIndices[0], face.VertexIndices[1]));
             }
             else if (face.VertexCount >= 3)
             {
-                // 通常エッジ
                 for (int i = 0; i < face.VertexCount; i++)
                 {
                     int a = face.VertexIndices[i];
                     int b = face.VertexIndices[(i + 1) % face.VertexCount];
-
-                    // 正規化
+                    // エッジを正規化して追加
                     if (a > b) (a, b) = (b, a);
-                    if (!edges.Add((a, b))) continue;
-
-                    Vector3 p1World = meshData.Vertices[a].Position;
-                    Vector3 p2World = meshData.Vertices[b].Position;
-                    Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
-                    Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
-
-                    UnityEditor_Handles.color = edgeColor;
-                    UnityEditor_Handles.DrawAAPolyLine(2f,
-                        new Vector3(p1.x, p1.y, 0),
-                        new Vector3(p2.x, p2.y, 0));
+                    edges.Add((a, b));
                 }
+            }
+        }
+
+        UnityEditor_Handles.BeginGUI();
+
+        UnityEditor_Handles.color = isActiveMesh
+            ? new Color(0f, 1f, 0.5f, 0.9f)
+            : new Color(0.4f, 0.4f, 0.4f, 0.5f);
+        foreach (var edge in edges)
+        {
+            Vector3 p1World = meshData.Vertices[edge.Item1].Position;
+            Vector3 p2World = meshData.Vertices[edge.Item2].Position;
+
+            Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
+            Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
+
+            if (previewRect.Contains(p1) || previewRect.Contains(p2))
+            {
+                UnityEditor_Handles.DrawLine(
+                    new Vector3(p1.x, p1.y, 0),
+                    new Vector3(p2.x, p2.y, 0));
+            }
+        }
+
+        UnityEditor_Handles.color = new Color(1f, 0.3f, 1f, 0.9f);
+        foreach (var line in lines)
+        {
+            if (line.Item1 < 0 || line.Item1 >= meshData.VertexCount ||
+                line.Item2 < 0 || line.Item2 >= meshData.VertexCount)
+                continue;
+
+            Vector3 p1World = meshData.Vertices[line.Item1].Position;
+            Vector3 p2World = meshData.Vertices[line.Item2].Position;
+
+            Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
+            Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
+
+            if (previewRect.Contains(p1) || previewRect.Contains(p2))
+            {
+                UnityEditor_Handles.DrawAAPolyLine(2f,
+                    new Vector3(p1.x, p1.y, 0),
+                    new Vector3(p2.x, p2.y, 0));
             }
         }
 
@@ -323,13 +500,13 @@ public partial class SimpleMeshFactory
     }
 
     // ================================================================
-    // 選択オーバーレイ
+    // 選択オーバーレイ描画
     // ================================================================
 
     /// <summary>
     /// 選択状態のオーバーレイを描画
     /// </summary>
-    private void DrawSelectionOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawSelectionOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool gpuRendering = false)
     {
         if (meshData == null || _selectionState == null)
             return;
@@ -337,10 +514,14 @@ public partial class SimpleMeshFactory
         try
         {
             UnityEditor_Handles.BeginGUI();
-
             DrawSelectedFaces(previewRect, meshData, camPos, lookAt);
-            DrawSelectedEdges(previewRect, meshData, camPos, lookAt);
-            DrawSelectedLines(previewRect, meshData, camPos, lookAt);
+            
+            // GPU描画時はエッジと線分はシェーダーで描画済みなのでスキップ
+            if (!gpuRendering)
+            {
+                DrawSelectedEdges(previewRect, meshData, camPos, lookAt);
+                DrawSelectedLines(previewRect, meshData, camPos, lookAt);
+            }
         }
         finally
         {
@@ -348,9 +529,6 @@ public partial class SimpleMeshFactory
         }
     }
 
-    /// <summary>
-    /// 選択された面を描画
-    /// </summary>
     private void DrawSelectedFaces(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
     {
         if (_selectionState.Faces.Count == 0)
@@ -389,9 +567,6 @@ public partial class SimpleMeshFactory
         }
     }
 
-    /// <summary>
-    /// 選択されたエッジを描画
-    /// </summary>
     private void DrawSelectedEdges(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
     {
         if (_selectionState.Edges.Count == 0)
@@ -420,9 +595,6 @@ public partial class SimpleMeshFactory
         }
     }
 
-    /// <summary>
-    /// 選択された補助線を描画
-    /// </summary>
     private void DrawSelectedLines(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
     {
         if (_selectionState.Lines.Count == 0)
@@ -455,15 +627,9 @@ public partial class SimpleMeshFactory
     }
 
     // ================================================================
-    // 頂点ハンドル描画（最適化版）
+    // 頂点ハンドル描画（CPU版）
     // ================================================================
 
-    /// <summary>
-    /// 頂点ハンドル描画
-    /// </summary>
-    /// <summary>
-    /// 頂点ハンドル描画
-    /// </summary>
     private void DrawVertexHandles(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
     {
         if (!_showVertices || meshData == null)
@@ -471,76 +637,64 @@ public partial class SimpleMeshFactory
 
         float handleSize = isActiveMesh ? 8f : 4f;
 
-        bool vertexModeEnabled = _selectionState != null && _selectionState.Mode.Has(MeshSelectMode.Vertex);
-        float alpha = vertexModeEnabled ? 1f : 0.4f;
-        if (!isActiveMesh) alpha *= 0.5f;
-
-        Color normalFill = isActiveMesh
-            ? new Color(1f, 1f, 1f, alpha)
-            : new Color(0.5f, 0.5f, 0.5f, alpha);
-        Color normalBorder = isActiveMesh
-            ? new Color(0.5f, 0.5f, 0.5f, alpha)
-            : new Color(0.3f, 0.3f, 0.3f, alpha);
-        Color selectedFill = new Color(1f, 0.8f, 0f, alpha);
-        Color selectedBorder = new Color(1f, 0f, 0f, alpha);
-
-        // Pass 1: 頂点描画
-        UnityEditor_Handles.BeginGUI();
-
         for (int i = 0; i < meshData.VertexCount; i++)
         {
-            Vector3 worldPos = meshData.Vertices[i].Position;
-            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+            Vector2 screenPos = WorldToPreviewPos(meshData.Vertices[i].Position, previewRect, camPos, lookAt);
 
             if (!previewRect.Contains(screenPos))
                 continue;
 
-            bool isSelected = isActiveMesh && _selectedVertices != null && _selectedVertices.Contains(i);
-
-            // 塗りつぶし
             Rect handleRect = new Rect(
                 screenPos.x - handleSize / 2,
                 screenPos.y - handleSize / 2,
                 handleSize,
                 handleSize);
 
-            UnityEditor_Handles.DrawRect(handleRect, isSelected ? selectedFill : normalFill);
+            bool isSelected = isActiveMesh && _selectedVertices.Contains(i);
 
-            // 枠線
-            DrawRectBorder(handleRect, isSelected ? selectedBorder : normalBorder);
-        }
+            bool vertexModeEnabled = _selectionState != null && _selectionState.Mode.Has(MeshSelectMode.Vertex);
+            float alpha = vertexModeEnabled ? 1f : 0.4f;
+            if (!isActiveMesh) alpha *= 0.5f;
 
-        UnityEditor_Handles.EndGUI();
+            UnityEditor_Handles.BeginGUI();
 
-        // Pass 2: インデックス表示（別パスで描画）
-        if (_showVertexIndices && isActiveMesh)
-        {
-            for (int i = 0; i < meshData.VertexCount; i++)
+            Color col;
+            Color borderCol;
+            if (!isActiveMesh)
             {
-                Vector3 worldPos = meshData.Vertices[i].Position;
-                Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+                col = new Color(0.5f, 0.5f, 0.5f, alpha);
+                borderCol = new Color(0.3f, 0.3f, 0.3f, alpha);
+            }
+            else if (isSelected)
+            {
+                col = new Color(1f, 0.8f, 0f, alpha);
+                borderCol = new Color(1f, 0f, 0f, alpha);
+            }
+            else
+            {
+                col = new Color(1f, 1f, 1f, alpha);
+                borderCol = new Color(0.5f, 0.5f, 0.5f, alpha);
+            }
+            UnityEditor_Handles.DrawRect(handleRect, col);
+            DrawRectBorder(handleRect, borderCol);
 
-                if (!previewRect.Contains(screenPos))
-                    continue;
+            UnityEditor_Handles.EndGUI();
 
-                GUI.Label(
-                    new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16),
-                    i.ToString(),
-                    EditorStyles.miniLabel);
+            if (_showVertexIndices && isActiveMesh)
+            {
+                GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16), i.ToString(), EditorStyles.miniLabel);
             }
         }
 
-        // 矩形選択オーバーレイ
         if (isActiveMesh && _editState == VertexEditState.BoxSelecting)
         {
             DrawBoxSelectOverlay();
         }
     }
-    /// <summary>
-    /// 矩形選択オーバーレイを描画
-    /// </summary>
+
     private void DrawBoxSelectOverlay()
     {
+        UnityEditor_Handles.BeginGUI();
         Rect selectRect = new Rect(
             Mathf.Min(_boxSelectStart.x, _boxSelectEnd.x),
             Mathf.Min(_boxSelectStart.y, _boxSelectEnd.y),
@@ -548,9 +702,12 @@ public partial class SimpleMeshFactory
             Mathf.Abs(_boxSelectEnd.y - _boxSelectStart.y)
         );
 
-        UnityEditor_Handles.BeginGUI();
-        UnityEditor_Handles.DrawRect(selectRect, new Color(0.3f, 0.6f, 1f, 0.2f));
-        DrawRectBorder(selectRect, new Color(0.3f, 0.6f, 1f, 0.8f));
+        Color fillColor = new Color(0.3f, 0.6f, 1f, 0.2f);
+        UnityEditor_Handles.DrawRect(selectRect, fillColor);
+
+        Color borderColor = new Color(0.3f, 0.6f, 1f, 0.8f);
+        DrawRectBorder(selectRect, borderColor);
+
         UnityEditor_Handles.EndGUI();
     }
 }
