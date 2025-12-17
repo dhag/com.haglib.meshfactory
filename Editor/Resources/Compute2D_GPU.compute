@@ -1,0 +1,212 @@
+// Compute2D_GPU.compute
+// メッシュエディタ用GPU計算シェーダー
+// - 頂点座標のスクリーン変換
+// - 面の表裏判定（バックフェースカリング）
+// - 頂点・線分の可視性計算
+
+#pragma kernel ClearBuffers
+#pragma kernel ComputeScreenPositions
+#pragma kernel ComputeFaceVisibility
+#pragma kernel ComputeLineVisibility
+
+// ============================================================
+// 構造体定義
+// ============================================================
+
+struct LineSegment
+{
+    int v1;
+    int v2;
+    int faceIndex;
+    int lineType;  // 0=通常エッジ, 1=補助線
+};
+
+// ============================================================
+// バッファ
+// ============================================================
+
+// 入力（CPU→GPU、メッシュ変更時のみ更新）
+StructuredBuffer<float3> _PositionBuffer;           // 頂点ワールド座標
+StructuredBuffer<LineSegment> _LineBuffer;          // 線分データ
+ByteAddressBuffer _FaceVertexIndexBuffer;           // 面の頂点インデックス（フラット）
+ByteAddressBuffer _FaceVertexOffsetBuffer;          // 面ごとのオフセット
+ByteAddressBuffer _FaceVertexCountBuffer;           // 面ごとの頂点数
+
+// 出力（毎フレーム更新）
+RWStructuredBuffer<float4> _ScreenPositionBuffer;   // スクリーン座標(xy) + 深度(z) + valid(w)
+RWStructuredBuffer<float> _VertexVisibilityBuffer;  // 頂点の可視性 (0 or 1)
+RWStructuredBuffer<float> _FaceVisibilityBuffer;    // 面の可視性 (0 or 1)
+RWStructuredBuffer<float> _LineVisibilityBuffer;    // 線分の可視性 (0 or 1)
+
+// ============================================================
+// 定数
+// ============================================================
+
+float4x4 _MATRIX_MVP;
+float4 _ScreenParams;  // (width, height, 1/width, 1/height)
+uint _VertexCount;
+uint _FaceCount;
+uint _LineCount;
+
+// ============================================================
+// Pass 0: バッファクリア
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ClearBuffers(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    
+    if (index < _VertexCount)
+    {
+        _VertexVisibilityBuffer[index] = 0.0;
+        _ScreenPositionBuffer[index] = float4(-10000, -10000, 0, 0);
+    }
+    
+    if (index < _FaceCount)
+    {
+        _FaceVisibilityBuffer[index] = 0.0;
+    }
+    
+    if (index < _LineCount)
+    {
+        _LineVisibilityBuffer[index] = 0.0;
+    }
+}
+
+// ============================================================
+// Pass 1: 頂点座標変換（ワールド → スクリーン）
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeScreenPositions(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _VertexCount)
+        return;
+    
+    float3 worldPos = _PositionBuffer[index];
+    float4 clipPos = mul(_MATRIX_MVP, float4(worldPos, 1.0));
+    
+    // クリップ座標 → スクリーン座標
+    if (clipPos.w > 0.0001)
+    {
+        float2 ndc = clipPos.xy / clipPos.w;
+        float screenX = (ndc.x * 0.5 + 0.5) * _ScreenParams.x;
+        float screenY = (1.0 - (ndc.y * 0.5 + 0.5)) * _ScreenParams.y;
+        float depth = clipPos.z / clipPos.w;
+        
+        _ScreenPositionBuffer[index] = float4(screenX, screenY, depth, 1.0);
+    }
+    else
+    {
+        // カメラの後ろ
+        _ScreenPositionBuffer[index] = float4(-10000, -10000, -10000, 0.0);
+    }
+}
+
+// ============================================================
+// Pass 2: 面の表裏判定 → 頂点可視性に書き込み
+// ============================================================
+
+// 時計回り判定（スクリーン座標系）
+// 全頂点で外積の符号が同じ（全て負）なら時計回り = 表
+bool IsClockwise(float2 vertices[16], int numVertices)
+{
+    // 符号付き面積で判定（より安定）
+    float signedArea = 0;
+    for (int i = 0; i < numVertices; i++)
+    {
+        int next = (i + 1) % numVertices;
+        signedArea += (vertices[next].x - vertices[i].x) * (vertices[next].y + vertices[i].y);
+    }
+    // スクリーン座標系ではY軸が下向きなので、正の面積 = 時計回り = 表
+    return signedArea > 0;
+}
+
+[numthreads(64, 1, 1)]
+void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
+{
+    uint faceIndex = id.x;
+    if (faceIndex >= _FaceCount)
+        return;
+    
+    int vertexCount = asint(_FaceVertexCountBuffer.Load(faceIndex * 4));
+    int offset = asint(_FaceVertexOffsetBuffer.Load(faceIndex * 4));
+    
+    // 2頂点以下の面（補助線など）は常に表示
+    if (vertexCount <= 2)
+    {
+        _FaceVisibilityBuffer[faceIndex] = 1.0;
+        for (int j = 0; j < vertexCount; j++)
+        {
+            int vIdx = asint(_FaceVertexIndexBuffer.Load((offset + j) * 4));
+            _VertexVisibilityBuffer[vIdx] = 1.0;
+        }
+        return;
+    }
+    
+    // スクリーン座標を収集
+    float2 screenVerts[16];
+    bool allValid = true;
+    
+    for (int i = 0; i < vertexCount && i < 16; i++)
+    {
+        int vIdx = asint(_FaceVertexIndexBuffer.Load((offset + i) * 4));
+        float4 screenPos = _ScreenPositionBuffer[vIdx];
+        
+        if (screenPos.w < 0.5)
+        {
+            allValid = false;
+            break;
+        }
+        
+        screenVerts[i] = screenPos.xy;
+    }
+    
+    // 無効な頂点があれば非表示
+    if (!allValid)
+    {
+        _FaceVisibilityBuffer[faceIndex] = 0.0;
+        return;
+    }
+    
+    // 時計回り判定
+    bool isFrontFacing = IsClockwise(screenVerts, vertexCount);
+    _FaceVisibilityBuffer[faceIndex] = isFrontFacing ? 1.0 : 0.0;
+    
+    // 表の面に属する頂点を可視にする
+    if (isFrontFacing)
+    {
+        for (int k = 0; k < vertexCount; k++)
+        {
+            int vIdx = asint(_FaceVertexIndexBuffer.Load((offset + k) * 4));
+            _VertexVisibilityBuffer[vIdx] = 1.0;
+        }
+    }
+}
+
+// ============================================================
+// Pass 3: 線分の可視性を面から取得
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
+{
+    uint lineIndex = id.x;
+    if (lineIndex >= _LineCount)
+        return;
+    
+    LineSegment seg = _LineBuffer[lineIndex];
+    
+    // 補助線（lineType == 1）は常に表示
+    if (seg.lineType == 1)
+    {
+        _LineVisibilityBuffer[lineIndex] = 1.0;
+        return;
+    }
+    
+    // 通常エッジは属する面の可視性を参照
+    float faceVisible = _FaceVisibilityBuffer[seg.faceIndex];
+    _LineVisibilityBuffer[lineIndex] = faceVisible;
+}

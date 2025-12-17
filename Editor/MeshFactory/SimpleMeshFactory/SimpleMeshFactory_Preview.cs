@@ -461,6 +461,9 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 頂点ハンドル描画
     /// </summary>
+    /// <summary>
+    /// 頂点ハンドル描画
+    /// </summary>
     private void DrawVertexHandles(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
     {
         if (!_showVertices || meshData == null)
@@ -481,6 +484,7 @@ public partial class SimpleMeshFactory
         Color selectedFill = new Color(1f, 0.8f, 0f, alpha);
         Color selectedBorder = new Color(1f, 0f, 0f, alpha);
 
+        // Pass 1: 頂点描画
         UnityEditor_Handles.BeginGUI();
 
         for (int i = 0; i < meshData.VertexCount; i++)
@@ -504,10 +508,21 @@ public partial class SimpleMeshFactory
 
             // 枠線
             DrawRectBorder(handleRect, isSelected ? selectedBorder : normalBorder);
+        }
 
-            // インデックス表示
-            if (_showVertexIndices && isActiveMesh)
+        UnityEditor_Handles.EndGUI();
+
+        // Pass 2: インデックス表示（別パスで描画）
+        if (_showVertexIndices && isActiveMesh)
+        {
+            for (int i = 0; i < meshData.VertexCount; i++)
             {
+                Vector3 worldPos = meshData.Vertices[i].Position;
+                Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+
+                if (!previewRect.Contains(screenPos))
+                    continue;
+
                 GUI.Label(
                     new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16),
                     i.ToString(),
@@ -515,15 +530,12 @@ public partial class SimpleMeshFactory
             }
         }
 
-        UnityEditor_Handles.EndGUI();
-
         // 矩形選択オーバーレイ
         if (isActiveMesh && _editState == VertexEditState.BoxSelecting)
         {
             DrawBoxSelectOverlay();
         }
     }
-
     /// <summary>
     /// 矩形選択オーバーレイを描画
     /// </summary>
