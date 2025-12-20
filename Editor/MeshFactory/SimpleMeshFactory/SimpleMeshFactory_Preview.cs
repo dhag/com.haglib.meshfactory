@@ -115,7 +115,11 @@ public partial class SimpleMeshFactory
         // メッシュ描画
         if (_showSelectedMeshOnly)
         {
-            DrawMeshWithMaterials(meshContext, mesh);
+            // 選択メッシュのみ表示モードでもIsVisibleをチェック
+            if (meshContext != null && meshContext.IsVisible)
+            {
+                DrawMeshWithMaterials(meshContext, mesh);
+            }
         }
         else
         {
@@ -123,16 +127,35 @@ public partial class SimpleMeshFactory
             {
                 var ctx = _meshContextList[i];
                 if (ctx?.UnityMesh == null) continue;
+                if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
 
                 bool isSelected = (i == _selectedIndex);
                 DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f);
             }
         }
 
-        // ミラーメッシュ描画
+        // ミラーメッシュ描画/実装が簡易的なので汚い。要改善
         if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
         {
-            DrawMirroredMesh(meshContext, mesh);
+            if (_showSelectedMeshOnly)
+            {
+                if (meshContext != null && meshContext.IsVisible)
+                {
+                    DrawMirroredMesh(meshContext, mesh);// ミラーメッシュ描画/実装が簡易的なので汚い。要改善
+                }
+            }
+            else
+            {
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    var ctx = _meshContextList[i];
+                    if (ctx?.UnityMesh == null) continue;
+                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
+
+                    bool isSelected = (i == _selectedIndex);
+                    DrawMirroredMesh(ctx, ctx.UnityMesh);
+                }
+            }
         }
 
         _preview.camera.Render();
@@ -150,7 +173,10 @@ public partial class SimpleMeshFactory
             if (_showSelectedMeshOnly)
             {
                 // 選択メッシュのみGPU描画
-                DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+                if (meshContext != null && meshContext.IsVisible)
+                {
+                    DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+                }
             }
             else
             {
@@ -160,11 +186,15 @@ public partial class SimpleMeshFactory
                     if (i == _selectedIndex) continue;
                     var ctx = _meshContextList[i];
                     if (ctx?.Data == null) continue;
+                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
                     DrawWithGPU(rect, ctx, camPos, false);
                 }
                 
                 // 選択メッシュを最後に描画（上のレイヤー）
-                DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+                if (meshContext != null && meshContext.IsVisible)
+                {
+                    DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+                }
             }
         }
         else
@@ -174,7 +204,10 @@ public partial class SimpleMeshFactory
             {
                 if (_showSelectedMeshOnly)
                 {
-                    DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget, true);
+                    if (meshContext != null && meshContext.IsVisible)
+                    {
+                        DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget, true);
+                    }
                 }
                 else
                 {
@@ -182,6 +215,7 @@ public partial class SimpleMeshFactory
                     {
                         var ctx = _meshContextList[i];
                         if (ctx?.Data == null) continue;
+                        if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
                         bool isActive = (i == _selectedIndex);
                         DrawWireframeOverlay(rect, ctx.Data, camPos, _cameraTarget, isActive);
                     }
@@ -191,7 +225,10 @@ public partial class SimpleMeshFactory
             // 頂点描画（CPU）
             if (_showSelectedMeshOnly)
             {
-                DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget, true);
+                if (meshContext != null && meshContext.IsVisible)
+                {
+                    DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget, true);
+                }
             }
             else
             {
@@ -199,6 +236,7 @@ public partial class SimpleMeshFactory
                 {
                     var ctx = _meshContextList[i];
                     if (ctx?.Data == null) continue;
+                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
                     bool isActive = (i == _selectedIndex);
                     DrawVertexHandles(rect, ctx.Data, camPos, _cameraTarget, isActive);
                 }
@@ -671,7 +709,7 @@ public partial class SimpleMeshFactory
                 borderCol = new Color(1f, 0f, 0f, alpha);
             }
             else
-            {
+            {//非選択メッシュの頂点？CPU
                 col = new Color(1f, 1f, 1f, alpha);
                 borderCol = new Color(0.5f, 0.5f, 0.5f, alpha);
             }

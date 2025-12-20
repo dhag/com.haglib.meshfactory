@@ -8,6 +8,7 @@ using UnityEngine;
 using MeshFactory.Tools;
 using MeshFactory.Selection;
 using MeshFactory.Localization;
+using MeshFactory.UndoSystem;
 
 public partial class SimpleMeshFactory
 {
@@ -340,14 +341,40 @@ public partial class SimpleMeshFactory
 
                 if (newSelected && !isSelected)
                 {
+                    int oldIndex = _selectedIndex;
+                    
+                    // 選択前のカメラ状態をキャプチャ
+                    var oldCamera = new CameraSnapshot
+                    {
+                        RotationX = _rotationX,
+                        RotationY = _rotationY,
+                        CameraDistance = _cameraDistance,
+                        CameraTarget = _cameraTarget
+                    };
+                    
                     _selectedIndex = i;
                     _selectedVertices.Clear();
                     ResetEditState();
-                    InitVertexOffsets();
+                    InitVertexOffsets();  // カメラがフィット
 
                     var meshContext = _meshContextList[_selectedIndex];
                     LoadMeshContextToUndoController(meshContext);
-                    UpdateTopology();  // 
+                    UpdateTopology();
+
+                    // 選択後のカメラ状態をキャプチャ
+                    var newCamera = new CameraSnapshot
+                    {
+                        RotationX = _rotationX,
+                        RotationY = _rotationY,
+                        CameraDistance = _cameraDistance,
+                        CameraTarget = _cameraTarget
+                    };
+                    
+                    Debug.Log($"[SelectMesh] oldCamera: rotX={oldCamera.RotationX}, rotY={oldCamera.RotationY}, dist={oldCamera.CameraDistance}, target={oldCamera.CameraTarget}");
+                    Debug.Log($"[SelectMesh] newCamera: rotX={newCamera.RotationX}, rotY={newCamera.RotationY}, dist={newCamera.CameraDistance}, target={newCamera.CameraTarget}");
+
+                    // メッシュ選択変更をUndo記録（カメラ状態付き）
+                    _undoController?.RecordMeshSelectionChange(oldIndex, _selectedIndex, oldCamera, newCamera);
                 }
 
                 if (GUILayout.Button("×", GUILayout.Width(20)))
@@ -521,8 +548,14 @@ public partial class SimpleMeshFactory
             return;
 
         // 参照を共有（Cloneしない）- AddFaceToolなどで直接変更されるため
-        _undoController.SetMeshData(meshContext.Data, meshContext.UnityMesh);
+        // 注意: SetMeshDataは呼ばない（_vertexEditStack.Clear()を避けるため）
+        _undoController.MeshContext.MeshData = meshContext.Data;
+        _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
         _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
+        _undoController.MeshContext.Materials = meshContext.Materials != null
+            ? new List<Material>(meshContext.Materials)
+            : new List<Material>();
+        _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
         // 選択状態を同期
         _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
     }

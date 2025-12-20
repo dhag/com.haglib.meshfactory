@@ -22,6 +22,17 @@ using MeshFactory.Rendering;
 public partial class SimpleMeshFactory : EditorWindow
 {
     // ================================================================
+    // メッシュの種類
+    // ================================================================
+    public enum MeshType
+    {
+        Mesh,       // 通常のメッシュ
+        Bone,       // ボーン（将来用）
+        Helper,     // ヘルパーオブジェクト（将来用）
+        Group       // グループ（将来用）
+    }
+
+    // ================================================================
     // メッシュコンテキスト
     //   MeshDataにUnityMeshなどを加えたもの。
     // ================================================================
@@ -40,6 +51,75 @@ public partial class SimpleMeshFactory : EditorWindow
         // マルチマテリアル対応
         public List<Material> Materials = new List<Material>();
         public int CurrentMaterialIndex = 0;
+
+        // ================================================================
+        // オブジェクト属性（MQOからインポート）
+        // ================================================================
+        
+        /// <summary>メッシュの種類</summary>
+        public MeshType Type { get; set; } = MeshType.Mesh;
+        
+        // ----------------------------------------------------------------
+        // 親子関係について
+        // ----------------------------------------------------------------
+        // MQOでは「depth」値で親子関係を表現する（リスト順序に依存）。
+        // しかしdepth値だけでは削除・順序変更で親子関係が破綻する。
+        //
+        // 【設計方針】
+        // - Depth: MQOとの互換用。表示インデント等に使用。
+        // - ParentIndex: 実際の親子関係。削除・移動時はこちらを更新。
+        //
+        // 【運用ルール】
+        // - インポート時: MQOのdepthからParentIndexを計算して設定
+        // - 削除時: 子のParentIndexを親の親に付け替える
+        // - 順序変更時: ParentIndexを新しいインデックスに更新
+        // - エクスポート時: ParentIndexからdepthを再計算
+        // ----------------------------------------------------------------
+        
+        /// <summary>
+        /// 親メッシュのインデックス（-1=ルート、親なし）
+        /// </summary>
+        public int ParentIndex { get; set; } = -1;
+        
+        /// <summary>
+        /// 階層深度（0=ルート、1以上=子）
+        /// MQO互換用。表示のインデント等に使用。
+        /// </summary>
+        public int Depth { get; set; } = 0;
+        
+        /// <summary>可視状態</summary>
+        public bool IsVisible { get; set; } = true;
+        
+        /// <summary>編集禁止（ロック）</summary>
+        public bool IsLocked { get; set; } = false;
+
+        // ================================================================
+        // ミラー設定（MQOからインポート）
+        // ================================================================
+        
+        /// <summary>ミラータイプ (0:なし, 1:分離, 2:結合)</summary>
+        public int MirrorType { get; set; } = 0;
+        
+        /// <summary>ミラー軸 (1:X, 2:Y, 4:Z)</summary>
+        public int MirrorAxis { get; set; } = 1;
+        
+        /// <summary>ミラー距離</summary>
+        public float MirrorDistance { get; set; } = 0f;
+        
+        /// <summary>ミラーが有効か</summary>
+        public bool IsMirrored => MirrorType > 0;
+        
+        /// <summary>ミラー軸をSymmetryAxisに変換</summary>
+        public MeshFactory.Symmetry.SymmetryAxis GetMirrorSymmetryAxis()
+        {
+            switch (MirrorAxis)
+            {
+                case 1: return MeshFactory.Symmetry.SymmetryAxis.X;
+                case 2: return MeshFactory.Symmetry.SymmetryAxis.Y;
+                case 4: return MeshFactory.Symmetry.SymmetryAxis.Z;
+                default: return MeshFactory.Symmetry.SymmetryAxis.X;
+            }
+        }
 
         public MeshContext()
         {
@@ -226,6 +306,7 @@ public partial class SimpleMeshFactory : EditorWindow
 
     // カメラドラッグ用
     private bool _isCameraDragging = false;
+    private bool _cameraRestoredByRecord = false; // MeshSelectionChangeRecord等からカメラ復元済みフラグ
     private float _cameraStartRotX, _cameraStartRotY, _cameraStartRotZ;
     private float _cameraStartDistance;
     private Vector3 _cameraStartTarget;
@@ -291,6 +372,13 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // MeshListをUndoコントローラーに設定
         _undoController.SetMeshList(_meshContextList, OnMeshListChanged);
+        
+        // カメラ復元コールバックを設定
+        if (_undoController.MeshListContext != null)
+        {
+            _undoController.MeshListContext.OnCameraRestoreRequested = OnCameraRestoreRequested;
+            _undoController.MeshListContext.OnFocusMeshListRequested = () => _undoController.FocusMeshList();
+        }
 
         // ModelContextにWorkPlaneを設定
         _model.WorkPlane = _undoController.WorkPlane;
@@ -512,10 +600,17 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // EditorStateContextからUI状態を復元
         var editorState = _undoController.EditorState;
-        _rotationX = editorState.RotationX;
-        _rotationY = editorState.RotationY;
-        _cameraDistance = editorState.CameraDistance;
-        _cameraTarget = editorState.CameraTarget;
+        
+        // カメラ状態はMeshSelectionChangeRecord等から既に復元されている場合はスキップ
+        if (!_cameraRestoredByRecord)
+        {
+            _rotationX = editorState.RotationX;
+            _rotationY = editorState.RotationY;
+            _cameraDistance = editorState.CameraDistance;
+            _cameraTarget = editorState.CameraTarget;
+        }
+        _cameraRestoredByRecord = false; // フラグをリセット
+        
         _showWireframe = editorState.ShowWireframe;
         _showVertices = editorState.ShowVertices;
         _showSelectedMeshOnly = editorState.ShowSelectedMeshOnly;
@@ -607,11 +702,16 @@ public partial class SimpleMeshFactory : EditorWindow
     /// </summary>
     private void OnMeshListChanged()
     {
+        Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
+        Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.SelectedIndex={_undoController?.MeshListContext?.SelectedIndex}");
+        
         // MeshListContextから選択インデックスを取得
         if (_undoController?.MeshListContext != null)
         {
             _selectedIndex = _undoController.MeshListContext.SelectedIndex;
         }
+        
+        Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
 
         // 選択中のメッシュコンテキストをMeshContextに設定
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
@@ -630,7 +730,9 @@ public partial class SimpleMeshFactory : EditorWindow
                 _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
             }
 
+            Debug.Log($"[OnMeshListChanged] Before InitVertexOffsets: _cameraTarget={_cameraTarget}");
             InitVertexOffsets(updateCamera: false);
+            Debug.Log($"[OnMeshListChanged] After InitVertexOffsets: _cameraTarget={_cameraTarget}");
         }
         else
         {
@@ -662,6 +764,24 @@ public partial class SimpleMeshFactory : EditorWindow
             _undoController.MeshContext.SelectedVertices = new HashSet<int>();
         }
 
+        Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
+        Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
+        Repaint();
+    }
+
+    /// <summary>
+    /// カメラ状態を復元（Undo/Redo時のコールバック）
+    /// </summary>
+    private void OnCameraRestoreRequested(CameraSnapshot camera)
+    {
+        Debug.Log($"[OnCameraRestoreRequested] BEFORE: rotX={_rotationX}, rotY={_rotationY}, dist={_cameraDistance}, target={_cameraTarget}");
+        Debug.Log($"[OnCameraRestoreRequested] RESTORING TO: rotX={camera.RotationX}, rotY={camera.RotationY}, dist={camera.CameraDistance}, target={camera.CameraTarget}");
+        _rotationX = camera.RotationX;
+        _rotationY = camera.RotationY;
+        _cameraDistance = camera.CameraDistance;
+        _cameraTarget = camera.CameraTarget;
+        _cameraRestoredByRecord = true; // OnUndoRedoPerformedでの上書きを防ぐ
+        Debug.Log($"[OnCameraRestoreRequested] AFTER: rotX={_rotationX}, rotY={_rotationY}, dist={_cameraDistance}, target={_cameraTarget}");
         Repaint();
     }
 

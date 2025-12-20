@@ -1,6 +1,7 @@
 // Assets/Editor/MeshFactory/Tools/Panels/MQO/Import/MQOImportPanel.cs
 // MQOインポートパネル
 // IToolPanelBase継承、MeshListPanelに準拠
+// v1.1: ImportMode（追加/置換）対応
 
 using System.Collections.Generic;
 using System.IO;
@@ -62,6 +63,11 @@ namespace MeshFactory.MQO
             ["Normals"] = new() { ["en"] = "Normals", ["ja"] = "法線" },
             ["RecalculateNormals"] = new() { ["en"] = "Recalculate Normals", ["ja"] = "法線を再計算" },
             ["SmoothingAngle"] = new() { ["en"] = "Smoothing Angle", ["ja"] = "スムージング角度" },
+
+            // インポートモード（v1.1追加）
+            ["ImportMode"] = new() { ["en"] = "Import Mode", ["ja"] = "インポートモード" },
+            ["ModeAppend"] = new() { ["en"] = "Append (Add to existing)", ["ja"] = "追加（既存に追加）" },
+            ["ModeReplace"] = new() { ["en"] = "Replace (Clear existing)", ["ja"] = "置換（既存を削除）" },
 
             // プレビューセクション
             ["Preview"] = new() { ["en"] = "Preview", ["ja"] = "プレビュー" },
@@ -247,6 +253,12 @@ namespace MeshFactory.MQO
 
             EditorGUILayout.Space(3);
 
+            // インポートモード（v1.1追加）
+            EditorGUILayout.LabelField(T("ImportMode"), EditorStyles.miniLabel);
+            DrawImportModeToggle();
+
+            EditorGUILayout.Space(3);
+
             // 座標変換
             EditorGUILayout.LabelField(T("Coordinate"), EditorStyles.miniLabel);
             _settings.Scale = EditorGUILayout.FloatField(T("Scale"), _settings.Scale);
@@ -275,6 +287,33 @@ namespace MeshFactory.MQO
             EditorGUI.indentLevel--;
         }
 
+        /// <summary>
+        /// インポートモードのトグルボタン描画
+        /// </summary>
+        private void DrawImportModeToggle()
+        {
+            EditorGUILayout.BeginHorizontal();
+            
+            // Appendボタン
+            bool isAppend = _settings.ImportMode == MQOImportMode.Append;
+            GUI.backgroundColor = isAppend ? new Color(0.6f, 0.8f, 1f) : Color.white;
+            if (GUILayout.Button(T("ModeAppend"), EditorStyles.miniButtonLeft))
+            {
+                _settings.ImportMode = MQOImportMode.Append;
+            }
+            
+            // Replaceボタン
+            bool isReplace = _settings.ImportMode == MQOImportMode.Replace;
+            GUI.backgroundColor = isReplace ? new Color(1f, 0.8f, 0.6f) : Color.white;
+            if (GUILayout.Button(T("ModeReplace"), EditorStyles.miniButtonRight))
+            {
+                _settings.ImportMode = MQOImportMode.Replace;
+            }
+            
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+        }
+
         // ================================================================
         // プレビューセクション
         // ================================================================
@@ -298,24 +337,25 @@ namespace MeshFactory.MQO
             EditorGUILayout.LabelField(T("Materials"), _previewDocument.Materials.Count.ToString());
 
             // オブジェクト一覧
-            if (_previewDocument.Objects.Count > 0)
+            EditorGUILayout.Space(3);
+            int shown = 0;
+            int maxShow = 10;
+            foreach (var obj in _previewDocument.Objects)
             {
-                EditorGUILayout.Space(3);
-                EditorGUILayout.LabelField($"{T("Objects")}:", EditorStyles.miniLabel);
-
-                int maxShow = Mathf.Min(_previewDocument.Objects.Count, 10);
-                for (int i = 0; i < maxShow; i++)
+                if (shown >= maxShow)
                 {
-                    var obj = _previewDocument.Objects[i];
-                    string info = $"  {obj.Name} (V:{obj.Vertices.Count} F:{obj.Faces.Count})";
-                    if (!obj.IsVisible) info += $" {T("Hidden")}";
-                    EditorGUILayout.LabelField(info, EditorStyles.miniLabel);
+                    int remaining = _previewDocument.Objects.Count - maxShow;
+                    EditorGUILayout.LabelField(T("AndMore", remaining), EditorStyles.miniLabel);
+                    break;
                 }
 
-                if (_previewDocument.Objects.Count > maxShow)
-                {
-                    EditorGUILayout.LabelField($"  {T("AndMore", _previewDocument.Objects.Count - maxShow)}", EditorStyles.miniLabel);
-                }
+                string label = obj.Name;
+                if (!obj.IsVisible)
+                    label += " " + T("Hidden");
+
+                EditorGUILayout.LabelField($"  {label} (V:{obj.Vertices.Count} F:{obj.Faces.Count})",
+                    EditorStyles.miniLabel);
+                shown++;
             }
 
             EditorGUI.indentLevel--;
@@ -358,10 +398,18 @@ namespace MeshFactory.MQO
                 fixedHeight = 32
             };
 
+            // Replaceモードの場合はボタン色を変える
+            if (_settings.ImportMode == MQOImportMode.Replace)
+            {
+                GUI.backgroundColor = new Color(1f, 0.7f, 0.5f);
+            }
+
             if (GUILayout.Button(T("Import"), buttonStyle))
             {
                 ExecuteImport();
             }
+
+            GUI.backgroundColor = Color.white;
 
             EditorGUI.EndDisabledGroup();
 
@@ -384,19 +432,47 @@ namespace MeshFactory.MQO
                 // コンテキストがあれば追加
                 if (_context != null)
                 {
-                    // バッチ追加（1回のUndoで全部戻る）
-                    if (_context.AddMeshContexts != null)
+                    bool handled = false;
+
+                    // Replaceモード: 1回のUndoで戻せる置換
+                    if (_settings.ImportMode == MQOImportMode.Replace)
                     {
-                        Debug.Log($"[MQOImportPanel] Batch adding {_lastResult.MeshContexts.Count} meshes");
-                        _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
-                    }
-                    else
-                    {
-                        // フォールバック：1つずつ追加
-                        foreach (var meshContext in _lastResult.MeshContexts)
+                        if (_context.ReplaceAllMeshContexts != null)
                         {
-                            Debug.Log($"[MQOImportPanel] Adding MeshContext: {meshContext.Name}");
-                            _context.AddMeshContext?.Invoke(meshContext);
+                            Debug.Log($"[MQOImportPanel] Replace mode: Replacing with {_lastResult.MeshContexts.Count} meshes");
+                            _context.ReplaceAllMeshContexts.Invoke(_lastResult.MeshContexts);
+                            handled = true;
+                        }
+                        else if (_context.ClearAllMeshContexts != null && _context.AddMeshContexts != null)
+                        {
+                            // フォールバック: Clear + Add（2回のUndo）
+                            Debug.LogWarning("[MQOImportPanel] ReplaceAllMeshContexts not available, using Clear + Add");
+                            _context.ClearAllMeshContexts.Invoke();
+                            _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
+                            handled = true;
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[MQOImportPanel] Replace not available, falling back to Append mode");
+                        }
+                    }
+
+                    // Appendモード、またはReplaceのフォールバック
+                    if (!handled)
+                    {
+                        if (_context.AddMeshContexts != null)
+                        {
+                            Debug.Log($"[MQOImportPanel] Append mode: Adding {_lastResult.MeshContexts.Count} meshes");
+                            _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
+                        }
+                        else
+                        {
+                            // フォールバック：1つずつ追加
+                            foreach (var meshContext in _lastResult.MeshContexts)
+                            {
+                                Debug.Log($"[MQOImportPanel] Adding MeshContext: {meshContext.Name}");
+                                _context.AddMeshContext?.Invoke(meshContext);
+                            }
                         }
                     }
                     _context.Repaint?.Invoke();

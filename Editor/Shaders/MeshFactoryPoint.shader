@@ -3,7 +3,7 @@ Shader "MeshFactory/Point"
     Properties
     {
         _PointSize ("Point Size", Float) = 8.0
-        _NormalColor ("Normal Color", Color) = (1, 1, 1, 1)
+        _NormalColor ("Normal Color", Color) = (1, 1, 1, 0.6)//デフォルト色（非選択メッシュ頂点色など）
         _NormalBorderColor ("Normal Border Color", Color) = (0.5, 0.5, 0.5, 1)
         _SelectedColor ("Selected Color", Color) = (1, 0.8, 0, 1)
         _SelectedBorderColor ("Selected Border Color", Color) = (1, 0, 0, 1)

@@ -127,6 +127,13 @@ namespace MeshFactory.Tools
         /// <summary>現在選択中のメッシュにMeshDataを追加（Undo対応）</summary>
         public Action<MeshData, string> AddMeshDataToCurrentMesh { get; set; }
 
+
+        /// <summary>全メッシュをクリア（Replaceインポート用）</summary>
+        public Action ClearAllMeshContexts { get; set; }
+
+        /// <summary>全メッシュを置換（1回のUndoで戻せるReplace）</summary>
+        public Action<IList<MeshContext>> ReplaceAllMeshContexts { get; set; }
+
         // === コールバック ===
 
         /// <summary>選択変更を記録</summary>

@@ -790,29 +790,28 @@ public partial class SimpleMeshFactory
     {
         if (_meshContextList.Count == 0)
         {
-            EditorUtility.DisplayDialog("Export Model", "エクスポートするメッシュがありません。", "OK");
+            EditorUtility.DisplayDialog("Export Project", "エクスポートするメッシュがありません。", "OK");
             return;
         }
 
-        // モデルデータを作成
-        string modelName = _meshContextList.Count > 0 ? _meshContextList[0].Name : "Model";
-        var modelData = ModelData.Create(modelName);
+        // プロジェクトデータを作成
+        string projectName = _meshContextList.Count > 0 ? _meshContextList[0].Name : "Project";
+        var projectData = ProjectData.Create(projectName);
 
-        // メッシュコンテキストを追加
+        // モデルデータを作成
+        var modelData = ModelData.Create(projectName);
+
+        // メッシュコンテキストを追加（FromMeshContextで新属性も含む）
         for (int i = 0; i < _meshContextList.Count; i++)
         {
             var meshContext = _meshContextList[i];
             var selectedVerts = (i == _selectedIndex) ? _selectedVertices : new HashSet<int>();
 
-            var meshContextData = ModelSerializer.ToMeshContextData(
-                meshContext.Data,
-                meshContext.Name,
-                meshContext.ExportSettings,
-                selectedVerts,
-                meshContext.Materials,              // マテリアルリスト
-                meshContext.CurrentMaterialIndex    // カレントマテリアルインデックス
-            );
-            modelData.meshContextList.Add(meshContextData);
+            var meshContextData = ModelSerializer.FromMeshContext(meshContext, selectedVerts);
+            if (meshContextData != null)
+            {
+                modelData.meshContextList.Add(meshContextData);
+            }
         }
 
         // WorkPlane
@@ -843,53 +842,66 @@ public partial class SimpleMeshFactory
             */
         };
 
-        // エクスポート
-        ModelSerializer.ExportWithDialog(modelData, modelName);
+        // プロジェクトにモデルを追加してエクスポート
+        projectData.models.Add(modelData);
+        ProjectSerializer.ExportWithDialog(projectData, projectName);
     }
 
     /// <summary>
-    /// ファイルからモデルをインポート
+    /// ファイルからモデルをインポート（Undo対応）
     /// </summary>
     private void ImportModel()
     {
-        var modelData = ModelSerializer.ImportWithDialog();
-        if (modelData == null) return;
+        var projectData = ProjectSerializer.ImportWithDialog();
+        if (projectData == null || projectData.models.Count == 0) return;
+
+        // 最初のモデルを使用
+        var modelData = projectData.models[0];
 
         // 確認ダイアログ
         if (_meshContextList.Count > 0)
         {
             bool result = EditorUtility.DisplayDialog(
-                "Import Model",
-                "現在のデータを破棄して読み込みますか？\n（Undoはクリアされます）",
+                "Import Project",
+                "現在のデータを破棄して読み込みますか？\n（Ctrl+Zで元に戻せます）",
                 "はい", "キャンセル"
             );
             if (!result) return;
         }
 
-        // 既存データをクリア
+        // Undo記録用：既存メッシュのスナップショットを保存
+        var removedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var snapshot = MeshContextSnapshot.Capture(_meshContextList[i]);
+            removedSnapshots.Add((i, snapshot));
+        }
+        int oldSelectedIndex = _selectedIndex;
+
+        // 変更前のカメラ状態を保存
+        var oldCameraState = new CameraSnapshot
+        {
+            RotationX = _rotationX,
+            RotationY = _rotationY,
+            CameraDistance = _cameraDistance,
+            CameraTarget = _cameraTarget
+        };
+
+        // 既存メッシュをクリア（UnityMeshを破棄）
         CleanupMeshes();
         _meshContextList.Clear();
         _selectedIndex = -1;
         _selectedVertices.Clear();
-        _undoController?.VertexEditStack?.Clear();
+        // 注意: VertexEditStackはクリアしない（Undo可能にするため）
 
-        // メッシュコンテキストを復元
+        // メッシュコンテキストを復元（ToMeshContextで新属性も含めて復元）
         foreach (var meshContextData in modelData.meshContextList)
         {
-            var meshData = ModelSerializer.ToMeshData(meshContextData);
-            if (meshData == null) continue;
-
-            var currentMeshContext = new MeshContext
+            var currentMeshContext = ModelSerializer.ToMeshContext(meshContextData);
+            if (currentMeshContext != null)
             {
-                Name = meshContextData.name ?? "UnityMesh",
-                Data = meshData,
-                UnityMesh = meshData.ToUnityMesh(),
-                OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
-                ExportSettings = ModelSerializer.ToExportSettings(meshContextData.exportSettings),
-                Materials = ModelSerializer.ToMaterials(meshContextData),           // マテリアルリスト復元
-                CurrentMaterialIndex = meshContextData.currentMaterialIndex         // カレントインデックス復元
-            };
-            _meshContextList.Add(currentMeshContext);
+                _meshContextList.Add(currentMeshContext);
+            }
         }
 
         // WorkPlane復元
@@ -932,33 +944,27 @@ public partial class SimpleMeshFactory
             {
                 SetToolByName(state.currentToolName);
             }
-            /*
-            // KnifeToolの設定を復元
-            //ナイフツールの固有設定
-            if (_knifeTool != null)
-            {
-                if (!string.IsNullOrEmpty(state.knifeMode) &&
-                    System.Enum.TryParse<KnifeMode>(state.knifeMode, out var knifeMode))
-                {
-                    _knifeTool.knifeProperty.Mode = knifeMode;
-                }
-                _knifeTool.knifeProperty.EdgeSelect = state.knifeEdgeSelect;
-                _knifeTool.knifeProperty.ChainMode = state.knifeChainMode;
-
-                if (_undoController != null)
-                {
-                    //------------------------
-                    _undoController.EditorState.knifeProperty.Mode = _knifeTool.knifeProperty.Mode;
-                    _undoController.EditorState.knifeProperty.EdgeSelect = _knifeTool.knifeProperty.EdgeSelect;
-                    _undoController.EditorState.knifeProperty.ChainMode = _knifeTool.knifeProperty.ChainMode;
-                    //------------------------
-                }
-            }
-            */
         }
         else if (_meshContextList.Count > 0)
         {
             _selectedIndex = 0;
+        }
+
+        // 変更後のカメラ状態を保存
+        var newCameraState = new CameraSnapshot
+        {
+            RotationX = _rotationX,
+            RotationY = _rotationY,
+            CameraDistance = _cameraDistance,
+            CameraTarget = _cameraTarget
+        };
+
+        // Undo記録用：新メッシュのスナップショットを保存
+        var addedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var snapshot = MeshContextSnapshot.Capture(_meshContextList[i]);
+            addedSnapshots.Add((i, snapshot));
         }
 
         // オフセット配列を初期化
@@ -968,11 +974,38 @@ public partial class SimpleMeshFactory
         var meshContext = _model.CurrentMeshContext;
         if (meshContext != null)
         {
-            _undoController?.SetMeshData(meshContext.Data, meshContext.UnityMesh);
-            _undoController.MeshContext.SelectedVertices = _selectedVertices;
+            // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+            if (_undoController != null)
+            {
+                _undoController.MeshContext.MeshData = meshContext.Data;
+                _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
+                _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
+                _undoController.MeshContext.SelectedVertices = _selectedVertices;
+                _undoController.MeshContext.Materials = meshContext.Materials != null
+                    ? new List<Material>(meshContext.Materials)
+                    : new List<Material>();
+                _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
+            }
         }
 
-        Debug.Log($"[SimpleMeshFactory] Imported model: {modelData.name} ({_meshContextList.Count} meshes)");
+        // Undo記録（プロジェクトインポート）
+        if (_undoController != null)
+        {
+            var record = new MeshListChangeRecord
+            {
+                RemovedMeshContexts = removedSnapshots,
+                AddedMeshContexts = addedSnapshots,
+                OldSelectedIndex = oldSelectedIndex,
+                NewSelectedIndex = _selectedIndex,
+                OldCameraState = oldCameraState,
+                NewCameraState = newCameraState
+            };
+            _undoController.MeshListStack.Record(record, $"Import Project: {projectData.name}");
+            _undoController.FocusMeshList();
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+        }
+
+        Debug.Log($"[SimpleMeshFactory] Imported project: {projectData.name} ({_meshContextList.Count} meshes)");
         Repaint();
     }
 

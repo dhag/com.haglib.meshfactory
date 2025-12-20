@@ -128,10 +128,10 @@ namespace MeshFactory.Symmetry
         /// <summary>
         /// 点をミラー変換
         /// </summary>
-        public Vector3 MirrorPoint(Vector3 point)
-        {
-            return GetMirrorMatrix().MultiplyPoint3x4(point);
-        }
+        //public Vector3 MirrorPoint(Vector3 point)
+        //{
+        //    return GetMirrorMatrix().MultiplyPoint3x4(point);
+        //}
 
         /// <summary>
         /// 法線をミラー変換（スケールのみ適用）

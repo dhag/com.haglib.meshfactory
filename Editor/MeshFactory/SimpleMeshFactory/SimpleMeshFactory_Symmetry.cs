@@ -119,12 +119,38 @@ public partial class SimpleMeshFactory
 
     // ================================================================
     // ミラーメッシュ描画
+    // ミラーメッシュ描画/実装が簡易的なので汚い。要改善
+    //汚い。汚い。汚い。汚い。汚い。汚い。汚い。汚い。汚い。
+    // 反時計回りになってしまうので裏側を見せている。
     // ================================================================
+    private void DrawMirroredMesh(MeshContext meshContext, Mesh mesh)// ミラーメッシュ描画/実装が簡易的なので汚い。要改善
+    {
+        if (!_symmetrySettings.IsEnabled || !_symmetrySettings.ShowMirrorMesh)
+            return;
+        if (mesh == null)
+            return;
 
+        Matrix4x4 mirrorMatrix = _symmetrySettings.GetMirrorMatrix();
+        Material mirrorMat = GetMirrorMaterial();
+
+        int subMeshCount = mesh.subMeshCount;
+        for (int i = 0; i < subMeshCount; i++)
+        {
+            Material baseMat = null;
+            if (meshContext != null && i < meshContext.Materials.Count)
+            {
+                baseMat = meshContext.Materials[i];
+            }
+            Material mat = (baseMat != null) ? baseMat : mirrorMat;
+
+            // Graphics.DrawMesh を使用（Matrix4x4がそのまま適用される）
+            Graphics.DrawMesh(mesh, mirrorMatrix, mat, 0, _preview.camera, i);
+        }
+    }
     /// <summary>
     /// ミラーメッシュを描画（PreviewRenderUtility用）
     /// </summary>
-    private void DrawMirroredMesh(MeshContext meshContext, Mesh mesh)
+    private void DrawMirroredMesh000(MeshContext meshContext, Mesh mesh)
     {
         if (!_symmetrySettings.IsEnabled || !_symmetrySettings.ShowMirrorMesh)
             return;
@@ -133,6 +159,7 @@ public partial class SimpleMeshFactory
             return;
 
         Matrix4x4 mirrorMatrix = _symmetrySettings.GetMirrorMatrix();
+        //Debug.Log($"MirrorMatrix: {mirrorMatrix}");
         Material mirrorMat = GetMirrorMaterial();
 
         int subMeshCount = mesh.subMeshCount;
@@ -150,6 +177,17 @@ public partial class SimpleMeshFactory
 
             // ミラー行列を適用して描画
             // 注: 面の向きが反転するため、カリングを考慮する必要がある
+
+            //Vector3 scale = Vector3.one;
+            //Vector3 offset = Vector3.zero;
+            //scale.z = -1;
+            Debug.Log($"Axis: {_symmetrySettings.Axis}, " +
+          $"m00(X): {mirrorMatrix.m00}, " +
+          $"m11(Y): {mirrorMatrix.m11}, " +
+          $"m22(Z): {mirrorMatrix.m22}");
+
+            //mirrorMatrix = Matrix4x4.TRS(offset, Quaternion.identity, scale);
+
             _preview.DrawMesh(mesh, mirrorMatrix, mat, i);
         }
     }
@@ -171,11 +209,12 @@ public partial class SimpleMeshFactory
         if (shader != null)
         {
             _mirrorMaterial = new Material(shader);
+            _mirrorMaterial.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off); // 両面描画
             UpdateMirrorMaterialAlpha();
         }
-
         return _mirrorMaterial;
     }
+
 
     /// <summary>
     /// ミラーマテリアルの透明度を更新

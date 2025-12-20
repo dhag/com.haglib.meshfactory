@@ -176,6 +176,57 @@ namespace MeshFactory.MQO
                 result.MeshContexts.Clear();
                 result.MeshContexts.Add(merged);
             }
+
+            // 親子関係を計算（DepthからParentIndexを算出）
+            CalculateParentIndices(result.MeshContexts);
+        }
+
+        /// <summary>
+        /// Depth値から親子関係（ParentIndex）を計算
+        /// MQOのDepth値はリスト順序に依存するため、インポート時に親子関係を確定させる
+        /// </summary>
+        private static void CalculateParentIndices(List<MeshContext> meshContexts)
+        {
+            if (meshContexts == null || meshContexts.Count == 0)
+                return;
+
+            // スタック: (インデックス, Depth) を保持
+            // 現在のDepth以下の最も近い親を見つけるために使用
+            var parentStack = new Stack<(int index, int depth)>();
+
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var ctx = meshContexts[i];
+                int currentDepth = ctx.Depth;
+
+                if (currentDepth == 0)
+                {
+                    // ルートオブジェクト
+                    ctx.ParentIndex = -1;
+                    parentStack.Clear();
+                    parentStack.Push((i, currentDepth));
+                }
+                else
+                {
+                    // 現在のDepthより小さいDepthを持つ最も近い親を探す
+                    while (parentStack.Count > 0 && parentStack.Peek().depth >= currentDepth)
+                    {
+                        parentStack.Pop();
+                    }
+
+                    if (parentStack.Count > 0)
+                    {
+                        ctx.ParentIndex = parentStack.Peek().index;
+                    }
+                    else
+                    {
+                        // 親が見つからない場合はルート扱い
+                        ctx.ParentIndex = -1;
+                    }
+
+                    parentStack.Push((i, currentDepth));
+                }
+            }
         }
 
         // ================================================================
@@ -234,7 +285,15 @@ namespace MeshFactory.MQO
                 Name = mqoObj.Name,
                 Data = meshData,
                 OriginalPositions = originalPositions,
-                Materials = new List<Material>()
+                Materials = new List<Material>(),
+                // オブジェクト属性をコピー
+                Depth = mqoObj.Depth,
+                IsVisible = mqoObj.IsVisible,
+                IsLocked = mqoObj.IsLocked,
+                // ミラー設定をコピー
+                MirrorType = mqoObj.MirrorMode,
+                MirrorAxis = mqoObj.MirrorAxis,
+                MirrorDistance = mqoObj.MirrorDistance
             };
 
             // マテリアル割り当て

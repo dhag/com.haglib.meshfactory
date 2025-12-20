@@ -8,8 +8,10 @@ using System.Linq;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
+using MeshFactory.Model;
 using static MeshFactory.UndoSystem.KnifeCutOperationRecord;
 using MeshFactory.Selection;
+using MeshEditor;
 
 namespace MeshFactory.UndoSystem
 {
@@ -25,14 +27,18 @@ namespace MeshFactory.UndoSystem
         private UndoStack<MeshEditContext> _vertexEditStack;
         private UndoStack<EditorStateContext> _editorStateStack;
         private UndoStack<WorkPlane> _workPlaneStack;
-        private UndoStack<MeshListContext> _meshListStack;
+        private UndoStack<ModelContext> _meshListStack;
         private UndoGroup _subWindowGroup;
+
+        // === プロジェクトレベルUndo（ファイル読み込み/新規作成用） ===
+        private Stack<MeshEditor.ProjectRecord> _projectUndoStack = new Stack<MeshEditor.ProjectRecord>();
+        private Stack<MeshEditor.ProjectRecord> _projectRedoStack = new Stack<MeshEditor.ProjectRecord>();
 
         // === コンテキスト ===
         private MeshEditContext _meshContext;
         private EditorStateContext _editorStateContext;
         private WorkPlane _workPlane;
-        private MeshListContext _meshListContext;
+        private ModelContext _modelContext;
 
         // === 状態追跡（変更検出用） ===
         private Vector3[] _lastVertexPositions;
@@ -51,7 +57,10 @@ namespace MeshFactory.UndoSystem
         public MeshEditContext MeshContext => _meshContext;
         public EditorStateContext EditorState => _editorStateContext;
         public WorkPlane WorkPlane => _workPlane;
-        public MeshListContext MeshListContext => _meshListContext;
+        public ModelContext ModelContext => _modelContext;
+        
+        /// <summary>後方互換: MeshListContext（ModelContextを返す）</summary>
+        public ModelContext MeshListContext => _modelContext;
 
         /// <summary>MeshDataへの直接アクセス</summary>
         public MeshData MeshData => _meshContext?.MeshData;
@@ -66,8 +75,12 @@ namespace MeshFactory.UndoSystem
         public UndoStack<MeshEditContext> VertexEditStack => _vertexEditStack;
         public UndoStack<EditorStateContext> EditorStateStack => _editorStateStack;
         public UndoStack<WorkPlane> WorkPlaneStack => _workPlaneStack;
-        public UndoStack<MeshListContext> MeshListStack => _meshListStack;
+        public UndoStack<ModelContext> MeshListStack => _meshListStack;
         public UndoGroup SubWindowGroup => _subWindowGroup;
+
+        // === プロジェクトレベルUndo プロパティ ===
+        public bool CanUndoProject => _projectUndoStack.Count > 0;
+        public bool CanRedoProject => _projectRedoStack.Count > 0;
 
         // === イベント ===
         public event Action OnUndoRedoPerformed;
@@ -106,12 +119,12 @@ namespace MeshFactory.UndoSystem
             );
             _mainGroup.AddChild(_workPlaneStack);
 
-            // MeshListスタック（リスト操作用）
-            _meshListContext = new MeshListContext();
-            _meshListStack = new UndoStack<MeshListContext>(
+            // MeshListスタック（ModelContextを使用）
+            _modelContext = new ModelContext();
+            _meshListStack = new UndoStack<ModelContext>(
                 $"{windowId}/MeshContextList",
                 "UnityMesh List",
-                _meshListContext
+                _modelContext
             );
             _mainGroup.AddChild(_meshListStack);
 
@@ -811,7 +824,10 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public bool Undo()
         {
-            return _mainGroup.PerformUndo();
+            Debug.Log($"[MeshUndoController.Undo] Before. MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, MeshListStack.Id={_meshListStack.Id}");
+            bool result = _mainGroup.PerformUndo();
+            Debug.Log($"[MeshUndoController.Undo] After. MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, Result={result}");
+            return result;
         }
 
         /// <summary>
@@ -819,7 +835,13 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public bool Redo()
         {
-            return _mainGroup.PerformRedo();
+            Debug.Log($"[MeshUndoController.Redo] Called. MeshListStack RedoCount={_meshListStack.RedoCount}");
+            Debug.Log($"[MeshUndoController.Redo] MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, MeshListStack.Id={_meshListStack.Id}");
+            Debug.Log($"[MeshUndoController.Redo] VertexEditStack.RedoCount={VertexEditStack.RedoCount}");
+            Debug.Log($"[MeshUndoController.Redo] EditorStateStack.RedoCount={EditorStateStack.RedoCount}");
+            bool result = _mainGroup.PerformRedo();
+            Debug.Log($"[MeshUndoController.Redo] Result={result}");
+            return result;
         }
 
         /// <summary>
@@ -873,14 +895,31 @@ namespace MeshFactory.UndoSystem
         // ================================================================
 
         /// <summary>
-        /// MeshListを設定（SimpleMeshFactory初期化時に呼び出し）
+        /// ModelContextを設定（SimpleMeshFactory初期化時に呼び出し）
         /// </summary>
-        /// <param name="meshList">メッシュコンテキストリストへの参照</param>
+        /// <param name="modelContext">モデルコンテキストへの参照</param>
         /// <param name="onListChanged">リスト変更時のコールバック</param>
+        public void SetModelContext(ModelContext modelContext, Action onListChanged = null)
+        {
+            _modelContext = modelContext;
+            _meshListStack = new UndoStack<ModelContext>(
+                _meshListStack.Id,
+                _meshListStack.DisplayName,
+                _modelContext
+            );
+            if (onListChanged != null)
+            {
+                _modelContext.OnListChanged = onListChanged;
+            }
+        }
+
+        /// <summary>
+        /// MeshListを設定（後方互換）
+        /// </summary>
         public void SetMeshList(List<SimpleMeshFactory.MeshContext> meshList, Action onListChanged = null)
         {
-            _meshListContext.MeshContextList = meshList;
-            _meshListContext.OnListChanged = onListChanged;
+            _modelContext.MeshContextList = meshList;
+            _modelContext.OnListChanged = onListChanged;
         }
 
         /// <summary>
@@ -899,7 +938,15 @@ namespace MeshFactory.UndoSystem
         /// <param name="insertIndex">挿入位置</param>
         /// <param name="oldSelectedIndex">追加前の選択インデックス</param>
         /// <param name="newSelectedIndex">追加後の選択インデックス</param>
-        public void RecordMeshContextAdd(SimpleMeshFactory.MeshContext meshContext, int insertIndex, int oldSelectedIndex, int newSelectedIndex)
+        /// <param name="oldCamera">追加前のカメラ状態（オプション）</param>
+        /// <param name="newCamera">追加後のカメラ状態（オプション）</param>
+        public void RecordMeshContextAdd(
+            SimpleMeshFactory.MeshContext meshContext, 
+            int insertIndex, 
+            int oldSelectedIndex, 
+            int newSelectedIndex,
+            CameraSnapshot? oldCamera = null,
+            CameraSnapshot? newCamera = null)
         {
             var record = new MeshListChangeRecord
             {
@@ -908,7 +955,9 @@ namespace MeshFactory.UndoSystem
                     (insertIndex, MeshContextSnapshot.Capture(meshContext))
                 },
                 OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex
+                NewSelectedIndex = newSelectedIndex,
+                OldCameraState = oldCamera,
+                NewCameraState = newCamera
             };
 
             _meshListStack.Record(record, $"Add UnityMesh: {meshContext.Name}");
@@ -921,7 +970,9 @@ namespace MeshFactory.UndoSystem
         public void RecordMeshContextsAdd(
             List<(int Index, SimpleMeshFactory.MeshContext MeshContext)> addedContexts,
             int oldSelectedIndex,
-            int newSelectedIndex)
+            int newSelectedIndex,
+            CameraSnapshot? oldCamera = null,
+            CameraSnapshot? newCamera = null)
         {
             var record = new MeshListChangeRecord
             {
@@ -929,7 +980,9 @@ namespace MeshFactory.UndoSystem
                     .Select(e => (e.Index, MeshContextSnapshot.Capture(e.MeshContext)))
                     .ToList(),
                 OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex
+                NewSelectedIndex = newSelectedIndex,
+                OldCameraState = oldCamera,
+                NewCameraState = newCamera
             };
 
             string desc = addedContexts.Count == 1
@@ -946,7 +999,14 @@ namespace MeshFactory.UndoSystem
         /// <param name="removedContexts">削除されたメッシュコンテキスト（インデックス + コンテキスト）のリスト</param>
         /// <param name="oldSelectedIndex">削除前の選択インデックス</param>
         /// <param name="newSelectedIndex">削除後の選択インデックス</param>
-        public void RecordMeshContextsRemove(List<(int Index, SimpleMeshFactory.MeshContext meshContext)> removedContexts, int oldSelectedIndex, int newSelectedIndex)
+        /// <param name="oldCamera">削除前のカメラ状態（オプション）</param>
+        /// <param name="newCamera">削除後のカメラ状態（オプション）</param>
+        public void RecordMeshContextsRemove(
+            List<(int Index, SimpleMeshFactory.MeshContext meshContext)> removedContexts, 
+            int oldSelectedIndex, 
+            int newSelectedIndex,
+            CameraSnapshot? oldCamera = null,
+            CameraSnapshot? newCamera = null)
         {
             var record = new MeshListChangeRecord
             {
@@ -954,7 +1014,9 @@ namespace MeshFactory.UndoSystem
                     .Select(e => (e.Index, MeshContextSnapshot.Capture(e.meshContext)))
                     .ToList(),
                 OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex
+                NewSelectedIndex = newSelectedIndex,
+                OldCameraState = oldCamera,
+                NewCameraState = newCamera
             };
 
             string desc = removedContexts.Count == 1 
@@ -973,7 +1035,16 @@ namespace MeshFactory.UndoSystem
         /// <param name="newIndex">移動後のインデックス</param>
         /// <param name="oldSelectedIndex">移動前の選択インデックス</param>
         /// <param name="newSelectedIndex">移動後の選択インデックス</param>
-        public void RecordMeshContextReorder(SimpleMeshFactory.MeshContext meshContext, int oldIndex, int newIndex, int oldSelectedIndex, int newSelectedIndex)
+        /// <param name="oldCamera">移動前のカメラ状態（オプション）</param>
+        /// <param name="newCamera">移動後のカメラ状態（オプション）</param>
+        public void RecordMeshContextReorder(
+            SimpleMeshFactory.MeshContext meshContext, 
+            int oldIndex, 
+            int newIndex, 
+            int oldSelectedIndex, 
+            int newSelectedIndex,
+            CameraSnapshot? oldCamera = null,
+            CameraSnapshot? newCamera = null)
         {
             var snapshot = MeshContextSnapshot.Capture(meshContext);
 
@@ -982,11 +1053,110 @@ namespace MeshFactory.UndoSystem
                 RemovedMeshContexts = new List<(int, MeshContextSnapshot)> { (oldIndex, snapshot) },
                 AddedMeshContexts = new List<(int, MeshContextSnapshot)> { (newIndex, snapshot) },
                 OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex
+                NewSelectedIndex = newSelectedIndex,
+                OldCameraState = oldCamera,
+                NewCameraState = newCamera
             };
 
             _meshListStack.Record(record, $"Reorder UnityMesh: {meshContext.Name}");
             FocusMeshList();
+        }
+
+        /// <summary>
+        /// メッシュ選択変更を記録
+        /// </summary>
+        public void RecordMeshSelectionChange(int oldIndex, int newIndex)
+        {
+            if (oldIndex == newIndex) return;
+
+            var oldSelection = new HashSet<int>();
+            var newSelection = new HashSet<int>();
+            if (oldIndex >= 0) oldSelection.Add(oldIndex);
+            if (newIndex >= 0) newSelection.Add(newIndex);
+
+            var record = new MeshSelectionChangeRecord(oldSelection, newSelection);
+            _meshListStack.Record(record, "Select Mesh");
+            FocusMeshList();
+        }
+
+        /// <summary>
+        /// メッシュ選択変更を記録（カメラ状態付き）
+        /// </summary>
+        public void RecordMeshSelectionChange(
+            int oldIndex, 
+            int newIndex,
+            CameraSnapshot? oldCamera,
+            CameraSnapshot? newCamera)
+        {
+            if (oldIndex == newIndex) return;
+
+            var oldSelection = new HashSet<int>();
+            var newSelection = new HashSet<int>();
+            if (oldIndex >= 0) oldSelection.Add(oldIndex);
+            if (newIndex >= 0) newSelection.Add(newIndex);
+
+            var record = new MeshSelectionChangeRecord(oldSelection, newSelection, oldCamera, newCamera);
+            _meshListStack.Record(record, "Select Mesh");
+            FocusMeshList();
+        }
+
+        // ================================================================
+        // プロジェクトレベルUndo操作
+        // ================================================================
+
+        /// <summary>
+        /// プロジェクト操作を記録（ファイル読み込み/新規作成用）
+        /// </summary>
+        /// <param name="record">プロジェクト操作の記録</param>
+        public void RecordProjectOperation(MeshEditor.ProjectRecord record)
+        {
+            if (record == null) return;
+
+            _projectUndoStack.Push(record);
+            _projectRedoStack.Clear();  // 新しい操作でRedoスタックをクリア
+        }
+
+        /// <summary>
+        /// プロジェクトレベルのUndoを実行
+        /// </summary>
+        /// <returns>Undo実行されたProjectRecord（復元用）、実行できない場合はnull</returns>
+        public MeshEditor.ProjectRecord UndoProject()
+        {
+            if (_projectUndoStack.Count == 0) return null;
+
+            var record = _projectUndoStack.Pop();
+            _projectRedoStack.Push(record);
+            return record;
+        }
+
+        /// <summary>
+        /// プロジェクトレベルのRedoを実行
+        /// </summary>
+        /// <returns>Redo実行されたProjectRecord（復元用）、実行できない場合はnull</returns>
+        public MeshEditor.ProjectRecord RedoProject()
+        {
+            if (_projectRedoStack.Count == 0) return null;
+
+            var record = _projectRedoStack.Pop();
+            _projectUndoStack.Push(record);
+            return record;
+        }
+
+        /// <summary>
+        /// プロジェクトスタックをクリア
+        /// </summary>
+        public void ClearProjectStack()
+        {
+            _projectUndoStack.Clear();
+            _projectRedoStack.Clear();
+        }
+
+        /// <summary>
+        /// プロジェクトスタックの状態を取得
+        /// </summary>
+        public string GetProjectStackDebugInfo()
+        {
+            return $"ProjectUndo: {_projectUndoStack.Count}, ProjectRedo: {_projectRedoStack.Count}";
         }
 
 

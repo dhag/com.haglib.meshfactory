@@ -1,13 +1,16 @@
 // Assets/Editor/MeshFactory/Model/ModelContext.cs
 // ランタイム用モデルコンテキスト
 // ModelDataのランタイム版 - SimpleMeshFactory内のモデルデータを一元管理
+// v1.3: MeshListUndoContext統合（複数選択、Undoコールバック対応）
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
 using MeshFactory.Symmetry;
+using MeshFactory.UndoSystem;
 
 // MeshContextはSimpleMeshFactoryのネストクラスを参照
 using MeshContext = SimpleMeshFactory.MeshContext;
@@ -17,6 +20,7 @@ namespace MeshFactory.Model
     /// <summary>
     /// モデル全体のランタイムコンテキスト
     /// SimpleMeshFactory内のデータを一元管理
+    /// Undo用コンテキストとしても使用（旧MeshListUndoContextを統合）
     /// </summary>
     public class ModelContext
     {
@@ -38,24 +42,62 @@ namespace MeshFactory.Model
         // ================================================================
 
         /// <summary>メッシュコンテキストリスト</summary>
-        public List<MeshContext> MeshContextList { get; } = new List<MeshContext>();
+        public List<MeshContext> MeshContextList { get; set; } = new List<MeshContext>();
 
-        /// <summary>選択中のメッシュインデックス</summary>
-        public int SelectedIndex { get; set; } = -1;
+        /// <summary>メッシュ数</summary>
+        public int Count => MeshContextList?.Count ?? 0;
 
-        /// <summary>現在選択中のメッシュコンテキスト（便利プロパティ）</summary>
+        /// <summary>メッシュ数（後方互換）</summary>
+        public int MeshContextCount => Count;
+
+        // ================================================================
+        // 選択状態（複数選択対応）
+        // ================================================================
+
+        /// <summary>選択中のメッシュインデックス（複数選択対応）</summary>
+        public HashSet<int> SelectedIndices { get; set; } = new HashSet<int>();
+
+        /// <summary>主選択インデックス（編集対象・最小インデックス）</summary>
+        public int PrimarySelectedIndex => SelectedIndices.Count > 0 ? SelectedIndices.Min() : -1;
+
+        /// <summary>選択があるか</summary>
+        public bool HasSelection => SelectedIndices.Count > 0;
+
+        /// <summary>複数選択されているか</summary>
+        public bool IsMultiSelected => SelectedIndices.Count > 1;
+
+        /// <summary>選択中のメッシュインデックス（後方互換・単一選択用）</summary>
+        public int SelectedIndex
+        {
+            get => PrimarySelectedIndex;
+            set
+            {
+                SelectedIndices.Clear();
+                if (value >= 0 && value < Count)
+                    SelectedIndices.Add(value);
+            }
+        }
+
+        /// <summary>現在選択中のメッシュコンテキスト（主選択）</summary>
         public MeshContext CurrentMeshContext =>
-            (SelectedIndex >= 0 && SelectedIndex < MeshContextList.Count)
-                ? MeshContextList[SelectedIndex] : null;
-
-        /// <summary>現在のMeshData（便利プロパティ）</summary>
-        public MeshData CurrentMeshData => CurrentMeshContext?.Data;
+            (PrimarySelectedIndex >= 0 && PrimarySelectedIndex < Count)
+                ? MeshContextList[PrimarySelectedIndex] : null;
 
         /// <summary>有効なメッシュコンテキストが選択されているか</summary>
         public bool HasValidSelection => CurrentMeshContext != null;
 
-        /// <summary>メッシュ数</summary>
-        public int MeshContextCount => MeshContextList.Count;
+        // ================================================================
+        // Undoコールバック（旧MeshListUndoContextから統合）
+        // ================================================================
+
+        /// <summary>Undo/Redo実行後のコールバック（UI更新等）</summary>
+        public Action OnListChanged;
+
+        /// <summary>カメラ状態復元リクエスト時のコールバック（MeshSelectionChangeRecord用）</summary>
+        public Action<CameraSnapshot> OnCameraRestoreRequested;
+        
+        /// <summary>MeshListStackへのフォーカス切り替えリクエスト</summary>
+        public Action OnFocusMeshListRequested;
 
         // ================================================================
         // WorkPlane
@@ -82,6 +124,78 @@ namespace MeshFactory.Model
         public ModelContext(string name)
         {
             Name = name;
+        }
+
+        // ================================================================
+        // 選択操作（複数選択対応・旧MeshListUndoContextから統合）
+        // ================================================================
+
+        /// <summary>選択をクリア</summary>
+        public void ClearSelection()
+        {
+            SelectedIndices.Clear();
+        }
+
+        /// <summary>単一選択（既存選択をクリアして選択）</summary>
+        public void Select(int index)
+        {
+            SelectedIndices.Clear();
+            if (index >= 0 && index < Count)
+                SelectedIndices.Add(index);
+        }
+
+        /// <summary>選択を追加</summary>
+        public void AddToSelection(int index)
+        {
+            if (index >= 0 && index < Count)
+                SelectedIndices.Add(index);
+        }
+
+        /// <summary>選択を解除</summary>
+        public void RemoveFromSelection(int index)
+        {
+            SelectedIndices.Remove(index);
+        }
+
+        /// <summary>選択をトグル</summary>
+        public void ToggleSelection(int index)
+        {
+            if (SelectedIndices.Contains(index))
+                SelectedIndices.Remove(index);
+            else if (index >= 0 && index < Count)
+                SelectedIndices.Add(index);
+        }
+
+        /// <summary>範囲選択（from から to まで）</summary>
+        public void SelectRange(int from, int to)
+        {
+            int min = Mathf.Min(from, to);
+            int max = Mathf.Max(from, to);
+            for (int i = min; i <= max; i++)
+            {
+                if (i >= 0 && i < Count)
+                    SelectedIndices.Add(i);
+            }
+        }
+
+        /// <summary>全選択</summary>
+        public void SelectAll()
+        {
+            SelectedIndices.Clear();
+            for (int i = 0; i < Count; i++)
+                SelectedIndices.Add(i);
+        }
+
+        /// <summary>選択されているか</summary>
+        public bool IsSelected(int index)
+        {
+            return SelectedIndices.Contains(index);
+        }
+
+        /// <summary>選択インデックスを検証して無効なものを除去</summary>
+        public void ValidateSelection()
+        {
+            SelectedIndices.RemoveWhere(i => i < 0 || i >= Count);
         }
 
         // ================================================================
@@ -112,8 +226,12 @@ namespace MeshFactory.Model
             IsDirty = true;
 
             // 選択インデックス調整（挿入位置以降は+1）
-            if (SelectedIndex >= index)
-                SelectedIndex++;
+            var adjusted = new HashSet<int>();
+            foreach (var i in SelectedIndices)
+            {
+                adjusted.Add(i >= index ? i + 1 : i);
+            }
+            SelectedIndices = adjusted;
         }
 
         /// <summary>メッシュを削除</summary>
@@ -127,10 +245,17 @@ namespace MeshFactory.Model
             IsDirty = true;
 
             // 選択インデックス調整
-            if (SelectedIndex >= MeshContextList.Count)
-                SelectedIndex = MeshContextList.Count - 1;
-            else if (SelectedIndex > index)
-                SelectedIndex--;
+            var adjusted = new HashSet<int>();
+            foreach (var i in SelectedIndices)
+            {
+                if (i < index)
+                    adjusted.Add(i);
+                else if (i > index)
+                    adjusted.Add(i - 1);
+                // i == index の場合は削除されるので追加しない
+            }
+            SelectedIndices = adjusted;
+            ValidateSelection();
 
             return true;
         }
@@ -151,36 +276,30 @@ namespace MeshFactory.Model
             MeshContextList.Insert(toIndex, meshContext);
 
             // 選択インデックス調整
-            if (SelectedIndex == fromIndex)
+            var adjusted = new HashSet<int>();
+            foreach (var i in SelectedIndices)
             {
-                SelectedIndex = toIndex;
+                if (i == fromIndex)
+                {
+                    adjusted.Add(toIndex);
+                }
+                else if (fromIndex < i && toIndex >= i)
+                {
+                    adjusted.Add(i - 1);
+                }
+                else if (fromIndex > i && toIndex <= i)
+                {
+                    adjusted.Add(i + 1);
+                }
+                else
+                {
+                    adjusted.Add(i);
+                }
             }
-            else if (fromIndex < SelectedIndex && toIndex >= SelectedIndex)
-            {
-                SelectedIndex--;
-            }
-            else if (fromIndex > SelectedIndex && toIndex <= SelectedIndex)
-            {
-                SelectedIndex++;
-            }
+            SelectedIndices = adjusted;
 
             IsDirty = true;
             return true;
-        }
-
-        /// <summary>選択を変更</summary>
-        /// <returns>選択変更成功したか</returns>
-        public bool Select(int index)
-        {
-            if (index < -1 || index >= MeshContextList.Count)
-                return false;
-
-            if (SelectedIndex != index)
-            {
-                SelectedIndex = index;
-                return true;
-            }
-            return false;
         }
 
         /// <summary>インデックスでメッシュコンテキストを取得</summary>
@@ -215,7 +334,7 @@ namespace MeshFactory.Model
             }
 
             MeshContextList.Clear();
-            SelectedIndex = -1;
+            SelectedIndices.Clear();
             IsDirty = true;
         }
 

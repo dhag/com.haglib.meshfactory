@@ -198,6 +198,17 @@ namespace MeshFactory.MQO
             }
         }
 
+        /// <summary>ミラー距離</summary>
+        public float MirrorDistance
+        {
+            get
+            {
+                var attr = Attributes.Find(a => a.Name == "mirror_dis");
+                if (attr == null) return 0f;
+                return attr.GetFloat();
+            }
+        }
+
         /// <summary>折りたたみ状態</summary>
         public bool IsFolding
         {
