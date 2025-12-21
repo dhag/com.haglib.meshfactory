@@ -141,6 +141,12 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void HandleKeyboardShortcuts(Event e, MeshContext meshContext)
     {
+        if (HandleHitTestDebugShortcuts(e, e.mousePosition))
+        {
+            return;
+        }
+
+
         switch (e.keyCode)
         {
             case KeyCode.A:

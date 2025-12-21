@@ -1,5 +1,6 @@
 // Editor/MeshFactory/Core/MeshGPURenderer.cs
 // IMGUI対応版 GPU描画レンダラー
+// v2.2: ホバー表示機能追加
 
 using System;
 using System.Collections.Generic;
@@ -9,14 +10,33 @@ using MeshFactory.Data;
 
 namespace MeshFactory.Rendering
 {
+    /// <summary>
+    /// GPUヒットテスト結果
+    /// </summary>
+    public struct GPUHitTestResult
+    {
+        public int NearestVertexIndex;
+        public float NearestVertexDistance;
+
+        public int NearestLineIndex;
+        public float NearestLineDistance;
+
+        public int[] HitFaceIndices;
+
+        public bool HasVertexHit(float radius) => NearestVertexIndex >= 0 && NearestVertexDistance < radius;
+        public bool HasLineHit(float distance) => NearestLineIndex >= 0 && NearestLineDistance < distance;
+        public bool HasFaceHit => HitFaceIndices != null && HitFaceIndices.Length > 0;
+    }
+
     public class MeshGPURenderer : IDisposable
     {
         // シェーダー・マテリアル
         private ComputeShader _computeShader;
         private int _kernelClear, _kernelScreenPos, _kernelFaceVisibility, _kernelLineVisibility;
+        private int _kernelVertexHit, _kernelLineHit, _kernelFaceHit;
         private Material _pointMaterial, _lineMaterial;
-        
-        // バッファ
+
+        // バッファ（既存）
         private ComputeBuffer _positionBuffer;
         private ComputeBuffer _lineBuffer;
         private ComputeBuffer _faceVertexIndexBuffer;
@@ -28,38 +48,55 @@ namespace MeshFactory.Rendering
         private ComputeBuffer _lineVisibilityBuffer;
         private ComputeBuffer _selectionBuffer;
         private ComputeBuffer _lineSelectionBuffer;
-        
+
+        // ヒットテスト用バッファ
+        private ComputeBuffer _vertexHitDistanceBuffer;
+        private ComputeBuffer _lineHitDistanceBuffer;
+        private ComputeBuffer _faceHitBuffer;
+
+        // CPU側読み取り用配列
+        private float[] _vertexHitDistanceData;
+        private float[] _lineHitDistanceData;
+        private uint[] _faceHitData;
+
         private uint[] _selectionData;
         private uint[] _lineSelectionData;
         private bool _initialized;
+        private bool _hitTestAvailable;
         private int _vertexCount, _faceCount, _lineCount;
         private MeshData _cachedMeshData;
 
+        // ホバー状態
+        private int _hoverVertexIndex = -1;
+        private int _hoverLineIndex = -1;
+        private int _hoverFaceIndex = -1;
+
         public bool IsAvailable => _initialized && SystemInfo.supportsComputeShaders;
+        public bool HitTestAvailable => _hitTestAvailable;
         public bool CullingEnabled { get; set; } = true;
 
         public bool Initialize(ComputeShader computeShader, Shader pointShader, Shader lineShader)
         {
             if (_initialized) return true;
-            
+
             if (!SystemInfo.supportsComputeShaders)
             {
                 Debug.LogWarning("MeshGPURenderer: Compute shaders not supported");
                 return false;
             }
-            
+
             if (computeShader == null)
             {
                 Debug.LogWarning("MeshGPURenderer: Compute shader is null");
                 return false;
             }
-            
+
             if (pointShader == null)
             {
                 Debug.LogWarning("MeshGPURenderer: Point shader is null");
                 return false;
             }
-            
+
             if (lineShader == null)
             {
                 Debug.LogWarning("MeshGPURenderer: Line shader is null");
@@ -67,7 +104,7 @@ namespace MeshFactory.Rendering
             }
 
             _computeShader = computeShader;
-            
+
             try
             {
                 _kernelClear = _computeShader.FindKernel("ClearBuffers");
@@ -81,9 +118,22 @@ namespace MeshFactory.Rendering
                 return false;
             }
 
+            // ヒットテスト用カーネルの初期化（オプション）
+            try
+            {
+                _kernelVertexHit = _computeShader.FindKernel("ComputeVertexHitTest");
+                _kernelLineHit = _computeShader.FindKernel("ComputeLineHitTest");
+                _kernelFaceHit = _computeShader.FindKernel("ComputeFaceHitTest");
+                _hitTestAvailable = true;
+            }
+            catch (Exception)
+            {
+                _hitTestAvailable = false;
+            }
+
             _pointMaterial = new Material(pointShader) { hideFlags = HideFlags.HideAndDontSave };
             _lineMaterial = new Material(lineShader) { hideFlags = HideFlags.HideAndDontSave };
-            
+
             _initialized = true;
             Debug.Log("MeshGPURenderer: Initialized successfully");
             return true;
@@ -92,16 +142,16 @@ namespace MeshFactory.Rendering
         public void UpdateBuffers(MeshData meshData, MeshEdgeCache edgeCache)
         {
             if (!_initialized || meshData == null || edgeCache == null) return;
-            
+
             // キャッシュが有効な場合はスキップ
             if (_cachedMeshData == meshData && _vertexCount == meshData.VertexCount) return;
 
             _cachedMeshData = meshData;
             ReleaseBuffers();
-            
+
             _vertexCount = meshData.VertexCount;
             _faceCount = meshData.FaceCount;
-            
+
             if (_vertexCount == 0) return;
 
             // エッジキャッシュを更新
@@ -130,60 +180,79 @@ namespace MeshFactory.Rendering
             // 出力バッファ
             _screenPositionBuffer = new ComputeBuffer(_vertexCount, sizeof(float) * 4);
             _vertexVisibilityBuffer = new ComputeBuffer(_vertexCount, sizeof(float));
-            
+
             if (_faceCount > 0)
             {
                 _faceVisibilityBuffer = new ComputeBuffer(_faceCount, sizeof(float));
             }
-            
+
             if (_lineCount > 0)
             {
                 _lineVisibilityBuffer = new ComputeBuffer(_lineCount, sizeof(float));
             }
-            
+
             // 選択バッファ
             _selectionBuffer = new ComputeBuffer(_vertexCount, sizeof(uint));
             _selectionData = new uint[_vertexCount];
-            
+
             // 線分選択バッファ
             if (_lineCount > 0)
             {
                 _lineSelectionBuffer = new ComputeBuffer(_lineCount, sizeof(uint));
                 _lineSelectionData = new uint[_lineCount];
             }
+
+            // ヒットテスト用バッファ
+            if (_hitTestAvailable)
+            {
+                _vertexHitDistanceBuffer = new ComputeBuffer(_vertexCount, sizeof(float));
+                _vertexHitDistanceData = new float[_vertexCount];
+
+                if (_lineCount > 0)
+                {
+                    _lineHitDistanceBuffer = new ComputeBuffer(_lineCount, sizeof(float));
+                    _lineHitDistanceData = new float[_lineCount];
+                }
+
+                if (_faceCount > 0)
+                {
+                    _faceHitBuffer = new ComputeBuffer(_faceCount, sizeof(uint));
+                    _faceHitData = new uint[_faceCount];
+                }
+            }
         }
 
         private void BuildFaceBuffers(MeshData meshData)
         {
             if (_faceCount == 0) return;
-            
+
             var indices = new List<int>();
             var offsets = new int[_faceCount];
             var counts = new int[_faceCount];
-            
+
             int offset = 0;
             for (int f = 0; f < _faceCount; f++)
             {
                 var face = meshData.Faces[f];
                 offsets[f] = offset;
                 counts[f] = face.VertexCount;
-                
+
                 foreach (int vIdx in face.VertexIndices)
                 {
                     indices.Add(vIdx);
                 }
                 offset += face.VertexCount;
             }
-            
+
             if (indices.Count > 0)
             {
                 _faceVertexIndexBuffer = new ComputeBuffer(indices.Count, sizeof(int));
                 _faceVertexIndexBuffer.SetData(indices.ToArray());
             }
-            
+
             _faceVertexOffsetBuffer = new ComputeBuffer(_faceCount, sizeof(int));
             _faceVertexOffsetBuffer.SetData(offsets);
-            
+
             _faceVertexCountBuffer = new ComputeBuffer(_faceCount, sizeof(int));
             _faceVertexCountBuffer.SetData(counts);
         }
@@ -191,9 +260,9 @@ namespace MeshFactory.Rendering
         public void UpdateSelection(HashSet<int> selectedVertices)
         {
             if (!_initialized || _selectionBuffer == null || _selectionData == null) return;
-            
+
             Array.Clear(_selectionData, 0, _selectionData.Length);
-            
+
             if (selectedVertices != null)
             {
                 foreach (int idx in selectedVertices)
@@ -204,16 +273,16 @@ namespace MeshFactory.Rendering
                     }
                 }
             }
-            
+
             _selectionBuffer.SetData(_selectionData);
         }
 
         public void UpdateLineSelection(HashSet<(int, int)> selectedEdges, MeshEdgeCache edgeCache)
         {
             if (!_initialized || _lineSelectionBuffer == null || _lineSelectionData == null) return;
-            
+
             Array.Clear(_lineSelectionData, 0, _lineSelectionData.Length);
-            
+
             if (selectedEdges != null && selectedEdges.Count > 0 && edgeCache != null)
             {
                 var lines = edgeCache.Lines;
@@ -223,15 +292,37 @@ namespace MeshFactory.Rendering
                     // エッジは正規化して比較（小さい方が先）
                     int v1 = line.V1 < line.V2 ? line.V1 : line.V2;
                     int v2 = line.V1 < line.V2 ? line.V2 : line.V1;
-                    
+
                     if (selectedEdges.Contains((v1, v2)))
                     {
                         _lineSelectionData[i] = 1;
                     }
                 }
             }
-            
+
             _lineSelectionBuffer.SetData(_lineSelectionData);
+        }
+
+        /// <summary>
+        /// ホバー状態を設定
+        /// </summary>
+        /// <param name="vertexIndex">ホバー中の頂点インデックス（-1で無効）</param>
+        /// <param name="lineIndex">ホバー中の線分インデックス（-1で無効）</param>
+        public void SetHoverState(int vertexIndex, int lineIndex, int faceIndex = -1)
+        {
+            _hoverVertexIndex = vertexIndex;
+            _hoverLineIndex = lineIndex;
+            _hoverFaceIndex = faceIndex;
+        }
+
+        /// <summary>
+        /// ホバー状態をクリア
+        /// </summary>
+        public void ClearHoverState()
+        {
+            _hoverVertexIndex = -1;
+            _hoverLineIndex = -1;
+            _hoverFaceIndex = -1;
         }
 
         public void DispatchCompute(Matrix4x4 mvp, Rect previewRect, Vector2 windowSize)
@@ -253,7 +344,7 @@ namespace MeshFactory.Rendering
             SetBuffer(_kernelClear, "_ScreenPositionBuffer", _screenPositionBuffer);
             SetBuffer(_kernelClear, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
             SetBuffer(_kernelClear, "_LineVisibilityBuffer", _lineVisibilityBuffer);
-            
+
             int maxCount = Mathf.Max(_vertexCount, Mathf.Max(_faceCount, _lineCount));
             _computeShader.Dispatch(_kernelClear, threadGroups(maxCount), 1, 1);
 
@@ -262,7 +353,6 @@ namespace MeshFactory.Rendering
             SetBuffer(_kernelScreenPos, "_ScreenPositionBuffer", _screenPositionBuffer);
             _computeShader.Dispatch(_kernelScreenPos, threadGroups(_vertexCount), 1, 1);
 
-            // 3. 面の可視性計算（カリング）
             // 3. 面の可視性計算（カリング）
             if (CullingEnabled && _faceCount > 0)
             {
@@ -285,16 +375,200 @@ namespace MeshFactory.Rendering
             }
             else
             {
-                // ★追加: カリングOFF時はすべて可視
                 SetAllVisible();
             }
         }
+
         /// <summary>
-        /// カリングOFF時: すべての頂点・線分を可視にする
+        /// GPUでヒットテストを実行
+        /// DispatchComputeの後に呼び出すこと
+        /// 
+        /// 【座標系】
+        /// GPU描画は adjustedRect を使用：
+        ///   adjustedRect.y = rect.y + tabHeight
+        ///   adjustedRect.height = rect.height - tabHeight
+        /// 
+        /// このメソッドは内部でマウス座標を変換します。
+        /// 呼び出し側は rect 座標系のマウス座標をそのまま渡してください。
+        /// 
+        /// tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y
         /// </summary>
+        public GPUHitTestResult DispatchHitTest(Vector2 mousePos, Rect rect, float tabHeight)
+        {
+            var result = new GPUHitTestResult
+            {
+                NearestVertexIndex = -1,
+                NearestVertexDistance = float.MaxValue,
+                NearestLineIndex = -1,
+                NearestLineDistance = float.MaxValue,
+                HitFaceIndices = null
+            };
+
+            if (!_hitTestAvailable || !_initialized || _vertexCount == 0)
+                return result;
+
+            // マウス座標を adjustedRect 座標系に変換
+            float ratioY = mousePos.y / rect.height;
+            float adjustedMouseY = tabHeight + ratioY * (rect.height - tabHeight);
+            Vector2 adjustedMousePos = new Vector2(mousePos.x, adjustedMouseY);
+
+            _computeShader.SetVector("_MousePosition", new Vector4(adjustedMousePos.x, adjustedMousePos.y, 0, 0));
+
+            int threadGroups(int count) => Mathf.CeilToInt(count / 64f);
+
+            // 1. 頂点ヒット距離計算
+            SetBuffer(_kernelVertexHit, "_ScreenPositionBuffer", _screenPositionBuffer);
+            SetBuffer(_kernelVertexHit, "_VertexVisibilityBuffer", _vertexVisibilityBuffer);
+            SetBuffer(_kernelVertexHit, "_VertexHitDistanceBuffer", _vertexHitDistanceBuffer);
+            _computeShader.Dispatch(_kernelVertexHit, threadGroups(_vertexCount), 1, 1);
+
+            // 2. 線分ヒット距離計算
+            if (_lineCount > 0 && _lineHitDistanceBuffer != null)
+            {
+                SetBuffer(_kernelLineHit, "_ScreenPositionBuffer", _screenPositionBuffer);
+                SetBuffer(_kernelLineHit, "_LineBuffer", _lineBuffer);
+                SetBuffer(_kernelLineHit, "_LineVisibilityBuffer", _lineVisibilityBuffer);
+                SetBuffer(_kernelLineHit, "_LineHitDistanceBuffer", _lineHitDistanceBuffer);
+                _computeShader.Dispatch(_kernelLineHit, threadGroups(_lineCount), 1, 1);
+            }
+
+            // 3. 面ヒットテスト
+            if (_faceCount > 0 && _faceHitBuffer != null)
+            {
+                SetBuffer(_kernelFaceHit, "_ScreenPositionBuffer", _screenPositionBuffer);
+                SetBuffer(_kernelFaceHit, "_FaceVertexIndexBuffer", _faceVertexIndexBuffer);
+                SetBuffer(_kernelFaceHit, "_FaceVertexOffsetBuffer", _faceVertexOffsetBuffer);
+                SetBuffer(_kernelFaceHit, "_FaceVertexCountBuffer", _faceVertexCountBuffer);
+                SetBuffer(_kernelFaceHit, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
+                SetBuffer(_kernelFaceHit, "_FaceHitBuffer", _faceHitBuffer);
+                _computeShader.Dispatch(_kernelFaceHit, threadGroups(_faceCount), 1, 1);
+            }
+
+            return ReadHitTestResults();
+        }
+
+        private GPUHitTestResult ReadHitTestResults()
+        {
+            var result = new GPUHitTestResult
+            {
+                NearestVertexIndex = -1,
+                NearestVertexDistance = float.MaxValue,
+                NearestLineIndex = -1,
+                NearestLineDistance = float.MaxValue
+            };
+
+            if (_vertexHitDistanceBuffer != null && _vertexHitDistanceData != null)
+            {
+                _vertexHitDistanceBuffer.GetData(_vertexHitDistanceData);
+
+                for (int i = 0; i < _vertexHitDistanceData.Length; i++)
+                {
+                    if (_vertexHitDistanceData[i] < result.NearestVertexDistance)
+                    {
+                        result.NearestVertexDistance = _vertexHitDistanceData[i];
+                        result.NearestVertexIndex = i;
+                    }
+                }
+            }
+
+            if (_lineHitDistanceBuffer != null && _lineHitDistanceData != null)
+            {
+                _lineHitDistanceBuffer.GetData(_lineHitDistanceData);
+
+                for (int i = 0; i < _lineHitDistanceData.Length; i++)
+                {
+                    if (_lineHitDistanceData[i] < result.NearestLineDistance)
+                    {
+                        result.NearestLineDistance = _lineHitDistanceData[i];
+                        result.NearestLineIndex = i;
+                    }
+                }
+            }
+
+            if (_faceHitBuffer != null && _faceHitData != null)
+            {
+                _faceHitBuffer.GetData(_faceHitData);
+
+                var hitFaces = new List<int>();
+                for (int i = 0; i < _faceHitData.Length; i++)
+                {
+                    if (_faceHitData[i] != 0)
+                    {
+                        hitFaces.Add(i);
+                    }
+                }
+                result.HitFaceIndices = hitFaces.ToArray();
+            }
+
+            return result;
+        }
+
+        public float[] GetVertexHitDistances()
+        {
+            if (_vertexHitDistanceData == null) return null;
+            return (float[])_vertexHitDistanceData.Clone();
+        }
+
+        public float[] GetLineHitDistances()
+        {
+            if (_lineHitDistanceData == null) return null;
+            return (float[])_lineHitDistanceData.Clone();
+        }
+
+        public uint[] GetFaceHitData()
+        {
+            if (_faceHitData == null) return null;
+            return (uint[])_faceHitData.Clone();
+        }
+
+        /// <summary>
+        /// ホバー状態を更新
+        /// ヒットテスト結果に基づいて、ホバー中の頂点/線分/面を設定
+        /// 優先順位: 頂点 > 線分 > 面
+        /// </summary>
+        /// <param name="hitResult">DispatchHitTestの結果</param>
+        /// <param name="vertexRadius">頂点ヒット判定の半径（ピクセル）</param>
+        /// <param name="lineDistance">線分ヒット判定の距離（ピクセル）</param>
+        public void UpdateHoverState(GPUHitTestResult hitResult, float vertexRadius = 10f, float lineDistance = 5f)
+        {
+            // 頂点ホバー（最優先）
+            if (hitResult.HasVertexHit(vertexRadius))
+            {
+                _hoverVertexIndex = hitResult.NearestVertexIndex;
+                _hoverLineIndex = -1;
+                _hoverFaceIndex = -1;
+            }
+            // 線分ホバー
+            else if (hitResult.HasLineHit(lineDistance))
+            {
+                _hoverVertexIndex = -1;
+                _hoverLineIndex = hitResult.NearestLineIndex;
+                _hoverFaceIndex = -1;
+            }
+            // 面ホバー（最も優先度が低い）
+            else if (hitResult.HasFaceHit)
+            {
+                _hoverVertexIndex = -1;
+                _hoverLineIndex = -1;
+                // 複数の面がヒットしている場合は最初の面を使用
+                // TODO: 深度考慮で手前の面を選択
+                _hoverFaceIndex = hitResult.HitFaceIndices[0];
+            }
+            else
+            {
+                _hoverVertexIndex = -1;
+                _hoverLineIndex = -1;
+                _hoverFaceIndex = -1;
+            }
+        }
+
+        /// <summary>
+        /// 現在のホバー面インデックス
+        /// </summary>
+        public int HoverFaceIndex => _hoverFaceIndex;
+
         private void SetAllVisible()
         {
-            // 頂点をすべて可視
             if (_vertexVisibilityData == null || _vertexVisibilityData.Length != _vertexCount)
                 _vertexVisibilityData = new float[_vertexCount];
 
@@ -303,7 +577,6 @@ namespace MeshFactory.Rendering
 
             _vertexVisibilityBuffer?.SetData(_vertexVisibilityData);
 
-            // 線分をすべて可視
             if (_lineVisibilityData == null || _lineVisibilityData.Length != _lineCount)
                 _lineVisibilityData = new float[_lineCount];
 
@@ -313,7 +586,6 @@ namespace MeshFactory.Rendering
             _lineVisibilityBuffer?.SetData(_lineVisibilityData);
         }
 
-        // フィールド追加
         private float[] _vertexVisibilityData;
         private float[] _lineVisibilityData;
 
@@ -328,8 +600,7 @@ namespace MeshFactory.Rendering
         public void DrawPoints(Rect previewRect, Vector2 windowSize, Vector2 guiOffset, float pointSize = 8f, float alpha = 1f)
         {
             if (!_initialized || _vertexCount == 0 || _pointMaterial == null) return;
-            
-            // マテリアルにバッファを設定
+
             _pointMaterial.SetBuffer("_ScreenPositionBuffer", _screenPositionBuffer);
             _pointMaterial.SetBuffer("_VertexVisibilityBuffer", _vertexVisibilityBuffer);
             _pointMaterial.SetBuffer("_SelectionBuffer", _selectionBuffer);
@@ -338,22 +609,21 @@ namespace MeshFactory.Rendering
             _pointMaterial.SetVector("_GUIOffset", guiOffset);
             _pointMaterial.SetFloat("_PointSize", pointSize);
             _pointMaterial.SetFloat("_Alpha", alpha);
-            
-            // IMGUI描画コンテキストで描画
+            _pointMaterial.SetInt("_HoverVertexIndex", _hoverVertexIndex);
+
             GL.PushMatrix();
             GL.LoadPixelMatrix(0, windowSize.x, windowSize.y, 0);
-            
+
             _pointMaterial.SetPass(0);
             Graphics.DrawProceduralNow(MeshTopology.Triangles, 6, _vertexCount);
-            
+
             GL.PopMatrix();
         }
 
         public void DrawLines(Rect previewRect, Vector2 windowSize, Vector2 guiOffset, float lineWidth = 2f, float alpha = 1f, Color? edgeColor = null)
         {
             if (!_initialized || _lineCount == 0 || _lineMaterial == null) return;
-            
-            // マテリアルにバッファを設定
+
             _lineMaterial.SetBuffer("_ScreenPositionBuffer", _screenPositionBuffer);
             _lineMaterial.SetBuffer("_LineBuffer", _lineBuffer);
             _lineMaterial.SetBuffer("_LineVisibilityBuffer", _lineVisibilityBuffer);
@@ -364,15 +634,78 @@ namespace MeshFactory.Rendering
             _lineMaterial.SetFloat("_LineWidth", lineWidth);
             _lineMaterial.SetFloat("_Alpha", alpha);
             _lineMaterial.SetColor("_EdgeColor", edgeColor ?? new Color(0f, 1f, 0.5f, 0.9f));
-            _lineMaterial.SetColor("_SelectedEdgeColor", new Color(0f, 1f, 1f, 1f)); // シアン
-            
-            // IMGUI描画コンテキストで描画
+            _lineMaterial.SetColor("_SelectedEdgeColor", new Color(0f, 1f, 1f, 1f));
+            _lineMaterial.SetInt("_HoverLineIndex", _hoverLineIndex);
+
             GL.PushMatrix();
             GL.LoadPixelMatrix(0, windowSize.x, windowSize.y, 0);
-            
+
             _lineMaterial.SetPass(0);
             Graphics.DrawProceduralNow(MeshTopology.Triangles, 6, _lineCount);
-            
+
+            GL.PopMatrix();
+        }
+
+        // GL描画用マテリアル（面ホバー用）
+        private static Material _glMaterial;
+
+        /// <summary>
+        /// ホバー中の面を半透明で描画
+        /// DrawPoints/DrawLinesの前に呼び出すこと（下に描画されるように）
+        /// </summary>
+        public void DrawHoverFace(Vector2 windowSize, MeshData meshData, Color? hoverColor = null)
+        {
+            if (!_initialized || _hoverFaceIndex < 0 || meshData == null) return;
+            if (_hoverFaceIndex >= meshData.FaceCount) return;
+
+            // スクリーン座標を読み戻し
+            var screenPositions = new Vector4[_vertexCount];
+            _screenPositionBuffer.GetData(screenPositions);
+
+            var face = meshData.Faces[_hoverFaceIndex];
+            if (face.VertexCount < 3) return;
+
+            // GL描画用マテリアルの初期化
+            if (_glMaterial == null)
+            {
+                Shader shader = Shader.Find("Hidden/Internal-Colored");
+                _glMaterial = new Material(shader);
+                _glMaterial.hideFlags = HideFlags.HideAndDontSave;
+                _glMaterial.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+                _glMaterial.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                _glMaterial.SetInt("_Cull", (int)CullMode.Off);
+                _glMaterial.SetInt("_ZWrite", 0);
+            }
+
+            Color color = hoverColor ?? new Color(0f, 0.8f, 1f, 0.3f);
+
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0, windowSize.x, windowSize.y, 0);
+            _glMaterial.SetPass(0);
+
+            // 半透明塗りつぶし
+            GL.Begin(GL.TRIANGLES);
+            GL.Color(color);
+
+            // 三角形分割（ファンで描画）
+            var indices = face.VertexIndices;
+            Vector4 p0 = screenPositions[indices[0]];
+
+            for (int i = 1; i < indices.Count - 1; i++)
+            {
+                Vector4 p1 = screenPositions[indices[i]];
+                Vector4 p2 = screenPositions[indices[i + 1]];
+
+                // 全頂点が有効な場合のみ描画
+                if (p0.w > 0.5f && p1.w > 0.5f && p2.w > 0.5f)
+                {
+                    GL.Vertex3(p0.x, p0.y, 0);
+                    GL.Vertex3(p1.x, p1.y, 0);
+                    GL.Vertex3(p2.x, p2.y, 0);
+                }
+            }
+
+            GL.End();
             GL.PopMatrix();
         }
 
@@ -389,7 +722,11 @@ namespace MeshFactory.Rendering
             _lineVisibilityBuffer?.Release();
             _selectionBuffer?.Release();
             _lineSelectionBuffer?.Release();
-            
+
+            _vertexHitDistanceBuffer?.Release();
+            _lineHitDistanceBuffer?.Release();
+            _faceHitBuffer?.Release();
+
             _positionBuffer = null;
             _lineBuffer = null;
             _faceVertexIndexBuffer = null;
@@ -401,7 +738,15 @@ namespace MeshFactory.Rendering
             _lineVisibilityBuffer = null;
             _selectionBuffer = null;
             _lineSelectionBuffer = null;
-            
+
+            _vertexHitDistanceBuffer = null;
+            _lineHitDistanceBuffer = null;
+            _faceHitBuffer = null;
+
+            _vertexHitDistanceData = null;
+            _lineHitDistanceData = null;
+            _faceHitData = null;
+
             _vertexCount = 0;
             _faceCount = 0;
             _lineCount = 0;
@@ -416,7 +761,7 @@ namespace MeshFactory.Rendering
         public void Dispose()
         {
             ReleaseBuffers();
-            
+
             if (_pointMaterial != null)
             {
                 UnityEngine.Object.DestroyImmediate(_pointMaterial);
@@ -425,7 +770,7 @@ namespace MeshFactory.Rendering
             {
                 UnityEngine.Object.DestroyImmediate(_lineMaterial);
             }
-            
+
             _pointMaterial = null;
             _lineMaterial = null;
             _initialized = false;

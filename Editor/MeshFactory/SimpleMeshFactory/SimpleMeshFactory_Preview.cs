@@ -59,7 +59,10 @@ public partial class SimpleMeshFactory
             DestroyImmediate(_polygonMaterial);
             _polygonMaterial = null;
         }
+        // === 追加: ヒットテスト検証クリーンアップ ===
+        CleanupHitTestValidation();
     }
+
 
     /// <summary>
     /// エッジキャッシュを無効化（メッシュ変更時に呼び出し）
@@ -189,7 +192,7 @@ public partial class SimpleMeshFactory
                     if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
                     DrawWithGPU(rect, ctx, camPos, false);
                 }
-                
+
                 // 選択メッシュを最後に描画（上のレイヤー）
                 if (meshContext != null && meshContext.IsVisible)
                 {
@@ -287,16 +290,16 @@ public partial class SimpleMeshFactory
 
         Vector2 windowSize = new Vector2(position.width, position.height);
         Vector2 guiOffset = Vector2.zero;
-        
+
         float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
         Rect adjustedRect = new Rect(rect.x, rect.y + tabHeight, rect.width, rect.height - tabHeight);
 
         // バッファ更新（メッシュが変わると自動更新）
         _gpuRenderer.UpdateBuffers(meshContext.Data, _edgeCache);
-        
+
         // 選択状態更新（選択メッシュのみ）
         _gpuRenderer.UpdateSelection(isSelected ? selectedVertices : null);
-        
+
         // 線分選択状態更新（選択メッシュのみ）
         if (isSelected && _selectionState != null && _selectionState.Edges.Count > 0)
         {
@@ -325,9 +328,16 @@ public partial class SimpleMeshFactory
         if (_showWireframe)
         {
             // 選択メッシュ: 緑、非選択メッシュ: グレー
-            Color edgeColor = isSelected 
+            Color edgeColor = isSelected
                 ? new Color(0f, 1f, 0.5f, 0.9f)   // 緑
                 : new Color(0.5f, 0.5f, 0.5f, 0.7f); // グレー
+
+            // 面ホバー描画（選択メッシュのみ、最背面に描画）
+            if (isSelected)
+            {
+                _gpuRenderer.DrawHoverFace(windowSize, meshContext.Data);
+            }
+
             _gpuRenderer.DrawLines(adjustedRect, windowSize, guiOffset, 2f, alpha, edgeColor);
         }
 
@@ -341,7 +351,7 @@ public partial class SimpleMeshFactory
         {
             DrawVertexIndices(rect, meshContext.Data, camPos, _cameraTarget);
         }
-        
+
         // 矩形選択オーバーレイは選択メッシュのみ
         if (isSelected && _editState == VertexEditState.BoxSelecting)
         {
@@ -553,7 +563,7 @@ public partial class SimpleMeshFactory
         {
             UnityEditor_Handles.BeginGUI();
             DrawSelectedFaces(previewRect, meshData, camPos, lookAt);
-            
+
             // GPU描画時はエッジと線分はシェーダーで描画済みなのでスキップ
             if (!gpuRendering)
             {

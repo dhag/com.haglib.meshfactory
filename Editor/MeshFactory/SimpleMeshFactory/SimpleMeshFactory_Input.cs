@@ -11,6 +11,12 @@ using MeshFactory.Selection;
 
 public partial class SimpleMeshFactory
 {
+
+    // フィールド追加（クラスの先頭付近）
+    private const float HOVER_VERTEX_RADIUS = 10f;
+    private const float HOVER_LINE_DISTANCE = 5f;
+    private Vector2 _lastHoverMousePos;
+
     // ================================================================
     // 入力処理（MeshDataベース）
     // ================================================================
@@ -124,10 +130,36 @@ public partial class SimpleMeshFactory
                     _currentTool.OnMouseDrag(_toolContext, mousePos, Vector2.zero);
                     Repaint();
                 }
+                if (e.type == EventType.MouseMove)
+                {
+                    UpdateHoverOnMouseMove(e.mousePosition, rect);
+                }
+
                 break;
         }
     }
+    // メソッド追加
+    private void UpdateHoverOnMouseMove(Vector2 mousePos, Rect rect)
+    {
+        if (!rect.Contains(mousePos))
+        {
+            _gpuRenderer?.ClearHoverState();
+            return;
+        }
 
+        if (Vector2.Distance(mousePos, _lastHoverMousePos) < 1f)
+            return;
+
+        _lastHoverMousePos = mousePos;
+
+        if (_gpuRenderer == null || !_gpuRenderer.HitTestAvailable)
+            return;
+
+        float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
+        var hitResult = _gpuRenderer.DispatchHitTest(mousePos, rect, tabHeight);
+        _gpuRenderer.UpdateHoverState(hitResult, HOVER_VERTEX_RADIUS, HOVER_LINE_DISTANCE);
+        Repaint();
+    }
     /// <summary>
     /// MouseDown処理（共通の選択処理）
     /// </summary>
@@ -150,7 +182,8 @@ public partial class SimpleMeshFactory
         {
             _hitResultOnMouseDown = _selectionOps.FindAtEnabledModes(mousePos, meshData, worldToScreen, camPos);
         }
-
+        // === ここに追加 ===
+        ValidateHitTestOnClick(mousePos, rect, meshData, camPos, lookAt, _hitResultOnMouseDown);
         // レガシー互換: ヒット結果がVertexの場合は従来の変数も更新
         if (_hitResultOnMouseDown.HitType == MeshSelectMode.Vertex && _hitResultOnMouseDown.VertexIndex >= 0)
         {

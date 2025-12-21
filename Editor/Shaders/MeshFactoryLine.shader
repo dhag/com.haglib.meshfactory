@@ -5,6 +5,7 @@ Shader "MeshFactory/Line"
         _LineWidth ("Line Width", Float) = 2.0
         _EdgeColor ("Edge Color", Color) = (0, 1, 0.5, 0.9)
         _AuxLineColor ("Aux Line Color", Color) = (1, 0.3, 1, 0.9)
+        _HoverEdgeColor ("Hover Edge Color", Color) = (1, 1, 0, 1)
     }
     SubShader
     {
@@ -40,10 +41,12 @@ Shader "MeshFactory/Line"
             float4 _EdgeColor;
             float4 _AuxLineColor;
             float4 _SelectedEdgeColor;    // 選択エッジ色
+            float4 _HoverEdgeColor;       // ホバーエッジ色
             float2 _MeshFactoryScreenSize;
             float4 _PreviewRect;
             float2 _GUIOffset;   // タブバー等のオフセット
             float _Alpha;        // 透明度（非選択メッシュ用）
+            int _HoverLineIndex; // ホバー中の線分インデックス (-1 = なし)
             
             struct Attributes
             {
@@ -95,9 +98,15 @@ Shader "MeshFactory/Line"
                     return o;
                 }
                 
+                // ホバー状態の判定
+                bool isHovered = ((int)lineIndex == _HoverLineIndex);
+                
+                // ホバー時は太さを1.5倍に
+                float lineWidth = isHovered ? _LineWidth * 1.5 : _LineWidth;
+                
                 float2 dir = delta / len;
                 float2 normal = float2(-dir.y, dir.x);
-                float halfWidth = _LineWidth * 0.5;
+                float halfWidth = lineWidth * 0.5;
                 
                 // 4隅の座標を計算
                 float2 c0 = p1.xy + normal * halfWidth;
@@ -129,14 +138,18 @@ Shader "MeshFactory/Line"
                 // 選択状態をチェック
                 uint isSelected = _LineSelectionBuffer[lineIndex];
                 
-                // lineType: 0=エッジ, 1=補助線
-                // 選択されている場合は選択色を使用
-                if (isSelected > 0)
+                // 状態で色分け（優先順位：ホバー > 選択 > 通常）
+                if (isHovered)
+                {
+                    o.color = _HoverEdgeColor;
+                }
+                else if (isSelected > 0)
                 {
                     o.color = _SelectedEdgeColor;
                 }
                 else
                 {
+                    // lineType: 0=エッジ, 1=補助線
                     o.color = (seg.lineType == 1) ? _AuxLineColor : _EdgeColor;
                 }
                 

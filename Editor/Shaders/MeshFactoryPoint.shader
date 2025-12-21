@@ -7,6 +7,8 @@ Shader "MeshFactory/Point"
         _NormalBorderColor ("Normal Border Color", Color) = (0.5, 0.5, 0.5, 1)
         _SelectedColor ("Selected Color", Color) = (1, 0.8, 0, 1)
         _SelectedBorderColor ("Selected Border Color", Color) = (1, 0, 0, 1)
+        _HoverColor ("Hover Color", Color) = (0, 1, 1, 1)
+        _HoverBorderColor ("Hover Border Color", Color) = (0, 0.7, 0.7, 1)
         _BorderWidth ("Border Width", Float) = 1.0
     }
     SubShader
@@ -35,11 +37,14 @@ Shader "MeshFactory/Point"
             float4 _NormalBorderColor;
             float4 _SelectedColor;
             float4 _SelectedBorderColor;
+            float4 _HoverColor;
+            float4 _HoverBorderColor;
             float _BorderWidth;
             float2 _MeshFactoryScreenSize;
             float4 _PreviewRect; // x, y, width, height
             float2 _GUIOffset;   // タブバー等のオフセット
             float _Alpha;        // 透明度（非選択メッシュ用）
+            int _HoverVertexIndex; // ホバー中の頂点インデックス (-1 = なし)
             
             struct Attributes
             {
@@ -87,7 +92,13 @@ Shader "MeshFactory/Point"
                     float2(0, 1), float2(1, 0), float2(1, 1)
                 };
                 
-                float halfSize = _PointSize * 0.5;
+                // ホバー状態の判定
+                bool isHovered = ((int)pointIndex == _HoverVertexIndex);
+                
+                // ホバー時はサイズを1.3倍に
+                float pointSize = isHovered ? _PointSize * 1.3 : _PointSize;
+                
+                float halfSize = pointSize * 0.5;
                 float2 pixelPos = screenPos.xy + offsets[quadVertex] * halfSize;
                 
                 // Compute Shaderで既にウィンドウ座標に変換済み
@@ -101,10 +112,25 @@ Shader "MeshFactory/Point"
                 
                 o.uv = uvOffsets[quadVertex];
                 
-                // 選択状態で色分け
+                // 状態で色分け（優先順位：ホバー > 選択 > 通常）
                 uint isSelected = _SelectionBuffer[pointIndex];
-                o.fillColor = isSelected ? _SelectedColor : _NormalColor;
-                o.borderColor = isSelected ? _SelectedBorderColor : _NormalBorderColor;
+                
+                if (isHovered)
+                {
+                    o.fillColor = _HoverColor;
+                    o.borderColor = _HoverBorderColor;
+                }
+                else if (isSelected)
+                {
+                    o.fillColor = _SelectedColor;
+                    o.borderColor = _SelectedBorderColor;
+                }
+                else
+                {
+                    o.fillColor = _NormalColor;
+                    o.borderColor = _NormalBorderColor;
+                }
+                
                 o.visibility = visibility;
                 
                 return o;

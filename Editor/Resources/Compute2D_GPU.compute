@@ -1,20 +1,46 @@
+// Compute2D_GPU.compute
+// GPU描画 + ヒットテスト用 ComputeShader
+// v2.2 - ヒットテストカーネル追加
+
 #pragma kernel ClearBuffers
 #pragma kernel ComputeScreenPositions
 #pragma kernel ComputeFaceVisibility
 #pragma kernel ComputeLineVisibility
+#pragma kernel ComputeVertexHitTest
+#pragma kernel ComputeLineHitTest
+#pragma kernel ComputeFaceHitTest
+
+// ================================================================
+// 構造体定義
+// ================================================================
 
 struct LineSegment { int v1; int v2; int faceIndex; int lineType; };
 
+// ================================================================
+// バッファ
+// ================================================================
+
+// 入力バッファ
 StructuredBuffer<float3> _PositionBuffer;
 StructuredBuffer<LineSegment> _LineBuffer;
 ByteAddressBuffer _FaceVertexIndexBuffer;
 ByteAddressBuffer _FaceVertexOffsetBuffer;
 ByteAddressBuffer _FaceVertexCountBuffer;
 
+// 出力バッファ（描画用）
 RWStructuredBuffer<float4> _ScreenPositionBuffer;
 RWStructuredBuffer<float> _VertexVisibilityBuffer;
 RWStructuredBuffer<float> _FaceVisibilityBuffer;
 RWStructuredBuffer<float> _LineVisibilityBuffer;
+
+// ヒットテスト用出力バッファ
+RWStructuredBuffer<float> _VertexHitDistanceBuffer;
+RWStructuredBuffer<float> _LineHitDistanceBuffer;
+RWStructuredBuffer<uint> _FaceHitBuffer;  // 0 or 1
+
+// ================================================================
+// パラメータ
+// ================================================================
 
 float4x4 _MATRIX_MVP;
 float4 _ScreenParams;    // windowSize.x, windowSize.y, 0, 0
@@ -22,6 +48,13 @@ float4 _PreviewRect;     // x, y, width, height
 uint _VertexCount;
 uint _FaceCount;
 uint _LineCount;
+
+// ヒットテスト用パラメータ
+float2 _MousePosition;   // マウス座標（adjustedRect座標系）
+
+// ================================================================
+// 描画用カーネル（既存）
+// ================================================================
 
 [numthreads(64, 1, 1)]
 void ClearBuffers(uint3 id : SV_DispatchThreadID)
@@ -109,4 +142,161 @@ void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
     LineSegment seg = _LineBuffer[lineIndex];
     if (seg.lineType == 1) { _LineVisibilityBuffer[lineIndex] = 1.0; return; }
     _LineVisibilityBuffer[lineIndex] = _FaceVisibilityBuffer[seg.faceIndex];
+}
+
+// ================================================================
+// ヒットテスト用カーネル
+// ================================================================
+
+/// <summary>
+/// 頂点ヒットテスト：各頂点とマウス座標の距離を計算
+/// 
+/// 【注意】_MousePosition は adjustedRect 座標系で渡すこと
+/// 呼び出し側で以下の変換が必要：
+///   float ratioY = mousePos.y / rect.height;
+///   float adjustedMouseY = tabHeight + ratioY * (rect.height - tabHeight);
+/// </summary>
+[numthreads(64, 1, 1)]
+void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _VertexCount) return;
+    
+    float4 screenPos = _ScreenPositionBuffer[index];
+    float visibility = _VertexVisibilityBuffer[index];
+    
+    // 不可視の頂点は無限大距離
+    if (visibility < 0.5 || screenPos.w < 0.5)
+    {
+        _VertexHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    // マウスとの距離を計算
+    float2 diff = screenPos.xy - _MousePosition;
+    _VertexHitDistanceBuffer[index] = length(diff);
+}
+
+/// <summary>
+/// 線分ヒットテスト：各線分とマウス座標の最短距離を計算
+/// 
+/// 【注意】_MousePosition は adjustedRect 座標系で渡すこと
+/// </summary>
+[numthreads(64, 1, 1)]
+void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _LineCount) return;
+    
+    LineSegment seg = _LineBuffer[index];
+    float visibility = _LineVisibilityBuffer[index];
+    
+    // 不可視の線分は無限大距離
+    if (visibility < 0.5)
+    {
+        _LineHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    float4 p1Screen = _ScreenPositionBuffer[seg.v1];
+    float4 p2Screen = _ScreenPositionBuffer[seg.v2];
+    
+    // どちらかの頂点が無効なら無限大
+    if (p1Screen.w < 0.5 || p2Screen.w < 0.5)
+    {
+        _LineHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    float2 p1 = p1Screen.xy;
+    float2 p2 = p2Screen.xy;
+    float2 pt = _MousePosition;
+    
+    // 点と線分の最短距離
+    float2 segDir = p2 - p1;
+    float lenSq = dot(segDir, segDir);
+    
+    if (lenSq < 0.000001)
+    {
+        // 線分が点に縮退
+        _LineHitDistanceBuffer[index] = length(pt - p1);
+        return;
+    }
+    
+    float t = clamp(dot(pt - p1, segDir) / lenSq, 0.0, 1.0);
+    float2 projection = p1 + t * segDir;
+    _LineHitDistanceBuffer[index] = length(pt - projection);
+}
+
+/// <summary>
+/// 面ヒットテスト：マウス座標が面内にあるかを判定
+/// 多角形の内外判定（レイキャスト法）
+/// 
+/// 【注意】_MousePosition は adjustedRect 座標系で渡すこと
+/// </summary>
+[numthreads(64, 1, 1)]
+void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
+{
+    uint faceIndex = id.x;
+    if (faceIndex >= _FaceCount) return;
+    
+    float visibility = _FaceVisibilityBuffer[faceIndex];
+    
+    // 不可視の面はヒットなし
+    if (visibility < 0.5)
+    {
+        _FaceHitBuffer[faceIndex] = 0;
+        return;
+    }
+    
+    int vertexCount = asint(_FaceVertexCountBuffer.Load(faceIndex * 4));
+    int offset = asint(_FaceVertexOffsetBuffer.Load(faceIndex * 4));
+    
+    if (vertexCount < 3)
+    {
+        _FaceHitBuffer[faceIndex] = 0;
+        return;
+    }
+    
+    // 多角形の頂点を取得
+    float2 polygon[16];
+    bool allValid = true;
+    for (int i = 0; i < vertexCount && i < 16; i++)
+    {
+        int vIdx = asint(_FaceVertexIndexBuffer.Load((offset + i) * 4));
+        float4 screenPos = _ScreenPositionBuffer[vIdx];
+        if (screenPos.w < 0.5) { allValid = false; break; }
+        polygon[i] = screenPos.xy;
+    }
+    
+    if (!allValid)
+    {
+        _FaceHitBuffer[faceIndex] = 0;
+        return;
+    }
+    
+    // レイキャスト法で内外判定
+    float2 pt = _MousePosition;
+    int crossings = 0;
+    
+    for (int j = 0; j < vertexCount; j++)
+    {
+        int next = (j + 1) % vertexCount;
+        float2 v0 = polygon[j];
+        float2 v1 = polygon[next];
+        
+        // 右方向へのレイが辺と交差するか
+        if ((v0.y <= pt.y && v1.y > pt.y) || (v1.y <= pt.y && v0.y > pt.y))
+        {
+            float vt = (pt.y - v0.y) / (v1.y - v0.y);
+            float xIntersect = v0.x + vt * (v1.x - v0.x);
+            if (pt.x < xIntersect)
+            {
+                crossings++;
+            }
+        }
+    }
+    
+    // 奇数回交差 = 内部
+    _FaceHitBuffer[faceIndex] = (crossings & 1) ? 1 : 0;
 }
