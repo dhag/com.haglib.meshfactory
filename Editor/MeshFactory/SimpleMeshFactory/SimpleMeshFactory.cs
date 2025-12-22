@@ -17,6 +17,7 @@ using MeshFactory.Model;
 using MeshFactory.Localization;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 using MeshFactory.Rendering;
+using MeshFactory.Symmetry;
 
 
 public partial class SimpleMeshFactory : EditorWindow
@@ -119,6 +120,37 @@ public partial class SimpleMeshFactory : EditorWindow
                 case 4: return MeshFactory.Symmetry.SymmetryAxis.Z;
                 default: return MeshFactory.Symmetry.SymmetryAxis.X;
             }
+        }
+
+        // ================================================================
+        // ミラーメッシュキャッシュ
+        // ================================================================
+        
+        /// <summary>ミラー表示用メッシュキャッシュ（遅延初期化）</summary>
+        private SymmetryMeshCache _symmetryCache;
+        
+        /// <summary>ミラーメッシュキャッシュを取得（遅延初期化）</summary>
+        public SymmetryMeshCache SymmetryCache
+        {
+            get
+            {
+                if (_symmetryCache == null)
+                    _symmetryCache = new SymmetryMeshCache();
+                return _symmetryCache;
+            }
+        }
+        
+        /// <summary>ミラーキャッシュを無効化（トポロジー変更時に呼ぶ）</summary>
+        public void InvalidateSymmetryCache()
+        {
+            _symmetryCache?.Invalidate();
+        }
+        
+        /// <summary>ミラーキャッシュをクリア（リソース解放）</summary>
+        public void ClearSymmetryCache()
+        {
+            _symmetryCache?.Clear();
+            _symmetryCache = null;
         }
 
         public MeshContext()
@@ -359,6 +391,9 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         InitPreview();
         wantsMouseMove = true;
+
+        // ★Phase2追加: 対称キャッシュ初期化
+        InitializeSymmetryCache();
 
         // ローカライゼーション設定を読み込み
         L.LoadSettings();
@@ -680,6 +715,9 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         Repaint();
+        
+        // ミラーキャッシュを無効化（頂点位置変更でも正しく更新されるように）
+        InvalidateAllSymmetryCaches();
     }
 
     // ================================================================
@@ -812,12 +850,12 @@ public partial class SimpleMeshFactory : EditorWindow
         meshContext.UnityMesh.RecalculateBounds();
 
         DestroyImmediate(newMesh);
-
         // トポロジキャッシュを無効化
         _meshTopology?.Invalidate();
         // ★追加: エッジキャッシュを無効化
         _drawCache?.InvalidateEdgeCache();
-
+        // ★Phase2追加: 対称表示キャッシュを無効化
+        InvalidateSymmetryCache();
     }
 
 

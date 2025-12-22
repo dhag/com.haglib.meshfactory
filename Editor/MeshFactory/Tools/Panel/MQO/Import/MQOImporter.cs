@@ -333,12 +333,12 @@ namespace MeshFactory.MQO
             // Unity Mesh生成
             meshContext.UnityMesh = meshData.ToUnityMesh();
 
-            // デバッグ出力
+            // デバッグ出力（ミラー属性確認用）
             Debug.Log($"[MQOImporter] ConvertObject: {mqoObj.Name}");
             Debug.Log($"  - MeshData: V={meshData.VertexCount}, F={meshData.FaceCount}");
+            Debug.Log($"  - MQO Mirror: Mode={mqoObj.MirrorMode}, Axis={mqoObj.MirrorAxis}, Dist={mqoObj.MirrorDistance}");
+            Debug.Log($"  - MeshContext: IsMirrored={meshContext.IsMirrored}, MirrorType={meshContext.MirrorType}, MirrorAxis={meshContext.MirrorAxis}");
             Debug.Log($"  - UnityMesh: V={meshContext.UnityMesh?.vertexCount ?? 0}, T={meshContext.UnityMesh?.triangles?.Length ?? 0}");
-            Debug.Log($"  - OriginalPositions: {meshContext.OriginalPositions?.Length ?? 0}");
-            Debug.Log($"  - Materials: {meshContext.Materials?.Count ?? 0}");
 
             return meshContext;
         }

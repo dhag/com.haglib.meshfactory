@@ -23,7 +23,7 @@ public partial class SimpleMeshFactory
     private Material _mirrorMaterial;
 
     // ミラーメッシュキャッシュ（Phase2追加）
-    // MeshContext.SymmetryCacheを使用（各MeshContextが自身のキャッシュを持つ）
+    private SymmetryMeshCache _symmetryCache;
 
     // UI状態
     private bool _foldSymmetry = true;
@@ -42,11 +42,14 @@ public partial class SimpleMeshFactory
     // ================================================================
 
     /// <summary>
-    /// 対称キャッシュを初期化（MeshContext.SymmetryCacheで遅延初期化されるため不要）
+    /// 対称キャッシュを初期化
     /// </summary>
     private void InitializeSymmetryCache()
     {
-        // MeshContext.SymmetryCacheプロパティで遅延初期化されるため何もしない
+        if (_symmetryCache == null)
+        {
+            _symmetryCache = new SymmetryMeshCache();
+        }
     }
 
     /// <summary>
@@ -54,19 +57,7 @@ public partial class SimpleMeshFactory
     /// </summary>
     public void InvalidateSymmetryCache()
     {
-        _model?.CurrentMeshContext?.InvalidateSymmetryCache();
-    }
-
-    /// <summary>
-    /// 全メッシュの対称キャッシュを無効化
-    /// </summary>
-    public void InvalidateAllSymmetryCaches()
-    {
-        if (_meshContextList == null) return;
-        foreach (var ctx in _meshContextList)
-        {
-            ctx?.InvalidateSymmetryCache();
-        }
+        _symmetryCache?.Invalidate();
     }
 
     // ================================================================
@@ -266,10 +257,13 @@ public partial class SimpleMeshFactory
         if (effectiveSettings == null)
             return;
 
-        // MeshContextのキャッシュを更新（必要な場合のみ再構築）
-        meshContext.SymmetryCache.Update(meshContext.Data, effectiveSettings);
+        // キャッシュを初期化
+        InitializeSymmetryCache();
 
-        Mesh mirrorMesh = meshContext.SymmetryCache.MirrorMesh;
+        // キャッシュを更新（必要な場合のみ再構築）
+        _symmetryCache.Update(meshContext.Data, effectiveSettings);
+
+        Mesh mirrorMesh = _symmetryCache.MirrorMesh;
         if (mirrorMesh == null || mirrorMesh.vertexCount == 0)
             return;
 
@@ -296,19 +290,14 @@ public partial class SimpleMeshFactory
     /// </summary>
     public void UpdateSymmetryPositionsOnly()
     {
-        if (!_symmetrySettings.IsEnabled)
+        if (_symmetryCache == null || !_symmetrySettings.IsEnabled)
             return;
 
         var meshContext = _model.CurrentMeshContext;
         if (meshContext?.Data == null)
             return;
 
-        // 有効な対称設定を取得
-        var effectiveSettings = GetEffectiveSymmetrySettings(meshContext);
-        if (effectiveSettings == null)
-            return;
-
-        meshContext.SymmetryCache.UpdatePositionsOnly(meshContext.Data, effectiveSettings);
+        _symmetryCache.UpdatePositionsOnly(meshContext.Data, _symmetrySettings);
     }
 
     /// <summary>
@@ -649,13 +638,7 @@ public partial class SimpleMeshFactory
             _mirrorMaterial = null;
         }
 
-        // 全MeshContextのキャッシュをクリア
-        if (_meshContextList != null)
-        {
-            foreach (var ctx in _meshContextList)
-            {
-                ctx?.ClearSymmetryCache();
-            }
-        }
+        _symmetryCache?.Clear();
+        _symmetryCache = null;
     }
 }

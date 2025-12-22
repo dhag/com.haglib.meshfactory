@@ -63,7 +63,7 @@ public partial class SimpleMeshFactory
         CleanupHitTestValidation();
     }
 
-
+    /*SyncMeshFromData()はトポロジー変更時に必ず呼ばれるためキャッシュの無効化が確実に行われます。
     /// <summary>
     /// エッジキャッシュを無効化（メッシュ変更時に呼び出し）
     /// </summary>
@@ -71,7 +71,10 @@ public partial class SimpleMeshFactory
     {
         _edgeCache?.Invalidate();
         _gpuRenderer?.InvalidateBuffers();
+        // ★Phase2追加: 対称表示キャッシュも無効化
+        InvalidateSymmetryCache();
     }
+    */
 
     // ================================================================
     // 中央ペイン：プレビュー
@@ -137,29 +140,27 @@ public partial class SimpleMeshFactory
             }
         }
 
-        // ミラーメッシュ描画/実装が簡易的なので汚い。要改善
-        if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
+        // ミラーメッシュ描画（グローバル設定 OR MeshContextごとの設定）
+        // 条件判定はDrawMirroredMesh内で行う
+        if (_showSelectedMeshOnly)
         {
-            if (_showSelectedMeshOnly)
+            if (meshContext != null && meshContext.IsVisible)
             {
-                if (meshContext != null && meshContext.IsVisible)
-                {
-                    DrawMirroredMesh(meshContext, mesh);// ミラーメッシュ描画/実装が簡易的なので汚い。要改善
-                }
-            }
-            else
-            {
-                for (int i = 0; i < _meshContextList.Count; i++)
-                {
-                    var ctx = _meshContextList[i];
-                    if (ctx?.UnityMesh == null) continue;
-                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
-
-                    bool isSelected = (i == _selectedIndex);
-                    DrawMirroredMesh(ctx, ctx.UnityMesh);
-                }
+                DrawMirroredMesh(meshContext, mesh);
             }
         }
+        else
+        {
+            for (int i = 0; i < _meshContextList.Count; i++)
+            {
+                var ctx = _meshContextList[i];
+                if (ctx?.UnityMesh == null) continue;
+                if (!ctx.IsVisible) continue;
+
+                DrawMirroredMesh(ctx, ctx.UnityMesh);
+            }
+        }
+
 
         _preview.camera.Render();
 
