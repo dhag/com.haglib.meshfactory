@@ -1,6 +1,6 @@
 // Editor/MeshFactory/Core/MeshGPURenderer.cs
 // IMGUI対応版 GPU描画レンダラー
-// v2.4: 面ホバーの深度対応追加
+// v2.5: 頂点・線分・面の深度対応追加、ホバーデバッグ機能追加
 
 using System;
 using System.Collections.Generic;
@@ -33,9 +33,11 @@ namespace MeshFactory.Rendering
     {
         public int NearestVertexIndex;
         public float NearestVertexDistance;
+        public float NearestVertexDepth;       // 頂点の深度
         
         public int NearestLineIndex;
         public float NearestLineDistance;
+        public float NearestLineDepth;         // 線分の深度（補間）
         
         public int[] HitFaceIndices;
         public float[] HitFaceDepths;  // 各ヒット面の深度
@@ -94,13 +96,17 @@ namespace MeshFactory.Rendering
         
         // ヒットテスト用バッファ
         private ComputeBuffer _vertexHitDistanceBuffer;
+        private ComputeBuffer _vertexHitDepthBuffer;     // 頂点の深度バッファ
         private ComputeBuffer _lineHitDistanceBuffer;
+        private ComputeBuffer _lineHitDepthBuffer;       // 線分の深度バッファ
         private ComputeBuffer _faceHitBuffer;
         private ComputeBuffer _faceHitDepthBuffer;  // 面の深度バッファ
         
         // CPU側読み取り用配列
         private float[] _vertexHitDistanceData;
+        private float[] _vertexHitDepthData;             // 頂点の深度データ
         private float[] _lineHitDistanceData;
+        private float[] _lineHitDepthData;               // 線分の深度データ
         private uint[] _faceHitData;
         private float[] _faceHitDepthData;  // 面の深度データ
         
@@ -258,11 +264,15 @@ namespace MeshFactory.Rendering
             {
                 _vertexHitDistanceBuffer = new ComputeBuffer(_vertexCount, sizeof(float));
                 _vertexHitDistanceData = new float[_vertexCount];
+                _vertexHitDepthBuffer = new ComputeBuffer(_vertexCount, sizeof(float));
+                _vertexHitDepthData = new float[_vertexCount];
                 
                 if (_lineCount > 0)
                 {
                     _lineHitDistanceBuffer = new ComputeBuffer(_lineCount, sizeof(float));
                     _lineHitDistanceData = new float[_lineCount];
+                    _lineHitDepthBuffer = new ComputeBuffer(_lineCount, sizeof(float));
+                    _lineHitDepthData = new float[_lineCount];
                 }
                 
                 if (_faceCount > 0)
@@ -609,6 +619,7 @@ namespace MeshFactory.Rendering
             SetBuffer(_kernelVertexHit, "_ScreenPositionBuffer", _screenPositionBuffer);
             SetBuffer(_kernelVertexHit, "_VertexVisibilityBuffer", _vertexVisibilityBuffer);
             SetBuffer(_kernelVertexHit, "_VertexHitDistanceBuffer", _vertexHitDistanceBuffer);
+            SetBuffer(_kernelVertexHit, "_VertexHitDepthBuffer", _vertexHitDepthBuffer);
             _computeShader.Dispatch(_kernelVertexHit, threadGroups(_vertexCount), 1, 1);
 
             // 2. 線分ヒット距離計算
@@ -618,6 +629,7 @@ namespace MeshFactory.Rendering
                 SetBuffer(_kernelLineHit, "_LineBuffer", _lineBuffer);
                 SetBuffer(_kernelLineHit, "_LineVisibilityBuffer", _lineVisibilityBuffer);
                 SetBuffer(_kernelLineHit, "_LineHitDistanceBuffer", _lineHitDistanceBuffer);
+                SetBuffer(_kernelLineHit, "_LineHitDepthBuffer", _lineHitDepthBuffer);
                 _computeShader.Dispatch(_kernelLineHit, threadGroups(_lineCount), 1, 1);
             }
 
@@ -643,33 +655,78 @@ namespace MeshFactory.Rendering
             {
                 NearestVertexIndex = -1,
                 NearestVertexDistance = float.MaxValue,
+                NearestVertexDepth = float.MaxValue,
                 NearestLineIndex = -1,
-                NearestLineDistance = float.MaxValue
+                NearestLineDistance = float.MaxValue,
+                NearestLineDepth = float.MaxValue
             };
 
+            // 距離がほぼ同じとみなす閾値（ピクセル）
+            const float distanceEpsilon = 0.5f;
+
+            // 頂点ヒット（深度も読み込み）
             if (_vertexHitDistanceBuffer != null && _vertexHitDistanceData != null)
             {
                 _vertexHitDistanceBuffer.GetData(_vertexHitDistanceData);
                 
+                if (_vertexHitDepthBuffer != null && _vertexHitDepthData != null)
+                {
+                    _vertexHitDepthBuffer.GetData(_vertexHitDepthData);
+                }
+                
                 for (int i = 0; i < _vertexHitDistanceData.Length; i++)
                 {
-                    if (_vertexHitDistanceData[i] < result.NearestVertexDistance)
+                    float dist = _vertexHitDistanceData[i];
+                    float depth = (_vertexHitDepthData != null && i < _vertexHitDepthData.Length) 
+                        ? _vertexHitDepthData[i] : float.MaxValue;
+                    
+                    // 距離が近い場合（深度も考慮）
+                    if (dist < result.NearestVertexDistance)
                     {
-                        result.NearestVertexDistance = _vertexHitDistanceData[i];
+                        result.NearestVertexDistance = dist;
+                        result.NearestVertexDepth = depth;
+                        result.NearestVertexIndex = i;
+                    }
+                    // 距離がほぼ同じ場合は深度で比較
+                    else if (Mathf.Abs(dist - result.NearestVertexDistance) <= distanceEpsilon && 
+                             depth < result.NearestVertexDepth)
+                    {
+                        result.NearestVertexDistance = dist;
+                        result.NearestVertexDepth = depth;
                         result.NearestVertexIndex = i;
                     }
                 }
             }
 
+            // 線分ヒット（深度も読み込み）
             if (_lineHitDistanceBuffer != null && _lineHitDistanceData != null)
             {
                 _lineHitDistanceBuffer.GetData(_lineHitDistanceData);
                 
+                if (_lineHitDepthBuffer != null && _lineHitDepthData != null)
+                {
+                    _lineHitDepthBuffer.GetData(_lineHitDepthData);
+                }
+                
                 for (int i = 0; i < _lineHitDistanceData.Length; i++)
                 {
-                    if (_lineHitDistanceData[i] < result.NearestLineDistance)
+                    float dist = _lineHitDistanceData[i];
+                    float depth = (_lineHitDepthData != null && i < _lineHitDepthData.Length) 
+                        ? _lineHitDepthData[i] : float.MaxValue;
+                    
+                    // 距離が近い場合（深度も考慮）
+                    if (dist < result.NearestLineDistance)
                     {
-                        result.NearestLineDistance = _lineHitDistanceData[i];
+                        result.NearestLineDistance = dist;
+                        result.NearestLineDepth = depth;
+                        result.NearestLineIndex = i;
+                    }
+                    // 距離がほぼ同じ場合は深度で比較
+                    else if (Mathf.Abs(dist - result.NearestLineDistance) <= distanceEpsilon && 
+                             depth < result.NearestLineDepth)
+                    {
+                        result.NearestLineDistance = dist;
+                        result.NearestLineDepth = depth;
                         result.NearestLineIndex = i;
                     }
                 }
@@ -724,6 +781,19 @@ namespace MeshFactory.Rendering
         }
 
         /// <summary>
+        /// ホバーデバッグを有効化（線分インデックス検証用）
+        /// </summary>
+        public bool EnableHoverDebug { get; set; } = true;  // デバッグ中は有効
+        
+        // デバッグ用：最後のマウス位置
+        private Vector2 _lastMousePosForDebug;
+        
+        // 前回のホバー状態（変化検出用）
+        private int _prevHoverVertexIndex = -1;
+        private int _prevHoverLineIndex = -1;
+        private int _prevHoverFaceIndex = -1;
+        
+        /// <summary>
         /// ホバー状態を更新
         /// ヒットテスト結果に基づいて、ホバー中の頂点/線分/面を設定
         /// 優先順位: 頂点 > 線分 > 面
@@ -733,35 +803,220 @@ namespace MeshFactory.Rendering
         /// <param name="lineDistance">線分ヒット判定の距離（ピクセル）</param>
         public void UpdateHoverState(GPUHitTestResult hitResult, float vertexRadius = 10f, float lineDistance = 5f)
         {
+            int newHoverVertex = -1;
+            int newHoverLine = -1;
+            int newHoverFace = -1;
+            
             // 頂点ホバー（最優先）
             if (hitResult.HasVertexHit(vertexRadius))
             {
-                _hoverVertexIndex = hitResult.NearestVertexIndex;
-                _hoverLineIndex = -1;
-                _hoverFaceIndex = -1;
+                newHoverVertex = hitResult.NearestVertexIndex;
             }
             // 線分ホバー
             else if (hitResult.HasLineHit(lineDistance))
             {
-                _hoverVertexIndex = -1;
-                _hoverLineIndex = hitResult.NearestLineIndex;
-                _hoverFaceIndex = -1;
+                newHoverLine = hitResult.NearestLineIndex;
             }
             // 面ホバー（最も優先度が低い）
             else if (hitResult.HasFaceHit)
             {
-                _hoverVertexIndex = -1;
-                _hoverLineIndex = -1;
                 // 深度を考慮して最も手前の面を選択
-                _hoverFaceIndex = hitResult.GetNearestFaceIndex();
+                newHoverFace = hitResult.GetNearestFaceIndex();
             }
-            else
+            
+            // デバッグ：状態変化をログ出力
+            if (EnableHoverDebug)
             {
-                _hoverVertexIndex = -1;
-                _hoverLineIndex = -1;
-                _hoverFaceIndex = -1;
+                if (newHoverVertex != _prevHoverVertexIndex)
+                {
+                    if (newHoverVertex >= 0)
+                        Debug.Log($"[HoverDebug] Vertex HOVER: idx={newHoverVertex}, dist={hitResult.NearestVertexDistance:F2}, depth={hitResult.NearestVertexDepth:F4}");
+                    else if (_prevHoverVertexIndex >= 0)
+                        Debug.Log($"[HoverDebug] Vertex UNHOVER: was idx={_prevHoverVertexIndex}");
+                }
+                
+                if (newHoverLine != _prevHoverLineIndex)
+                {
+                    if (newHoverLine >= 0)
+                        Debug.Log($"[HoverDebug] Line HOVER: idx={newHoverLine}, dist={hitResult.NearestLineDistance:F2}, depth={hitResult.NearestLineDepth:F4}");
+                    else if (_prevHoverLineIndex >= 0)
+                        Debug.Log($"[HoverDebug] Line UNHOVER: was idx={_prevHoverLineIndex}");
+                }
+                
+                if (newHoverFace != _prevHoverFaceIndex)
+                {
+                    if (newHoverFace >= 0)
+                        Debug.Log($"[HoverDebug] Face HOVER: idx={newHoverFace}");
+                    else if (_prevHoverFaceIndex >= 0)
+                        Debug.Log($"[HoverDebug] Face UNHOVER: was idx={_prevHoverFaceIndex}");
+                }
+                
+                // ヒットテスト結果の詳細（ホバー対象がない場合も）
+                if (newHoverVertex < 0 && newHoverLine < 0 && newHoverFace < 0)
+                {
+                    if (_prevHoverVertexIndex >= 0 || _prevHoverLineIndex >= 0 || _prevHoverFaceIndex >= 0)
+                    {
+                        Debug.Log($"[HoverDebug] NO HOVER - NearestVertex: idx={hitResult.NearestVertexIndex}, dist={hitResult.NearestVertexDistance:F2} (threshold={vertexRadius}), NearestLine: idx={hitResult.NearestLineIndex}, dist={hitResult.NearestLineDistance:F2} (threshold={lineDistance})");
+                    }
+                }
+            }
+            
+            _prevHoverVertexIndex = newHoverVertex;
+            _prevHoverLineIndex = newHoverLine;
+            _prevHoverFaceIndex = newHoverFace;
+            
+            _hoverVertexIndex = newHoverVertex;
+            _hoverLineIndex = newHoverLine;
+            _hoverFaceIndex = newHoverFace;
+        }
+        
+        /// <summary>
+        /// ホバー状態を更新（デバッグ検証付き）
+        /// </summary>
+        public void UpdateHoverState(GPUHitTestResult hitResult, float vertexRadius, float lineDistance, 
+            Vector2 mousePos, MeshEdgeCache edgeCache)
+        {
+            _lastMousePosForDebug = mousePos;
+            
+            // 通常の更新
+            UpdateHoverState(hitResult, vertexRadius, lineDistance);
+            
+            // デバッグ検証
+            if (EnableHoverDebug && _hoverLineIndex >= 0 && edgeCache != null)
+            {
+                ValidateLineHover(hitResult, mousePos, edgeCache);
             }
         }
+        
+        /// <summary>
+        /// 線分ホバーの検証（デバッグ用）
+        /// GPUの結果とCPU再計算を比較
+        /// </summary>
+        private void ValidateLineHover(GPUHitTestResult hitResult, Vector2 mousePos, MeshEdgeCache edgeCache)
+        {
+            int lineIndex = hitResult.NearestLineIndex;
+            float gpuDistance = hitResult.NearestLineDistance;
+            
+            if (lineIndex < 0 || lineIndex >= edgeCache.LineCount)
+            {
+                Debug.LogError($"[HoverDebug] Invalid line index: {lineIndex}, LineCount: {edgeCache.LineCount}");
+                return;
+            }
+            
+            var lineData = edgeCache.Lines[lineIndex];
+            int v1 = lineData.V1;
+            int v2 = lineData.V2;
+            
+            // GPUバッファからスクリーン座標を読み取り
+            if (_screenPositionData == null || _screenPositionData.Length != _vertexCount)
+            {
+                _screenPositionData = new Vector4[_vertexCount];
+            }
+            _screenPositionBuffer?.GetData(_screenPositionData);
+            
+            if (v1 < 0 || v1 >= _vertexCount || v2 < 0 || v2 >= _vertexCount)
+            {
+                Debug.LogError($"[HoverDebug] Invalid vertex indices: v1={v1}, v2={v2}, VertexCount={_vertexCount}");
+                return;
+            }
+            
+            Vector4 p1Screen = _screenPositionData[v1];
+            Vector4 p2Screen = _screenPositionData[v2];
+            
+            // CPU側で距離を再計算
+            float cpuDistance = DistanceToLineSegmentCPU(mousePos, 
+                new Vector2(p1Screen.x, p1Screen.y), 
+                new Vector2(p2Screen.x, p2Screen.y));
+            
+            // 比較
+            float distanceError = Mathf.Abs(gpuDistance - cpuDistance);
+            const float errorThreshold = 5f;  // ピクセル
+            
+            if (distanceError > errorThreshold)
+            {
+                Debug.LogWarning($"[HoverDebug] Line hover mismatch!\n" +
+                    $"  LineIndex: {lineIndex} (v1={v1}, v2={v2}, FaceIndex={lineData.FaceIndex}, LineType={lineData.LineType})\n" +
+                    $"  GPU Distance: {gpuDistance:F2}, CPU Distance: {cpuDistance:F2}, Error: {distanceError:F2}\n" +
+                    $"  MousePos: ({mousePos.x:F1}, {mousePos.y:F1})\n" +
+                    $"  P1 Screen: ({p1Screen.x:F1}, {p1Screen.y:F1})\n" +
+                    $"  P2 Screen: ({p2Screen.x:F1}, {p2Screen.y:F1})");
+            }
+            
+            // 距離が閾値外なのにホバー判定された場合
+            const float lineHitThreshold = 10f;  // ホバー判定閾値の2倍
+            if (cpuDistance > lineHitThreshold)
+            {
+                Debug.LogError($"[HoverDebug] Line hover distance too large!\n" +
+                    $"  LineIndex: {lineIndex} (v1={v1}, v2={v2})\n" +
+                    $"  CPU Distance: {cpuDistance:F2} (threshold: {lineHitThreshold})\n" +
+                    $"  This suggests index mismatch between GPU and CPU data!");
+                    
+                // 近い線分を探す（デバッグ用）
+                FindNearestLineCPU(mousePos, edgeCache, lineHitThreshold);
+            }
+        }
+        
+        /// <summary>
+        /// CPU側で最も近い線分を探す（デバッグ用）
+        /// </summary>
+        private void FindNearestLineCPU(Vector2 mousePos, MeshEdgeCache edgeCache, float threshold)
+        {
+            if (_screenPositionData == null) return;
+            
+            float minDist = float.MaxValue;
+            int nearestIndex = -1;
+            
+            for (int i = 0; i < edgeCache.LineCount; i++)
+            {
+                var line = edgeCache.Lines[i];
+                if (line.V1 < 0 || line.V1 >= _vertexCount || 
+                    line.V2 < 0 || line.V2 >= _vertexCount)
+                    continue;
+                
+                Vector4 p1 = _screenPositionData[line.V1];
+                Vector4 p2 = _screenPositionData[line.V2];
+                
+                // 無効な座標はスキップ
+                if (p1.w < 0.5f || p2.w < 0.5f) continue;
+                
+                float dist = DistanceToLineSegmentCPU(mousePos, 
+                    new Vector2(p1.x, p1.y), 
+                    new Vector2(p2.x, p2.y));
+                
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    nearestIndex = i;
+                }
+            }
+            
+            if (nearestIndex >= 0 && minDist < threshold)
+            {
+                var nearestLine = edgeCache.Lines[nearestIndex];
+                Debug.Log($"[HoverDebug] CPU found nearest line:\n" +
+                    $"  Index: {nearestIndex} (v1={nearestLine.V1}, v2={nearestLine.V2})\n" +
+                    $"  Distance: {minDist:F2}");
+            }
+        }
+        
+        /// <summary>
+        /// 点と線分の最短距離（CPU計算）
+        /// </summary>
+        private float DistanceToLineSegmentCPU(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
+        {
+            Vector2 line = lineEnd - lineStart;
+            float lenSq = line.sqrMagnitude;
+            
+            if (lenSq < 0.000001f)
+                return Vector2.Distance(point, lineStart);
+            
+            float t = Mathf.Clamp01(Vector2.Dot(point - lineStart, line) / lenSq);
+            Vector2 projection = lineStart + t * line;
+            return Vector2.Distance(point, projection);
+        }
+        
+        // スクリーン座標データ（デバッグ用）
+        private Vector4[] _screenPositionData;
 
         /// <summary>
         /// 現在のホバー面インデックス
@@ -940,7 +1195,9 @@ namespace MeshFactory.Rendering
             _lineSelectionBuffer?.Release();
             
             _vertexHitDistanceBuffer?.Release();
+            _vertexHitDepthBuffer?.Release();
             _lineHitDistanceBuffer?.Release();
+            _lineHitDepthBuffer?.Release();
             _faceHitBuffer?.Release();
             _faceHitDepthBuffer?.Release();
             
@@ -957,12 +1214,16 @@ namespace MeshFactory.Rendering
             _lineSelectionBuffer = null;
             
             _vertexHitDistanceBuffer = null;
+            _vertexHitDepthBuffer = null;
             _lineHitDistanceBuffer = null;
+            _lineHitDepthBuffer = null;
             _faceHitBuffer = null;
             _faceHitDepthBuffer = null;
             
             _vertexHitDistanceData = null;
+            _vertexHitDepthData = null;
             _lineHitDistanceData = null;
+            _lineHitDepthData = null;
             _faceHitData = null;
             _faceHitDepthData = null;
             

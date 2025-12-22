@@ -1,6 +1,6 @@
 // Compute2D_GPU.compute
 // GPU描画 + ヒットテスト用 ComputeShader
-// v2.3 - 面ヒットテストに深度出力追加
+// v2.4 - 頂点・線分・面ヒットテストに深度出力追加
 
 #pragma kernel ClearBuffers
 #pragma kernel ComputeScreenPositions
@@ -35,7 +35,9 @@ RWStructuredBuffer<float> _LineVisibilityBuffer;
 
 // ヒットテスト用出力バッファ
 RWStructuredBuffer<float> _VertexHitDistanceBuffer;
+RWStructuredBuffer<float> _VertexHitDepthBuffer;   // 頂点の深度
 RWStructuredBuffer<float> _LineHitDistanceBuffer;
+RWStructuredBuffer<float> _LineHitDepthBuffer;     // 線分の深度（補間）
 RWStructuredBuffer<uint> _FaceHitBuffer;  // 0 or 1
 RWStructuredBuffer<float> _FaceHitDepthBuffer;  // 面の深度（Z値）
 
@@ -151,6 +153,7 @@ void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
 
 /// <summary>
 /// 頂点ヒットテスト：各頂点とマウス座標の距離を計算
+/// 深度（Z値）も出力
 /// 
 /// 【注意】_MousePosition は adjustedRect 座標系で渡すこと
 /// 呼び出し側で以下の変換が必要：
@@ -166,20 +169,25 @@ void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
     float4 screenPos = _ScreenPositionBuffer[index];
     float visibility = _VertexVisibilityBuffer[index];
     
-    // 不可視の頂点は無限大距離
+    // 不可視の頂点は無限大距離・深度
     if (visibility < 0.5 || screenPos.w < 0.5)
     {
         _VertexHitDistanceBuffer[index] = 1e10;
+        _VertexHitDepthBuffer[index] = 1e10;
         return;
     }
     
     // マウスとの距離を計算
     float2 diff = screenPos.xy - _MousePosition;
     _VertexHitDistanceBuffer[index] = length(diff);
+    
+    // 深度を出力
+    _VertexHitDepthBuffer[index] = screenPos.z;
 }
 
 /// <summary>
 /// 線分ヒットテスト：各線分とマウス座標の最短距離を計算
+/// 深度（マウス最近接点のZ値を補間）も出力
 /// 
 /// 【注意】_MousePosition は adjustedRect 座標系で渡すこと
 /// </summary>
@@ -192,10 +200,11 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     LineSegment seg = _LineBuffer[index];
     float visibility = _LineVisibilityBuffer[index];
     
-    // 不可視の線分は無限大距離
+    // 不可視の線分は無限大距離・深度
     if (visibility < 0.5)
     {
         _LineHitDistanceBuffer[index] = 1e10;
+        _LineHitDepthBuffer[index] = 1e10;
         return;
     }
     
@@ -206,6 +215,7 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     if (p1Screen.w < 0.5 || p2Screen.w < 0.5)
     {
         _LineHitDistanceBuffer[index] = 1e10;
+        _LineHitDepthBuffer[index] = 1e10;
         return;
     }
     
@@ -221,12 +231,16 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     {
         // 線分が点に縮退
         _LineHitDistanceBuffer[index] = length(pt - p1);
+        _LineHitDepthBuffer[index] = p1Screen.z;
         return;
     }
     
     float t = clamp(dot(pt - p1, segDir) / lenSq, 0.0, 1.0);
     float2 projection = p1 + t * segDir;
     _LineHitDistanceBuffer[index] = length(pt - projection);
+    
+    // 深度を補間して出力
+    _LineHitDepthBuffer[index] = lerp(p1Screen.z, p2Screen.z, t);
 }
 
 /// <summary>

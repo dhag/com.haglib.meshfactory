@@ -157,6 +157,8 @@ public partial class SimpleMeshFactory
 
         float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
         var hitResult = _gpuRenderer.DispatchHitTest(mousePos, rect, tabHeight);
+        
+        // 通常のホバー更新（デバッグなし）
         _gpuRenderer.UpdateHoverState(hitResult, HOVER_VERTEX_RADIUS, HOVER_LINE_DISTANCE);
         Repaint();
     }
