@@ -20,7 +20,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ヒットテスト検証を有効化
     /// </summary>
-    [MenuItem("MeshFactory/Debug/Toggle HitTest Validation")]
+    [MenuItem("Tools/SimpleMeshFactory/Debug/Toggle HitTest Validation")]
     public static void ToggleHitTestValidation()
     {
         var window = GetWindow<SimpleMeshFactory>();
