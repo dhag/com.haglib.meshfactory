@@ -99,11 +99,11 @@ public class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMeshCreator
         EditorGUILayout.LabelField("Size", EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.RadiusTop = EditorGUILayout.Slider("Radius Top", _params.RadiusTop, 0.1f, 2f);
-            _params.RadiusBottom = EditorGUILayout.Slider("Radius Bottom", _params.RadiusBottom, 0.1f, 2f);
+            _params.RadiusTop = EditorGUILayout.Slider("Radius Top", _params.RadiusTop, 0.1f, 2f);//スライダーの上限下限
+            _params.RadiusBottom = EditorGUILayout.Slider("Radius Bottom", _params.RadiusBottom, 0.1f, 2f);//スライダーの上限下限
 
             float minHeight = _params.RadiusTop + _params.RadiusBottom;
-            _params.Height = EditorGUILayout.Slider("Height", _params.Height, minHeight, 10f);
+            _params.Height = EditorGUILayout.Slider("Height", _params.Height, minHeight, 10f);//スライダーの上限下限
         }
 
         EditorGUILayout.Space(5);
@@ -121,7 +121,7 @@ public class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMeshCreator
         EditorGUILayout.LabelField("Pivot Offset", EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.Pivot.y = EditorGUILayout.Slider("Y", _params.Pivot.y, -0.5f, 0.5f);
+            _params.Pivot.y = EditorGUILayout.Slider("Y", _params.Pivot.y, -0.5f, 0.5f);//スライダーの上限下限
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Center", GUILayout.Width(60)))

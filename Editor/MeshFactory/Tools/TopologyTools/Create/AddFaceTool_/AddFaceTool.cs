@@ -8,6 +8,7 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
+using MeshFactory.Localization;
 
 namespace MeshFactory.Tools
 {
@@ -54,11 +55,15 @@ namespace MeshFactory.Tools
     /// <summary>
     /// 面追加ツール
     /// </summary>
-    public class AddFaceTool : IEditTool
+    public partial class AddFaceTool : IEditTool
     {
         public string Name => "Add Face";
         public string DisplayName => "Add Face";
         //public ToolCategory Category => ToolCategory.Topology;  
+        /// <summary>
+        /// ローカライズされた表示名を取得
+        /// </summary>
+        public string GetLocalizedDisplayName() => L.Get("Tool_Add Face");
 
         // ================================================================
         // 設定（IToolSettings対応）
@@ -208,7 +213,6 @@ namespace MeshFactory.Tools
                     _lastLinePoint.Value.Position, ctx.PreviewRect,
                     ctx.CameraPosition, ctx.CameraTarget);
 
-                // 開始点（オレンジ）
                 Color startColor = new Color(1f, 0.5f, 0f, 0.9f);
                 float size = 12f;
 
@@ -218,7 +222,8 @@ namespace MeshFactory.Tools
                     size, size), startColor);
 
                 GUI.Label(new Rect(startScreen.x + 10, startScreen.y - 8, 50, 16),
-                    "START", EditorStyles.whiteBoldLabel);
+                    T("Start"), EditorStyles.whiteBoldLabel);  // ← 変更
+
 
                 // プレビュー点への線
                 if (_previewValid)
@@ -337,13 +342,13 @@ namespace MeshFactory.Tools
         public void DrawSettingsUI()
         {
             // モード選択
-            EditorGUILayout.LabelField("Face Type", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField(T("FaceType"), EditorStyles.miniBoldLabel);  // ← 変更
             int currentIndex = System.Array.IndexOf(ModeValues, Mode);
-            int newIndex = GUILayout.SelectionGrid(currentIndex, ModeNames, 3);
+            int newIndex = GUILayout.SelectionGrid(currentIndex, LocalizedModeNames, 3);  // ← 変更
             if (newIndex != currentIndex && newIndex >= 0 && newIndex < ModeValues.Length)
             {
                 Mode = ModeValues[newIndex];
-                _points.Clear();  // モード変更時はリセット
+                _points.Clear();
                 _lastLinePoint = null;
             }
 
@@ -352,25 +357,29 @@ namespace MeshFactory.Tools
             {
                 EditorGUILayout.Space(4);
                 EditorGUI.BeginChangeCheck();
-                ContinuousLine = EditorGUILayout.Toggle("Continuous Line", ContinuousLine);
+                ContinuousLine = EditorGUILayout.Toggle(T("ContinuousLine"), ContinuousLine);  // ← 変更
                 if (EditorGUI.EndChangeCheck())
                 {
-                    _lastLinePoint = null;  // モード変更時はリセット
+                    _lastLinePoint = null;
                 }
 
                 if (ContinuousLine && _lastLinePoint.HasValue)
                 {
-                    EditorGUILayout.LabelField("  ↳ Click to continue from last point", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(T("ContinuousHint"), EditorStyles.miniLabel);  // ← 変更
                 }
             }
 
             EditorGUILayout.Space(4);
 
             // 進捗表示
-            string progressText = $"Points: {_points.Count} / {RequiredPoints}";
+            string progressText;
             if (Mode == AddFaceMode.Line && ContinuousLine && _lastLinePoint.HasValue)
             {
-                progressText = "Click to add next line segment";
+                progressText = T("ClickToContinue");  // ← 変更
+            }
+            else
+            {
+                progressText = T("Progress", _points.Count, RequiredPoints);  // ← 変更
             }
             EditorGUILayout.LabelField(progressText, EditorStyles.miniLabel);
 
@@ -378,14 +387,14 @@ namespace MeshFactory.Tools
             if (_points.Count > 0)
             {
                 EditorGUILayout.Space(2);
-                EditorGUILayout.LabelField("Placed Points:", EditorStyles.miniBoldLabel);
+                EditorGUILayout.LabelField(T("PlacedPoints"), EditorStyles.miniBoldLabel);  // ← 変更
 
                 for (int i = 0; i < _points.Count; i++)
                 {
                     var p = _points[i];
                     string label = p.IsExistingVertex
-                        ? $"  {i + 1}: V{p.ExistingVertexIndex}"
-                        : $"  {i + 1}: NEW";
+                        ? T("PointExisting", i + 1, p.ExistingVertexIndex)  // ← 変更
+                        : T("PointNew", i + 1);  // ← 変更
                     EditorGUILayout.LabelField(label, EditorStyles.miniLabel);
                 }
             }
@@ -396,13 +405,14 @@ namespace MeshFactory.Tools
             bool hasData = _points.Count > 0 || (ContinuousLine && _lastLinePoint.HasValue);
             if (hasData)
             {
-                if (GUILayout.Button("Clear Points"))
+                if (GUILayout.Button(T("ClearPoints")))  // ← 変更
                 {
                     _points.Clear();
                     _lastLinePoint = null;
                 }
             }
         }
+    
 
         public void OnActivate(ToolContext ctx)
         {

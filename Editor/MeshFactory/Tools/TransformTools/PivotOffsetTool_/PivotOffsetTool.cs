@@ -16,7 +16,7 @@ namespace MeshFactory.Tools
     /// ピボットオフセット移動ツール
     /// ハンドルを動かすと全頂点が逆方向に移動する
     /// </summary>
-    public class PivotOffsetTool : IEditTool
+    public partial class PivotOffsetTool : IEditTool
     {
         public string Name => "Pivot Offset";
         public string DisplayName => "Pivot Offset";
@@ -140,22 +140,17 @@ namespace MeshFactory.Tools
             DrawAxisGizmo(ctx);
         }
 
+
         public void DrawSettingsUI()
         {
-            EditorGUILayout.LabelField("Pivot Offset Tool", EditorStyles.miniBoldLabel);
-            EditorGUILayout.HelpBox(
-                "ハンドルをドラッグするとPivotが移動します。\n" +
-                "（実際には全頂点が逆方向に移動）\n\n" +
-                "・軸ハンドル: その軸方向のみ\n" +
-                "・中央: 自由移動",
-                MessageType.Info);
+            EditorGUILayout.LabelField(T("Title"), EditorStyles.miniBoldLabel);  // ← 変更
+            EditorGUILayout.HelpBox(T("Help"), MessageType.Info);  // ← 変更
 
             if (_state != ToolState.Idle)
             {
-                EditorGUILayout.LabelField($"移動中: {_totalOffset:F3}");
+                EditorGUILayout.LabelField(T("Moving", _totalOffset.ToString("F3")));  // ← 変更
             }
         }
-
         public void OnActivate(ToolContext ctx)
         {
             _lastContext = ctx;
@@ -359,8 +354,10 @@ namespace MeshFactory.Tools
             GUIStyle labelStyle = new GUIStyle(EditorStyles.miniLabel);
             labelStyle.normal.textColor = centerColor;
             labelStyle.fontStyle = centerHovered ? FontStyle.Bold : FontStyle.Normal;
-            GUI.Label(new Rect(originScreen.x + currentCenterSize / 2 + 4, originScreen.y - 8, 50, 16), "Pivot", labelStyle);
+            GUI.Label(new Rect(originScreen.x + currentCenterSize / 2 + 4, originScreen.y - 8, 50, 16),
+                T("Pivot"), labelStyle);  // ← 変更
         }
+    
 
         private Vector2 GetAxisScreenEnd(ToolContext ctx, Vector3 axisDirection, Vector2 originScreen)
         {

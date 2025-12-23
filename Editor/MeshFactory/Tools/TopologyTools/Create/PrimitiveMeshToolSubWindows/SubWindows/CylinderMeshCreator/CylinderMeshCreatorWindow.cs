@@ -108,9 +108,9 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
         EditorGUILayout.LabelField("Size", EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.RadiusTop = EditorGUILayout.Slider("Radius Top", _params.RadiusTop, 0f, 5f);
-            _params.RadiusBottom = EditorGUILayout.Slider("Radius Bottom", _params.RadiusBottom, 0f, 5f);
-            _params.Height = EditorGUILayout.Slider("Height", _params.Height, 0.1f, 10f);
+            _params.RadiusTop = EditorGUILayout.Slider("Radius Top", _params.RadiusTop, 0f, 5f);//スライダーの上限下限
+            _params.RadiusBottom = EditorGUILayout.Slider("Radius Bottom", _params.RadiusBottom, 0f, 5f);//スライダーの上限下限
+            _params.Height = EditorGUILayout.Slider("Height", _params.Height, 0.1f, 10f);//スライダーの上限下限
         }
 
         EditorGUILayout.Space(5);
@@ -118,8 +118,8 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
         EditorGUILayout.LabelField("Segments", EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.RadialSegments = EditorGUILayout.IntSlider("Radial", _params.RadialSegments, 3, 48);
-            _params.HeightSegments = EditorGUILayout.IntSlider("Height", _params.HeightSegments, 1, 32);
+            _params.RadialSegments = EditorGUILayout.IntSlider("Radial", _params.RadialSegments, 3, 48);//スライダーの上限下限
+            _params.HeightSegments = EditorGUILayout.IntSlider("Height", _params.HeightSegments, 1, 32);//スライダーの上限下限
         }
 
         EditorGUILayout.Space(5);
@@ -133,7 +133,7 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
             if (_params.CapBottom && _params.RadiusBottom > 0)
                 maxEdgeRadius = Mathf.Min(maxEdgeRadius, _params.RadiusBottom);
 
-            _params.EdgeRadius = EditorGUILayout.Slider("Radius", _params.EdgeRadius, 0f, maxEdgeRadius);
+            _params.EdgeRadius = EditorGUILayout.Slider("Radius", _params.EdgeRadius, 0f, maxEdgeRadius);//スライダーの上限下限
 
             using (new EditorGUI.DisabledScope(_params.EdgeRadius <= 0f))
             {
@@ -155,7 +155,7 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
         EditorGUILayout.LabelField("Pivot Offset", EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.Pivot.y = EditorGUILayout.Slider("Y", _params.Pivot.y, -0.5f, 0.5f);
+            _params.Pivot.y = EditorGUILayout.Slider("Y", _params.Pivot.y, -0.5f, 0.5f);//スライダーの上限下限
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Center", GUILayout.Width(60)))

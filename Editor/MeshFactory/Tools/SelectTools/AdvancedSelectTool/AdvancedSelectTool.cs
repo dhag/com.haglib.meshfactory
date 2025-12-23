@@ -246,7 +246,7 @@ namespace MeshFactory.Tools
             // EdgeLoopモードの追加設定
             if (Mode == AdvancedSelectMode.EdgeLoop)
             {
-                EdgeLoopThreshold = EditorGUILayout.Slider("Direction Threshold", EdgeLoopThreshold, 0f, 1f);
+                EdgeLoopThreshold = EditorGUILayout.Slider("Direction Threshold", EdgeLoopThreshold, 0f, 1f);//スライダーの上限下限
             }
 
             EditorGUILayout.Space(5);

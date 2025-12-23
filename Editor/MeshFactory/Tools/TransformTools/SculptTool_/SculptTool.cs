@@ -30,214 +30,173 @@ namespace MeshFactory.Tools
     /// <summary>
     /// スカルプトツール
     /// </summary>
-    public class SculptTool : IEditTool
+    public partial class SculptTool : IEditTool
     {
-        public string Name => "Sculpt";
-        public string DisplayName => "Sculpt";
 
-        //public ToolCategory Category => ToolCategory.Transform;
+            public string Name => "Sculpt";
+            public string DisplayName => "Sculpt";
 
-        // ================================================================
-        // 設定（IToolSettings対応）
-        // ================================================================
+            // ================================================================
+            // 設定
+            // ================================================================
 
-        private SculptSettings _settings = new SculptSettings();
-        public IToolSettings Settings => _settings;
+            private SculptSettings _settings = new SculptSettings();
+            public IToolSettings Settings => _settings;
 
-        // 設定へのショートカットプロパティ
-        private SculptMode Mode
-        {
-            get => _settings.Mode;
-            set => _settings.Mode = value;
-        }
+            private SculptMode Mode
+            {
+                get => _settings.Mode;
+                set => _settings.Mode = value;
+            }
 
-        private float BrushRadius
-        {
-            get => _settings.BrushRadius;
-            set => _settings.BrushRadius = value;
-        }
+            private float BrushRadius
+            {
+                get => _settings.BrushRadius;
+                set => _settings.BrushRadius = value;
+            }
 
-        private float Strength
-        {
-            get => _settings.Strength;
-            set => _settings.Strength = value;
-        }
+            private float Strength
+            {
+                get => _settings.Strength;
+                set => _settings.Strength = value;
+            }
 
-        private bool Invert
-        {
-            get => _settings.Invert;
-            set => _settings.Invert = value;
-        }
+            private bool Invert
+            {
+                get => _settings.Invert;
+                set => _settings.Invert = value;
+            }
 
-        // === ドラッグ状態 ===
-        private bool _isDragging;
-        private Vector2 _currentScreenPos;
-        private MeshDataSnapshot _beforeSnapshot;
+            // === ドラッグ状態 ===
+            private bool _isDragging;
+            private Vector2 _currentScreenPos;
+            private MeshDataSnapshot _beforeSnapshot;
 
-        // === キャッシュ ===
-        private Dictionary<int, HashSet<int>> _adjacencyCache;
-        private Dictionary<int, Vector3> _vertexNormalsCache;
+            // === キャッシュ ===
+            private Dictionary<int, HashSet<int>> _adjacencyCache;
+            private Dictionary<int, Vector3> _vertexNormalsCache;
 
-        // === モード選択用 ===
-        private static readonly string[] ModeNames = { "Draw", "Smooth", "Inflate", "Flatten" };
-        private static readonly SculptMode[] ModeValues = { 
-            SculptMode.Draw, 
-            SculptMode.Smooth, 
+            // === モード選択用 ===
+            private static readonly SculptMode[] ModeValues = {
+            SculptMode.Draw,
+            SculptMode.Smooth,
             SculptMode.Inflate,
             SculptMode.Flatten
         };
 
-        // ================================================================
-        // IEditTool 実装
-        // ================================================================
+            // ================================================================
+            // IEditTool 実装
+            // ================================================================
 
-        public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
-        {
-            if (ctx.MeshData == null) return false;
-
-            _isDragging = true;
-            _currentScreenPos = mousePos;
-
-            // Undo用スナップショット
-            _beforeSnapshot = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
-
-            // キャッシュを構築
-            BuildCaches(ctx.MeshData);
-
-            // 最初のストロークを適用
-            ApplyBrush(ctx, mousePos);
-
-            return true;
-        }
-
-        public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
-        {
-            if (!_isDragging) return false;
-            if (ctx.MeshData == null) return false;
-
-            _currentScreenPos = mousePos;
-
-            // ブラシを適用
-            ApplyBrush(ctx, mousePos);
-
-            return true;
-        }
-
-        public bool OnMouseUp(ToolContext ctx, Vector2 mousePos)
-        {
-            if (!_isDragging) return false;
-
-            _isDragging = false;
-
-            // Undo記録
-            if (_beforeSnapshot != null && ctx.UndoController != null)
+            public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
             {
-                var after = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
-                ctx.UndoController.RecordTopologyChange(_beforeSnapshot, after, $"Sculpt ({Mode})");
+                if (ctx.MeshData == null) return false;
+
+                _isDragging = true;
+                _currentScreenPos = mousePos;
+
+                _beforeSnapshot = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                BuildCaches(ctx.MeshData);
+                ApplyBrush(ctx, mousePos);
+
+                return true;
+            }
+
+            public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
+            {
+                if (!_isDragging) return false;
+                if (ctx.MeshData == null) return false;
+
+                _currentScreenPos = mousePos;
+                ApplyBrush(ctx, mousePos);
+
+                return true;
+            }
+
+            public bool OnMouseUp(ToolContext ctx, Vector2 mousePos)
+            {
+                if (!_isDragging) return false;
+
+                _isDragging = false;
+
+                if (_beforeSnapshot != null && ctx.UndoController != null)
+                {
+                    var after = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                    ctx.UndoController.RecordTopologyChange(_beforeSnapshot, after, $"Sculpt ({Mode})");
+                    _beforeSnapshot = null;
+                }
+
+                _adjacencyCache = null;
+                _vertexNormalsCache = null;
+
+                ctx.Repaint?.Invoke();
+                return true;
+            }
+
+            public void DrawGizmo(ToolContext ctx)
+            {
+                if (ctx.MeshData == null) return;
+
+                UnityEditor_Handles.BeginGUI();
+
+                Color brushColor = Invert ? new Color(1f, 0.5f, 0.5f, 0.5f) : new Color(0.5f, 0.8f, 1f, 0.5f);
+                UnityEditor_Handles.color = brushColor;
+
+                Vector2 centerScreen = _currentScreenPos;
+                float screenRadius = EstimateBrushScreenRadius(ctx);
+
+                DrawCircle(centerScreen, screenRadius, 32);
+
+                GUI.color = Color.white;
+                string modeText = GetModeName(Mode) + (Invert ? $" ({T("Invert")})" : "");
+                GUI.Label(new Rect(centerScreen.x + screenRadius + 5, centerScreen.y - 10, 150, 20), modeText);
+
+                UnityEditor_Handles.EndGUI();
+            }
+
+            public void DrawSettingsUI()
+            {
+                EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
+
+                // モード選択
+                int currentIndex = Array.IndexOf(ModeValues, Mode);
+                int newIndex = GUILayout.SelectionGrid(currentIndex, ModeNames, 2);
+                if (newIndex != currentIndex && newIndex >= 0 && newIndex < ModeValues.Length)
+                {
+                    Mode = ModeValues[newIndex];
+                }
+
+                EditorGUILayout.Space(5);
+
+                BrushRadius = EditorGUILayout.Slider(T("BrushSize"), BrushRadius,
+                    SculptSettings.MIN_BRUSH_RADIUS, SculptSettings.MAX_BRUSH_RADIUS);
+
+                Strength = EditorGUILayout.Slider(T("Strength"), Strength,
+                    SculptSettings.MIN_STRENGTH, SculptSettings.MAX_STRENGTH);
+
+                Invert = EditorGUILayout.Toggle(T("Invert"), Invert);
+
+                EditorGUILayout.Space(3);
+
+                EditorGUILayout.HelpBox(GetModeHelp(Mode), MessageType.Info);
+            }
+
+            public void OnActivate(ToolContext ctx) => Reset();
+            public void OnDeactivate(ToolContext ctx) => Reset();
+
+            public void Reset()
+            {
+                _isDragging = false;
                 _beforeSnapshot = null;
+                _adjacencyCache = null;
+                _vertexNormalsCache = null;
             }
 
-            // キャッシュをクリア
-            _adjacencyCache = null;
-            _vertexNormalsCache = null;
+            // ================================================================
+            // ブラシ適用
+            // ================================================================
 
-            ctx.Repaint?.Invoke();
-            return true;
-        }
-
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.MeshData == null) return;
-
-            UnityEditor_Handles.BeginGUI();
-
-            // ブラシ円を描画
-            Color brushColor = Invert ? new Color(1f, 0.5f, 0.5f, 0.5f) : new Color(0.5f, 0.8f, 1f, 0.5f);
-            UnityEditor_Handles.color = brushColor;
-
-            // ブラシサイズをスクリーン座標で近似（中心から少し離れた点で計算）
-            Vector2 centerScreen = _currentScreenPos;
-            
-            // 3Dでのブラシ半径をスクリーンサイズに変換（概算）
-            float screenRadius = EstimateBrushScreenRadius(ctx);
-
-            // 円を描画
-            DrawCircle(centerScreen, screenRadius, 32);
-
-            // モード表示
-            GUI.color = Color.white;
-            string modeText = Mode.ToString() + (Invert ? " (Invert)" : "");
-            GUI.Label(new Rect(centerScreen.x + screenRadius + 5, centerScreen.y - 10, 100, 20), modeText);
-
-            UnityEditor_Handles.EndGUI();
-        }
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField("Sculpt Tool", EditorStyles.boldLabel);
-
-            // モード選択
-            int currentIndex = Array.IndexOf(ModeValues, Mode);
-            int newIndex = GUILayout.SelectionGrid(currentIndex, ModeNames, 2);
-            if (newIndex != currentIndex && newIndex >= 0 && newIndex < ModeValues.Length)
-            {
-                Mode = ModeValues[newIndex];
-            }
-
-            EditorGUILayout.Space(5);
-
-            // ブラシサイズ
-            BrushRadius = EditorGUILayout.Slider("Brush Size", BrushRadius, SculptSettings.MIN_BRUSH_RADIUS, SculptSettings.MAX_BRUSH_RADIUS);
-
-            // 強度
-            Strength = EditorGUILayout.Slider("Strength", Strength, SculptSettings.MIN_STRENGTH, SculptSettings.MAX_STRENGTH);
-
-            // 凸凹反転
-            Invert = EditorGUILayout.Toggle("Invert", Invert);
-
-            EditorGUILayout.Space(3);
-
-            // モード説明
-            switch (Mode)
-            {
-                case SculptMode.Draw:
-                    EditorGUILayout.HelpBox("ドラッグで表面を盛り上げ/盛り下げ", MessageType.Info);
-                    break;
-                case SculptMode.Smooth:
-                    EditorGUILayout.HelpBox("ドラッグで表面を滑らかにする", MessageType.Info);
-                    break;
-                case SculptMode.Inflate:
-                    EditorGUILayout.HelpBox("ドラッグで表面を膨らませる/縮ませる", MessageType.Info);
-                    break;
-                case SculptMode.Flatten:
-                    EditorGUILayout.HelpBox("ドラッグで表面を平らにする", MessageType.Info);
-                    break;
-            }
-        }
-
-        public void OnActivate(ToolContext ctx)
-        {
-            Reset();
-        }
-
-        public void OnDeactivate(ToolContext ctx)
-        {
-            Reset();
-        }
-
-        public void Reset()
-        {
-            _isDragging = false;
-            _beforeSnapshot = null;
-            _adjacencyCache = null;
-            _vertexNormalsCache = null;
-        }
-
-        // ================================================================
-        // ブラシ適用
-        // ================================================================
-
-        private void ApplyBrush(ToolContext ctx, Vector2 mousePos)
+            private void ApplyBrush(ToolContext ctx, Vector2 mousePos)
         {
             // マウス位置からレイを取得
             Ray ray = ctx.ScreenPosToRay(mousePos);

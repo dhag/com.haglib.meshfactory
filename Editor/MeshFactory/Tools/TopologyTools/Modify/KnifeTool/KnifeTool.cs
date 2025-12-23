@@ -264,7 +264,7 @@ namespace MeshFactory.Tools
                 _edgeBisectMode = EditorGUILayout.ToggleLeft("Bisect (center)", _edgeBisectMode);
                 if (_edgeBisectMode)
                 {
-                    _cutRatio = EditorGUILayout.Slider("Cut Position", _cutRatio, 0.1f, 0.9f);
+                    _cutRatio = EditorGUILayout.Slider("Cut Position", _cutRatio, 0.1f, 0.9f);//スライダーの上限下限
                 }
             }
 

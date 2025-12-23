@@ -239,7 +239,7 @@ namespace MeshFactory.Tools
 
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Scale", GUILayout.Width(50));
-                BevelScale = EditorGUILayout.Slider(BevelScale, 0.01f, 1f);
+                BevelScale = EditorGUILayout.Slider(BevelScale, 0.01f, 1f);//スライダーの上限下限
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();

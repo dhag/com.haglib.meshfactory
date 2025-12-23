@@ -110,7 +110,7 @@ public partial class SimpleMeshFactory
 
             // 平面オフセット
             EditorGUI.BeginChangeCheck();
-            float newOffset = EditorGUILayout.Slider(L.Get("PlaneOffset"), _symmetrySettings.PlaneOffset, -1f, 1f);
+            float newOffset = EditorGUILayout.Slider(L.Get("PlaneOffset"), _symmetrySettings.PlaneOffset, -1f, 1f);//スライダーの上限下限
             if (EditorGUI.EndChangeCheck())
             {
                 _symmetrySettings.PlaneOffset = newOffset;
@@ -141,7 +141,7 @@ public partial class SimpleMeshFactory
             bool showMesh = EditorGUILayout.Toggle(L.Get("MirrorMesh"), _symmetrySettings.ShowMirrorMesh);
             bool showWire = EditorGUILayout.Toggle(L.Get("MirrorWireframe"), _symmetrySettings.ShowMirrorWireframe);
             bool showPlane = EditorGUILayout.Toggle(L.Get("SymmetryPlane"), _symmetrySettings.ShowSymmetryPlane);
-            float alpha = EditorGUILayout.Slider(L.Get("MirrorAlpha"), _symmetrySettings.MirrorAlpha, 0.1f, 1f);
+            float alpha = EditorGUILayout.Slider(L.Get("MirrorAlpha"), _symmetrySettings.MirrorAlpha, 0.1f, 1f);//スライダーの上限下限
 
             if (EditorGUI.EndChangeCheck())
             {

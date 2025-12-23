@@ -173,9 +173,9 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
             EditorGUILayout.LabelField("Size (Linked)", EditorStyles.miniBoldLabel);
             using (new EditorGUI.IndentLevelScope())
             {
-                float newWidth = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);
-                float newHeight = EditorGUILayout.Slider("Height (Y)", _params.Height, 0.1f, 10f);
-                float newDepth = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);
+                float newWidth = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);//スライダーの上限下限
+                float newHeight = EditorGUILayout.Slider("Height (Y)", _params.Height, 0.1f, 10f);//スライダーの上限下限
+                float newDepth = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);//スライダーの上限下限
 
                 float targetSize = _params.WidthTop;
 
@@ -206,8 +206,8 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
             EditorGUILayout.LabelField("Size", EditorStyles.miniBoldLabel);
             using (new EditorGUI.IndentLevelScope())
             {
-                float newWidth = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);
-                float newDepth = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);
+                float newWidth = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);//スライダーの上限下限
+                float newDepth = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);//スライダーの上限下限
 
                 _params.WidthTop = _params.WidthBottom = newWidth;
                 _params.DepthTop = _params.DepthBottom = newDepth;
@@ -218,23 +218,23 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
             EditorGUILayout.LabelField("Size Top", EditorStyles.miniBoldLabel);
             using (new EditorGUI.IndentLevelScope())
             {
-                _params.WidthTop = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);
-                _params.DepthTop = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);
+                _params.WidthTop = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);//スライダーの上限下限
+                _params.DepthTop = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);//スライダーの上限下限
             }
 
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField("Size Bottom", EditorStyles.miniBoldLabel);
             using (new EditorGUI.IndentLevelScope())
             {
-                _params.WidthBottom = EditorGUILayout.Slider("Width (X)", _params.WidthBottom, 0.1f, 10f);
-                _params.DepthBottom = EditorGUILayout.Slider("Depth (Z)", _params.DepthBottom, 0.1f, 10f);
+                _params.WidthBottom = EditorGUILayout.Slider("Width (X)", _params.WidthBottom, 0.1f, 10f);//スライダーの上限下限
+                _params.DepthBottom = EditorGUILayout.Slider("Depth (Z)", _params.DepthBottom, 0.1f, 10f);//スライダーの上限下限
             }
         }
 
         if (!_params.LinkWHD)
         {
             EditorGUILayout.Space(5);
-            _params.Height = EditorGUILayout.Slider("Height (Y)", _params.Height, 0.1f, 10f);
+            _params.Height = EditorGUILayout.Slider("Height (Y)", _params.Height, 0.1f, 10f);//スライダーの上限下限
         }
 
         EditorGUILayout.Space(5);
@@ -243,7 +243,7 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
         {
             float minSize = Mathf.Min(_params.WidthTop, _params.DepthTop, _params.WidthBottom, _params.DepthBottom, _params.Height);
             float maxRadius = minSize * 0.5f;
-            _params.CornerRadius = EditorGUILayout.Slider("Radius", _params.CornerRadius, 0f, maxRadius);
+            _params.CornerRadius = EditorGUILayout.Slider("Radius", _params.CornerRadius, 0f, maxRadius);//スライダーの上限下限
 
             using (new EditorGUI.DisabledScope(_params.CornerRadius <= 0f))
             {
@@ -255,18 +255,18 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
         EditorGUILayout.LabelField("Subdivisions", EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.Subdivisions.x = EditorGUILayout.IntSlider("X", _params.Subdivisions.x, 1, 16);
-            _params.Subdivisions.y = EditorGUILayout.IntSlider("Y", _params.Subdivisions.y, 1, 16);
-            _params.Subdivisions.z = EditorGUILayout.IntSlider("Z", _params.Subdivisions.z, 1, 16);
+            _params.Subdivisions.x = EditorGUILayout.IntSlider("X", _params.Subdivisions.x, 1, 16);//スライダーの上限下限
+            _params.Subdivisions.y = EditorGUILayout.IntSlider("Y", _params.Subdivisions.y, 1, 16);//スライダーの上限下限
+            _params.Subdivisions.z = EditorGUILayout.IntSlider("Z", _params.Subdivisions.z, 1, 16);//スライダーの上限下限
         }
 
         EditorGUILayout.Space(5);
         EditorGUILayout.LabelField("Pivot Offset", EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.Pivot.x = EditorGUILayout.Slider("X", _params.Pivot.x, -0.5f, 0.5f);
-            _params.Pivot.y = EditorGUILayout.Slider("Y", _params.Pivot.y, -0.5f, 0.5f);
-            _params.Pivot.z = EditorGUILayout.Slider("Z", _params.Pivot.z, -0.5f, 0.5f);
+            _params.Pivot.x = EditorGUILayout.Slider("X", _params.Pivot.x, -0.5f, 0.5f);//スライダーの上限下限
+            _params.Pivot.y = EditorGUILayout.Slider("Y", _params.Pivot.y, -0.5f, 0.5f);//スライダーの上限下限
+            _params.Pivot.z = EditorGUILayout.Slider("Z", _params.Pivot.z, -0.5f, 0.5f);//スライダーの上限下限
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Center", GUILayout.Width(60)))

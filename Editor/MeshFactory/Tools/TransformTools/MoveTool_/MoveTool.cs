@@ -21,36 +21,16 @@ namespace MeshFactory.Tools
     /// <summary>
     /// 頂点移動ツール
     /// </summary>
-    public class MoveTool : IEditTool
+    public partial class MoveTool : IEditTool
     {
         public string Name => "Move";
         public string DisplayName => "Move";
-        //public ToolCategory Category => ToolCategory.Transform;  
 
         /// <summary>
         /// ローカライズされた表示名を取得
         /// </summary>
         public string GetLocalizedDisplayName() => L.Get("Tool_Move");
 
-        // ================================================================
-        // ツール固有ローカライズ辞書
-        // ================================================================
-        
-        private static readonly Dictionary<string, Dictionary<string, string>> _localize = new()
-        {
-            ["Magnet"] = new() { ["en"] = "Magnet", ["ja"] = "マグネット", ["hi"] = "じしゃく" },
-            ["Enable"] = new() { ["en"] = "Enable", ["ja"] = "有効", ["hi"] = "つかう" },
-            ["Radius"] = new() { ["en"] = "Radius", ["ja"] = "半径", ["hi"] = "はんけい" },
-            ["Falloff"] = new() { ["en"] = "Falloff", ["ja"] = "減衰", ["hi"] = "よわまりかた" },
-            ["Gizmo"] = new() { ["en"] = "Gizmo", ["ja"] = "ギズモ", ["hi"] = "ギズモ" },
-            ["OffsetX"] = new() { ["en"] = "Offset X", ["ja"] = "オフセット X", ["hi"] = "ずれ X" },
-            ["OffsetY"] = new() { ["en"] = "Offset Y", ["ja"] = "オフセット Y", ["hi"] = "ずれ Y" },
-            ["TargetVertices"] = new() { ["en"] = "Target: {0} vertices", ["ja"] = "移動対象: {0} 頂点", ["hi"] = "うごかすてん: {0}こ" },
-        };
-        
-        /// <summary>ツール内ローカライズ取得</summary>
-        private static string T(string key) => L.GetFrom(_localize, key);
-        private static string T(string key, params object[] args) => L.GetFrom(_localize, key, args);  
 
         // ================================================================
         // 設定（IToolSettings対応）
@@ -414,15 +394,15 @@ namespace MeshFactory.Tools
 
             using (new EditorGUI.DisabledScope(!_settings.UseMagnet))
             {
-                _settings.MagnetRadius = EditorGUILayout.Slider(T("Radius"), _settings.MagnetRadius, 0.01f, 2f);
+                _settings.MagnetRadius = EditorGUILayout.Slider(T("Radius"), _settings.MagnetRadius, 0.01f, 2f);//スライダーの上限下限
                 _settings.MagnetFalloff = (FalloffType)EditorGUILayout.EnumPopup(T("Falloff"), _settings.MagnetFalloff);
             }
 
             // ギズモ設定（Undo対象外）
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField(T("Gizmo"), EditorStyles.miniBoldLabel);
-            _gizmoScreenOffset.x = EditorGUILayout.Slider(T("OffsetX"), _gizmoScreenOffset.x, -100f, 100f);
-            _gizmoScreenOffset.y = EditorGUILayout.Slider(T("OffsetY"), _gizmoScreenOffset.y, -100f, 100f);
+            _gizmoScreenOffset.x = EditorGUILayout.Slider(T("OffsetX"), _gizmoScreenOffset.x, -100f, 100f);//スライダーの上限下限
+            _gizmoScreenOffset.y = EditorGUILayout.Slider(T("OffsetY"), _gizmoScreenOffset.y, -100f, 100f);//スライダーの上限下限
 
             // 選択情報表示
             EditorGUILayout.Space(5);

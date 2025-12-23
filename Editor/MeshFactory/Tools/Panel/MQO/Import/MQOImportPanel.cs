@@ -281,7 +281,7 @@ namespace MeshFactory.MQO
             _settings.RecalculateNormals = EditorGUILayout.Toggle(T("RecalculateNormals"), _settings.RecalculateNormals);
             if (_settings.RecalculateNormals)
             {
-                _settings.SmoothingAngle = EditorGUILayout.Slider(T("SmoothingAngle"), _settings.SmoothingAngle, 0f, 180f);
+                _settings.SmoothingAngle = EditorGUILayout.Slider(T("SmoothingAngle"), _settings.SmoothingAngle, 0f, 180f);//スライダーの上限下限
             }
 
             EditorGUI.indentLevel--;
