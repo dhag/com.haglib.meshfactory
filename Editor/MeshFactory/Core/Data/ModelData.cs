@@ -73,7 +73,7 @@ namespace MeshFactory.Serialization
         public int currentMaterialIndex = 0;
 
         // ================================================================
-        // オブジェクト属性（v1.2で追加）
+        // 階層情報
         // ================================================================
 
         /// <summary>メッシュの種類 ("Mesh", "Bone", "Helper", "Group")</summary>
@@ -82,8 +82,11 @@ namespace MeshFactory.Serialization
         /// <summary>親メッシュのインデックス（-1=ルート）</summary>
         public int parentIndex = -1;
 
-        /// <summary>階層深度（0=ルート）</summary>
+        /// <summary>階層深度（MQO互換、0=ルート）</summary>
         public int depth = 0;
+
+        /// <summary>ゲームオブジェクト階層の親（将来用）</summary>
+        public int hierarchyParentIndex = -1;
 
         /// <summary>可視状態</summary>
         public bool isVisible = true;
@@ -92,7 +95,7 @@ namespace MeshFactory.Serialization
         public bool isLocked = false;
 
         // ================================================================
-        // ミラー設定（v1.2で追加）
+        // ミラー設定
         // ================================================================
 
         /// <summary>ミラータイプ (0:なし, 1:分離, 2:結合)</summary>

@@ -63,6 +63,7 @@ public partial class SimpleMeshFactory
         WorkPlaneUI.OnChanged -= OnWorkPlaneChanged;
     }
 
+    //移動予定------------------------
     /// <summary>
     /// ExportSettings UIイベントハンドラ設定
     /// </summary>
@@ -89,7 +90,19 @@ public partial class SimpleMeshFactory
         var meshContext = _model.CurrentMeshContext;
         if (meshContext?.ExportSettings == null) return;
 
+        // 選択がなければ何もしない
+        if (UnityEditor.Selection.activeTransform == null) return;
+
+        var before = meshContext.ExportSettings.CreateSnapshot();
+
         meshContext.ExportSettings.CopyFromSelection();
+        meshContext.ExportSettings.UseLocalTransform = true;
+
+        var after = meshContext.ExportSettings.CreateSnapshot();
+
+        // Undo記録
+        ExportSettingsUI.NotifyChanged(before, after, "Copy Transform From Selection");
+
         Repaint();
     }
 
@@ -101,9 +114,18 @@ public partial class SimpleMeshFactory
         var meshContext = _model.CurrentMeshContext;
         if (meshContext?.ExportSettings == null) return;
 
+        var before = meshContext.ExportSettings.CreateSnapshot();
+
         meshContext.ExportSettings.Reset();
+
+        var after = meshContext.ExportSettings.CreateSnapshot();
+
+        // Undo記録
+        ExportSettingsUI.NotifyChanged(before, after, "Reset Export Settings");
+
         Repaint();
     }
+    //移動予定ここまで
 
     /// <summary>
     /// WorkPlane "From Selection"ボタンクリック

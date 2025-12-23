@@ -5,6 +5,7 @@
 // - MeshData: Unity UnityMesh との相互変換（サブメッシュ対応）
 // v1.2: VertexFlags/FaceFlags 追加
 
+using MeshFactory.Tools;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -427,6 +428,35 @@ namespace MeshFactory.Data
         /// <summary>面リスト</summary>
         public List<Face> Faces = new List<Face>();
 
+
+
+
+        // ================================================================
+        // 階層・トランスフォーム情報
+        // ================================================================
+
+        /// <summary>
+        /// 親メッシュのインデックス（-1=ルート）
+        /// メッシュ編集時のグループ化・表示用
+        /// </summary>
+        public int ParentIndex { get; set; } = -1;
+
+        /// <summary>
+        /// 階層深度（MQO互換、インポート/エクスポート時のみ使用）
+        /// 通常はParentIndexから計算
+        /// </summary>
+        public int Depth { get; set; } = 0;
+
+        /// <summary>
+        /// ゲームオブジェクト階層の親インデックス（-1=ルート）
+        /// Unityエクスポート時のTransform親子関係用（将来用）
+        /// </summary>
+        public int HierarchyParentIndex { get; set; } = -1;
+
+        /// <summary>
+        /// エクスポート時のローカルトランスフォーム
+        /// </summary>
+        public ExportSettings ExportSettings { get; set; } = new ExportSettings();
         // === プロパティ ===
 
         /// <summary>頂点数</summary>
@@ -868,6 +898,16 @@ namespace MeshFactory.Data
             var copy = new MeshData(Name);
             copy.Vertices = Vertices.Select(v => v.Clone()).ToList();
             copy.Faces = Faces.Select(f => f.Clone()).ToList();
+            copy.ParentIndex = this.ParentIndex;
+            copy.Depth = this.Depth;
+            copy.HierarchyParentIndex = this.HierarchyParentIndex;
+
+            if(this.ExportSettings != null)
+            {
+                copy.ExportSettings = new ExportSettings();
+                copy.ExportSettings.CopyFrom(this.ExportSettings);
+            }
+
             return copy;
         }
 

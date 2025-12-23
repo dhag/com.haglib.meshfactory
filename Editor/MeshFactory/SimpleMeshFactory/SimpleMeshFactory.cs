@@ -47,7 +47,37 @@ public partial class SimpleMeshFactory : EditorWindow
         public Mesh UnityMesh;                      // Unity UnityMesh（表示用）
         public MeshData Data;                       // 新構造データ
         public Vector3[] OriginalPositions;         // 元の頂点位置（リセット用）
-        public ExportSettings ExportSettings;       // エクスポート時のトランスフォーム設定
+        // ================================================================
+        // 階層・トランスフォーム（MeshDataへの参照）
+        // ================================================================
+
+        /// <summary>親メッシュのインデックス（-1=ルート）</summary>
+        public int ParentIndex
+        {
+            get => Data?.ParentIndex ?? -1;
+            set { if (Data != null) Data.ParentIndex = value; }
+        }
+
+        /// <summary>階層深度（MQO互換）</summary>
+        public int Depth
+        {
+            get => Data?.Depth ?? 0;
+            set { if (Data != null) Data.Depth = value; }
+        }
+
+        /// <summary>ゲームオブジェクト階層の親（将来用）</summary>
+        public int HierarchyParentIndex
+        {
+            get => Data?.HierarchyParentIndex ?? -1;
+            set { if (Data != null) Data.HierarchyParentIndex = value; }
+        }
+
+        /// <summary>エクスポート設定</summary>
+        public ExportSettings ExportSettings
+        {
+            get => Data?.ExportSettings;
+            set { if (Data != null) Data.ExportSettings = value ?? new ExportSettings(); }
+        }
 
         // マルチマテリアル対応
         public List<Material> Materials = new List<Material>();
@@ -80,13 +110,13 @@ public partial class SimpleMeshFactory : EditorWindow
         /// <summary>
         /// 親メッシュのインデックス（-1=ルート、親なし）
         /// </summary>
-        public int ParentIndex { get; set; } = -1;
+        //public int ParentIndex { get; set; } = -1;
         
         /// <summary>
         /// 階層深度（0=ルート、1以上=子）
         /// MQO互換用。表示のインデント等に使用。
         /// </summary>
-        public int Depth { get; set; } = 0;
+        //public int Depth { get; set; } = 0;
         
         /// <summary>可視状態</summary>
         public bool IsVisible { get; set; } = true;

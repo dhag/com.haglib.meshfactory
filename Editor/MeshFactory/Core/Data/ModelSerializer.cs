@@ -390,6 +390,7 @@ namespace MeshFactory.Serialization
                     Type = meshType,
                     ParentIndex = meshContextData.parentIndex,
                     Depth = meshContextData.depth,
+                    HierarchyParentIndex = meshContextData.hierarchyParentIndex,
                     IsVisible = meshContextData.isVisible,
                     IsLocked = meshContextData.isLocked,
                     // ミラー設定
@@ -427,6 +428,7 @@ namespace MeshFactory.Serialization
                 contextData.type = meshContext.Type.ToString();
                 contextData.parentIndex = meshContext.ParentIndex;
                 contextData.depth = meshContext.Depth;
+                contextData.hierarchyParentIndex = meshContext.HierarchyParentIndex;
                 contextData.isVisible = meshContext.IsVisible;
                 contextData.isLocked = meshContext.IsLocked;
 

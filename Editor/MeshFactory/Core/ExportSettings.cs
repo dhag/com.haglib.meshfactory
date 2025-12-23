@@ -3,6 +3,8 @@
 // ヒエラルキー/プレファブへのエクスポート時に適用されるPosition, Rotation, Scale
 // 全操作がUndo対応
 
+using MeshFactory.Serialization;
+using MeshFactory.Localization;
 using System;
 using UnityEditor;
 using UnityEngine;
@@ -70,7 +72,7 @@ namespace MeshFactory.Tools
         [SerializeField] private bool _useLocalTransform = false;
 
         // UI状態（シリアライズ不要）
-        private bool _isExpanded = false;
+        private bool _isExpanded = true;
 
         // === プロパティ ===
 
@@ -221,7 +223,41 @@ namespace MeshFactory.Tools
             }
         }
 
-/// <summary>
+        // ================================================================
+        // シリアライズ変換
+        // ================================================================
+
+        /// <summary>
+        /// ExportSettingsData から変換
+        /// </summary>
+        public static ExportSettings FromSerializable(ExportSettingsData data)
+        {
+            if (data == null) return new ExportSettings();
+
+            var settings = new ExportSettings();
+            settings._useLocalTransform = data.useLocalTransform;
+            settings._position = data.GetPosition();
+            settings._rotation = data.GetRotation();
+            settings._scale = data.GetScale();
+            return settings;
+        }
+
+        /// <summary>
+        /// ExportSettingsData に変換
+        /// </summary>
+        public ExportSettingsData ToSerializable()
+        {
+            var data = new ExportSettingsData
+            {
+                useLocalTransform = _useLocalTransform
+            };
+            data.SetPosition(_position);
+            data.SetRotation(_rotation);
+            data.SetScale(_scale);
+            return data;
+        }
+
+        /// <summary>
         /// 現在の選択からトランスフォームを取得
         /// </summary>
         public void CopyFromSelection()
@@ -243,20 +279,20 @@ namespace MeshFactory.Tools
     }
 
     // ================================================================
-    // UI描画クラス
+    // UI描画クラス（ローカライズ対応）
     // ================================================================
 
     /// <summary>
     /// ExportSettings用UI描画
     /// WorkPlaneUIと同様の設計
     /// </summary>
-    public static class ExportSettingsUI
+    public static partial class ExportSettingsUI
     {
         // === イベント ===
-        
+
         /// <summary>設定変更時（Undo記録用）</summary>
         public static event Action<ExportSettingsSnapshot, ExportSettingsSnapshot, string> OnChanged;
-        
+
         /// <summary>リセットボタンクリック時</summary>
         public static event Action OnResetClicked;
 
@@ -286,7 +322,7 @@ namespace MeshFactory.Tools
             {
                 settings.IsExpanded = EditorGUILayout.Foldout(
                     settings.IsExpanded,
-                    "Export Transform",
+                    T("Title"),
                     true
                 );
 
@@ -296,7 +332,7 @@ namespace MeshFactory.Tools
                 {
                     settings.UseLocalTransform = newUse;
                     changed = true;
-                    changeDescription = newUse ? "Enable Local Transform" : "Disable Local Transform";
+                    changeDescription = newUse ? T("EnableLocalTransform") : T("DisableLocalTransform");
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -309,7 +345,7 @@ namespace MeshFactory.Tools
                     EditorGUI.indentLevel++;
 
                     // Position
-                    EditorGUILayout.LabelField("Position", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(T("Position"), EditorStyles.miniLabel);
                     EditorGUILayout.BeginHorizontal();
                     {
                         EditorGUIUtility.labelWidth = 14;
@@ -323,13 +359,13 @@ namespace MeshFactory.Tools
                         {
                             settings.Position = newPos;
                             changed = true;
-                            changeDescription = "Change Export Position";
+                            changeDescription = T("ChangePosition");
                         }
                     }
                     EditorGUILayout.EndHorizontal();
 
                     // Rotation
-                    EditorGUILayout.LabelField("Rotation", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(T("Rotation"), EditorStyles.miniLabel);
                     EditorGUILayout.BeginHorizontal();
                     {
                         EditorGUIUtility.labelWidth = 14;
@@ -343,13 +379,13 @@ namespace MeshFactory.Tools
                         {
                             settings.Rotation = newRot;
                             changed = true;
-                            changeDescription = "Change Export Rotation";
+                            changeDescription = T("ChangeRotation");
                         }
                     }
                     EditorGUILayout.EndHorizontal();
 
                     // Scale
-                    EditorGUILayout.LabelField("Scale", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(T("Scale"), EditorStyles.miniLabel);
                     EditorGUILayout.BeginHorizontal();
                     {
                         EditorGUIUtility.labelWidth = 14;
@@ -363,7 +399,7 @@ namespace MeshFactory.Tools
                         {
                             settings.Scale = newScale;
                             changed = true;
-                            changeDescription = "Change Export Scale";
+                            changeDescription = T("ChangeScale");
                         }
                     }
                     EditorGUILayout.EndHorizontal();
@@ -373,11 +409,11 @@ namespace MeshFactory.Tools
                     // ボタン群
                     EditorGUILayout.BeginHorizontal();
                     {
-                        if (GUILayout.Button("From Selection", GUILayout.Height(18)))
+                        if (GUILayout.Button(T("FromSelection"), GUILayout.Height(18)))
                         {
                             OnFromSelectionClicked?.Invoke();
                         }
-                        if (GUILayout.Button("Reset", GUILayout.Height(18)))
+                        if (GUILayout.Button(T("Reset"), GUILayout.Height(18)))
                         {
                             OnResetClicked?.Invoke();
                         }
@@ -414,8 +450,8 @@ namespace MeshFactory.Tools
 
             EditorGUILayout.BeginHorizontal();
             {
-                EditorGUILayout.LabelField("Export Transform:", GUILayout.Width(100));
-                
+                EditorGUILayout.LabelField($"{T("Title")}:", GUILayout.Width(100));
+
                 bool newUse = EditorGUILayout.Toggle(settings.UseLocalTransform, GUILayout.Width(20));
                 if (newUse != settings.UseLocalTransform)
                 {
@@ -432,7 +468,7 @@ namespace MeshFactory.Tools
                 }
                 else
                 {
-                    EditorGUILayout.LabelField("(Default)", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(T("Default"), EditorStyles.miniLabel);
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -442,7 +478,7 @@ namespace MeshFactory.Tools
                 ExportSettingsSnapshot after = settings.CreateSnapshot();
                 if (before.IsDifferentFrom(after))
                 {
-                    OnChanged?.Invoke(before, after, "Change Export Settings");
+                    OnChanged?.Invoke(before, after, T("ChangeSettings"));
                 }
             }
 
@@ -457,6 +493,16 @@ namespace MeshFactory.Tools
                 {
                     alignment = TextAnchor.MiddleRight
                 };
+            }
+        }
+        /// <summary>
+        /// 変更を通知（外部からイベント発火用）
+        /// </summary>
+        public static void NotifyChanged(ExportSettingsSnapshot before, ExportSettingsSnapshot after, string description)
+        {
+            if (before.IsDifferentFrom(after))
+            {
+                OnChanged?.Invoke(before, after, description);
             }
         }
     }
@@ -482,8 +528,8 @@ namespace MeshFactory.UndoSystem
         public string Description;
 
         public ExportSettingsChangeRecord(
-            ExportSettingsSnapshot before, 
-            ExportSettingsSnapshot after, 
+            ExportSettingsSnapshot before,
+            ExportSettingsSnapshot after,
             string description = null)
         {
             Before = before;

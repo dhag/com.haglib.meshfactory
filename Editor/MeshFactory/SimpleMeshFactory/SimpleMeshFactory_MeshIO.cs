@@ -22,7 +22,7 @@ public partial class SimpleMeshFactory
     // ================================================================
 
     /// <summary>
-    /// メッシュアセットから読み込み
+    /// メッシュアセットから読み込み（Transformなし）
     /// </summary>
     private void LoadMeshFromAsset()
     {
@@ -53,7 +53,7 @@ public partial class SimpleMeshFactory
 
         if (loadedMesh != null)
         {
-            AddLoadedMesh(loadedMesh, loadedMesh.name);
+            AddLoadedMesh(loadedMesh, loadedMesh.name);// Transform渡せない
         }
         else
         {
@@ -105,7 +105,7 @@ public partial class SimpleMeshFactory
                     mats = renderer.sharedMaterials;
                 }
 
-                AddLoadedMesh(mf.sharedMesh, meshName, mats);
+                AddLoadedMesh(mf.sharedMesh, meshName, mats, mf.transform);
             }
         }
     }
@@ -118,11 +118,11 @@ public partial class SimpleMeshFactory
         var selected = Selection.activeGameObject;
         if (selected == null)
         {
-            // メッシュアセットが選択されている場合
+            // メッシュアセットが選択されている場合（Transformなし）
             var selectedMesh = Selection.activeObject as Mesh;
             if (selectedMesh != null)
             {
-                AddLoadedMesh(selectedMesh, selectedMesh.name);
+                AddLoadedMesh(selectedMesh, selectedMesh.name);// Transform渡せない
                 return;
             }
 
@@ -151,7 +151,7 @@ public partial class SimpleMeshFactory
                     mats = renderer.sharedMaterials;
                 }
 
-                AddLoadedMesh(mf.sharedMesh, meshName, mats);
+                AddLoadedMesh(mf.sharedMesh, meshName, mats, mf.transform);
             }
         }
     }
@@ -162,7 +162,8 @@ public partial class SimpleMeshFactory
     /// <param name="sourceMesh">元のUnity UnityMesh</param>
     /// <param name="name">メッシュ名</param>
     /// <param name="materials">マテリアル配列（オプション）</param>
-    private void AddLoadedMesh(Mesh sourceMesh, string name, Material[] materials = null)
+    /// <param name="sourceTransform">元オブジェクトのTransform（オプション）</param>
+    private void AddLoadedMesh(Mesh sourceMesh, string name, Material[] materials = null, Transform sourceTransform = null)
     {
         // Unity MeshからMeshDataに変換
         var meshData = new MeshData(name);
@@ -174,6 +175,23 @@ public partial class SimpleMeshFactory
             Data = meshData,
             OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray()
         };
+
+        // ExportSettings: 元オブジェクトのTransformを設定
+        if (sourceTransform != null)
+        {
+            meshContext.ExportSettings.Position = sourceTransform.localPosition;
+            meshContext.ExportSettings.Rotation = sourceTransform.localEulerAngles;
+            meshContext.ExportSettings.Scale = sourceTransform.localScale;
+
+            // デフォルト値でなければ UseLocalTransform を有効化
+            bool isDefault =
+                sourceTransform.localPosition == Vector3.zero &&
+                sourceTransform.localEulerAngles == Vector3.zero &&
+                sourceTransform.localScale == Vector3.one;
+
+            meshContext.ExportSettings.UseLocalTransform = !isDefault;
+        }
+
 
         // マテリアル設定
         if (materials != null && materials.Length > 0)

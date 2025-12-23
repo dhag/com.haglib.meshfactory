@@ -194,7 +194,7 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void DrawToolPanelsSection()
     {
-        _foldToolPanel = DrawFoldoutWithUndo("ToolWindows", L.Get("ToolWindows"), false);
+        _foldToolPanel = DrawFoldoutWithUndo("ToolPanels", L.Get("ToolPanels"), false);
         if (!_foldToolPanel)
             return;
 
