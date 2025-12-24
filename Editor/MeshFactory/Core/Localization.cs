@@ -252,6 +252,8 @@ namespace MeshFactory.Localization
             ["Tool_Select"] = new() { ["en"] = "Select", ["ja"] = "選択", ["hi"] = "えらぶ" },
             ["Tool_SelectAdvanced"] = new() { ["en"] = "Adv.Select", ["ja"] = "詳細選択", ["hi"] = "くわしくえらぶ" },
             ["Tool_Move"] = new() { ["en"] = "Move", ["ja"] = "移動", ["hi"] = "うごかす" },
+            ["Tool_Rotate"] = new() { ["en"] = "Rotate", ["ja"] = "回転", ["hi"] = "かいてん" },
+            ["Tool_Scale"] = new() { ["en"] = "Scale", ["ja"] = "拡大縮小", ["hi"] = "おおきさ" },
             ["Tool_Sculpt"] = new() { ["en"] = "Sculpt", ["ja"] = "スカルプト", ["hi"] = "こねる" },
             ["Tool_Add Face"] = new() { ["en"] = "Add Face", ["ja"] = "面追加", ["hi"] = "めんをたす" },
             ["Tool_Knife"] = new() { ["en"] = "Knife", ["ja"] = "ナイフ", ["hi"] = "きる" },

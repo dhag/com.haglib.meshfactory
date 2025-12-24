@@ -34,12 +34,13 @@ public partial class SimpleMeshFactory : EditorWindow
     // ================================================================
     // 型付きアクセス用プロパティ（後方互換）
     // ================================================================
-
+    /*
     private SelectTool _selectTool => _toolManager?.GetTool<SelectTool>();
     private MoveTool _moveTool => _toolManager?.GetTool<MoveTool>();
     private KnifeTool _knifeTool => _toolManager?.GetTool<KnifeTool>();
+ */
     private AddFaceTool _addFaceTool => _toolManager?.GetTool<AddFaceTool>();
-    private EdgeTopologyTool _edgeTopoTool => _toolManager?.GetTool<EdgeTopologyTool>();
+/*    private EdgeTopologyTool _edgeTopoTool => _toolManager?.GetTool<EdgeTopologyTool>();
     private AdvancedSelectTool _advancedSelectTool => _toolManager?.GetTool<AdvancedSelectTool>();
     private SculptTool _sculptTool => _toolManager?.GetTool<SculptTool>();
     private MergeVerticesTool _mergeTool => _toolManager?.GetTool<MergeVerticesTool>();
@@ -50,7 +51,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private FlipFaceTool _flipFaceTool => _toolManager?.GetTool<FlipFaceTool>();
     private PivotOffsetTool _pivotOffsetTool => _toolManager?.GetTool<PivotOffsetTool>();
     private PrimitiveMeshTool _primitiveMeshTool => _toolManager?.GetTool<PrimitiveMeshTool>();
-
+    */
     // ================================================================
     // 【削除】ツール設定フィールド
     // ================================================================

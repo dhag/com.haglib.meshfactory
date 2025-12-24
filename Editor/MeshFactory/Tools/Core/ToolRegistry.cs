@@ -25,16 +25,11 @@ namespace MeshFactory.Tools
         /// </summary>
         public static readonly Func<IEditTool>[] ToolFactories = new Func<IEditTool>[]
         {
-            // Selection
-            //() => new SelectTool(),
-            //() => new AdvancedSelectTool(),
-
-            // Transform
-            //() => new MoveTool(),
-            //() => new SculptTool(),
-
 
             () => new MoveTool(),
+            () => new RotateTool(),
+            () => new ScaleTool(),
+
             () => new AdvancedSelectTool(),
 
             () => new SculptTool(),
@@ -46,11 +41,11 @@ namespace MeshFactory.Tools
             () => new MergeVerticesTool(),
             () => new EdgeExtrudeTool(),
             () => new FaceExtrudeTool(),
+            () => new LineExtrudeTool(),
             () => new EdgeBevelTool(),
             () => new FlipFaceTool(),
-            () => new LineExtrudeTool(),
 
-            // Utility
+
             () => new PivotOffsetTool(),
 
             // Primitive (Phase 4追加)
