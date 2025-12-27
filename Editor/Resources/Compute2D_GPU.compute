@@ -46,11 +46,13 @@ RWStructuredBuffer<float> _FaceHitDepthBuffer;  // 面の深度（Z値）
 // ================================================================
 
 float4x4 _MATRIX_MVP;
+float4x4 _ModelMatrix;   // モデル行列（ミラー変換等に使用、単位行列がデフォルト）
 float4 _ScreenParams;    // windowSize.x, windowSize.y, 0, 0
 float4 _PreviewRect;     // x, y, width, height
 uint _VertexCount;
 uint _FaceCount;
 uint _LineCount;
+uint _IsMirrored;        // ミラー変換時は1（面の向き判定を反転）
 
 // ヒットテスト用パラメータ
 float2 _MousePosition;   // マウス座標（adjustedRect座標系）
@@ -73,7 +75,13 @@ void ComputeScreenPositions(uint3 id : SV_DispatchThreadID)
 {
     uint index = id.x;
     if (index >= _VertexCount) return;
-    float3 worldPos = _PositionBuffer[index];
+    float3 localPos = _PositionBuffer[index];
+    // ModelMatrixで変換（_IsMirrored=1の時のみ適用、通常時はそのまま使用）
+    float3 worldPos = localPos;
+    if (_IsMirrored != 0)
+    {
+        worldPos = mul(_ModelMatrix, float4(localPos, 1.0)).xyz;
+    }
     float4 clipPos = mul(_MATRIX_MVP, float4(worldPos, 1.0));
     if (clipPos.w > 0.0001)
     {
@@ -126,6 +134,8 @@ void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
     }
     if (!allValid) { _FaceVisibilityBuffer[faceIndex] = 0.0; return; }
     bool isFrontFacing = IsClockwise(screenVerts, vertexCount);
+    // ミラー変換時は面の向きが反転するので判定も反転
+    if (_IsMirrored != 0) isFrontFacing = !isFrontFacing;
     _FaceVisibilityBuffer[faceIndex] = isFrontFacing ? 1.0 : 0.0;
     if (isFrontFacing)
     {

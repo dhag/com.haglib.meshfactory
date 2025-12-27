@@ -73,7 +73,7 @@ namespace MeshFactory.Rendering
         }
     }
 
-    public class MeshGPURenderer : IDisposable, IVisibilityProvider
+    public partial class MeshGPURenderer : IDisposable, IVisibilityProvider
     {
         // シェーダー・マテリアル
         private ComputeShader _computeShader;
@@ -131,6 +131,15 @@ namespace MeshFactory.Rendering
         public bool IsAvailable => _initialized && SystemInfo.supportsComputeShaders;
         public bool HitTestAvailable => _hitTestAvailable;
         public bool CullingEnabled { get; set; } = true;
+        
+        /// <summary>現在ホバー中の頂点インデックス（-1なら無し）</summary>
+        public int HoverVertexIndex => _hoverVertexIndex;
+        
+        /// <summary>現在ホバー中の線分インデックス（-1なら無し）</summary>
+        public int HoverLineIndex => _hoverLineIndex;
+        
+        /// <summary>現在ホバー中の面インデックス（-1なら無し）</summary>
+        public int HoverFaceIndex => _hoverFaceIndex;
 
         public bool Initialize(ComputeShader computeShader, Shader pointShader, Shader lineShader)
         {
@@ -394,7 +403,15 @@ namespace MeshFactory.Rendering
         private Vector2 _cachedWindowSize;
         private bool _computeParamsCached = false;
 
-        public void DispatchCompute(Matrix4x4 mvp, Rect previewRect, Vector2 windowSize)
+        /// <summary>
+        /// GPU可視性計算を実行
+        /// </summary>
+        /// <param name="mvp">MVP行列</param>
+        /// <param name="previewRect">プレビュー領域</param>
+        /// <param name="windowSize">ウィンドウサイズ</param>
+        /// <param name="modelMatrix">モデル行列（ミラー変換等、nullなら単位行列）</param>
+        /// <param name="isMirrored">ミラー変換時はtrue（面の向き判定を反転）</param>
+        public void DispatchCompute(Matrix4x4 mvp, Rect previewRect, Vector2 windowSize, Matrix4x4? modelMatrix = null, bool isMirrored = false)
         {
             if (!_initialized || _vertexCount == 0) return;
 
@@ -406,6 +423,8 @@ namespace MeshFactory.Rendering
 
             // 共通パラメータ設定
             _computeShader.SetMatrix("_MATRIX_MVP", mvp);
+            _computeShader.SetMatrix("_ModelMatrix", modelMatrix ?? Matrix4x4.identity);
+            _computeShader.SetInt("_IsMirrored", isMirrored ? 1 : 0);
             _computeShader.SetVector("_ScreenParams", new Vector4(windowSize.x, windowSize.y, 0, 0));
             _computeShader.SetVector("_PreviewRect", new Vector4(previewRect.x, previewRect.y, previewRect.width, previewRect.height));
             _computeShader.SetInt("_VertexCount", _vertexCount);
@@ -791,7 +810,7 @@ namespace MeshFactory.Rendering
         /// <summary>
         /// ホバーデバッグを有効化（線分インデックス検証用）
         /// </summary>
-        public bool EnableHoverDebug { get; set; } = true;  // デバッグ中は有効
+        public bool EnableHoverDebug { get; set; } = false;  // デバッグ時のみ有効に
         
         // デバッグ用：最後のマウス位置
         private Vector2 _lastMousePosForDebug;
@@ -964,16 +983,13 @@ namespace MeshFactory.Rendering
             }
             
             // 距離が閾値外なのにホバー判定された場合
-            const float lineHitThreshold = 10f;  // ホバー判定閾値の2倍
+            const float lineHitThreshold = 15f;  // 3D描画時の座標ずれを考慮して緩和
             if (cpuDistance > lineHitThreshold)
             {
-                Debug.LogError($"[HoverDebug] Line hover distance too large!\n" +
-                    $"  LineIndex: {lineIndex} (v1={v1}, v2={v2})\n" +
-                    $"  CPU Distance: {cpuDistance:F2} (threshold: {lineHitThreshold})\n" +
-                    $"  This suggests index mismatch between GPU and CPU data!");
+                Debug.LogWarning($"[HoverDebug] Line hover distance large: {cpuDistance:F2} (threshold: {lineHitThreshold})");
                     
                 // 近い線分を探す（デバッグ用）
-                FindNearestLineCPU(mousePos, edgeCache, lineHitThreshold);
+                // FindNearestLineCPU(mousePos, edgeCache, lineHitThreshold);
             }
         }
         
@@ -1042,7 +1058,7 @@ namespace MeshFactory.Rendering
         /// <summary>
         /// 現在のホバー面インデックス
         /// </summary>
-        public int HoverFaceIndex => _hoverFaceIndex;
+        //public int HoverFaceIndex => _hoverFaceIndex;
 
         private void SetAllVisible()
         {

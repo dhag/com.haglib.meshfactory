@@ -13,8 +13,8 @@ public partial class SimpleMeshFactory
 {
 
     // フィールド追加（クラスの先頭付近）
-    private const float HOVER_VERTEX_RADIUS = 10f;
-    private const float HOVER_LINE_DISTANCE = 5f;
+    private const float HOVER_VERTEX_RADIUS = 12f;   // 10f → 12f
+    private const float HOVER_LINE_DISTANCE = 18f;   // 5f → 18f に大幅緩和
     private Vector2 _lastHoverMousePos;
 
     // ================================================================
@@ -158,8 +158,22 @@ public partial class SimpleMeshFactory
         float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
         var hitResult = _gpuRenderer.DispatchHitTest(mousePos, rect, tabHeight);
 
+        // デバッグ：ホバー判定結果を確認
+        if (hitResult.NearestLineIndex >= 0 && hitResult.NearestLineDistance < HOVER_LINE_DISTANCE)
+        {
+            Debug.Log($"[HoverInput] Line hit: idx={hitResult.NearestLineIndex}, dist={hitResult.NearestLineDistance:F1} (threshold={HOVER_LINE_DISTANCE})");
+        }
+
         // デバッグ検証付きでホバー更新
         _gpuRenderer.UpdateHoverState(hitResult, HOVER_VERTEX_RADIUS, HOVER_LINE_DISTANCE, mousePos, _edgeCache);
+        
+        // デバッグ：更新後のホバー状態
+        int afterHoverLine = _gpuRenderer.HoverLineIndex;
+        if (afterHoverLine >= 0)
+        {
+            Debug.Log($"[HoverInput] After UpdateHoverState: HoverLineIndex={afterHoverLine}");
+        }
+        
         Repaint();
     }
     /// <summary>
@@ -179,8 +193,72 @@ public partial class SimpleMeshFactory
         // MeshObject を TopologyCache に設定
         _meshTopology?.SetMeshObject(meshObject);
 
-        // 新選択システム: 有効なモードに応じたヒットテスト（優先順位付き）
-        if (_selectionOps != null && _selectionState != null)
+        // GPUホバー中の要素があれば優先（ホバーとクリックの整合性を保つ）
+        bool useGpuHover = false;
+        if (_gpuRenderer != null && _edgeCache != null)
+        {
+            int hoverVertex = _gpuRenderer.HoverVertexIndex;
+            int hoverLine = _gpuRenderer.HoverLineIndex;
+            int hoverFace = _gpuRenderer.HoverFaceIndex;
+            
+            if (hoverVertex >= 0)
+            {
+                _hitResultOnMouseDown = new HitResult
+                {
+                    HitType = MeshSelectMode.Vertex,
+                    VertexIndex = hoverVertex,
+                    EdgePair = null,
+                    FaceIndex = -1,
+                    LineIndex = -1
+                };
+                useGpuHover = true;
+            }
+            else if (hoverLine >= 0 && hoverLine < _edgeCache.Lines.Count)
+            {
+                // MeshEdgeCacheから線分情報を取得してEdge/Lineを判別
+                var lineData = _edgeCache.Lines[hoverLine];
+                if (lineData.LineType == 1)
+                {
+                    // 補助線分
+                    _hitResultOnMouseDown = new HitResult
+                    {
+                        HitType = MeshSelectMode.Line,
+                        VertexIndex = -1,
+                        EdgePair = null,
+                        FaceIndex = -1,
+                        LineIndex = lineData.FaceIndex
+                    };
+                }
+                else
+                {
+                    // エッジ（面の辺）
+                    _hitResultOnMouseDown = new HitResult
+                    {
+                        HitType = MeshSelectMode.Edge,
+                        VertexIndex = -1,
+                        EdgePair = new VertexPair(lineData.V1, lineData.V2),
+                        FaceIndex = -1,
+                        LineIndex = -1
+                    };
+                }
+                useGpuHover = true;
+            }
+            else if (hoverFace >= 0)
+            {
+                _hitResultOnMouseDown = new HitResult
+                {
+                    HitType = MeshSelectMode.Face,
+                    VertexIndex = -1,
+                    EdgePair = null,
+                    FaceIndex = hoverFace,
+                    LineIndex = -1
+                };
+                useGpuHover = true;
+            }
+        }
+
+        // GPUホバーがなければ従来のCPU判定を使用
+        if (!useGpuHover && _selectionOps != null && _selectionState != null)
         {
             _hitResultOnMouseDown = _selectionOps.FindAtEnabledModes(mousePos, meshObject, worldToScreen, camPos);
         }

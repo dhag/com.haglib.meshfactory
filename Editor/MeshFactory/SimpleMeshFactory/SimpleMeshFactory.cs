@@ -150,9 +150,12 @@ public partial class SimpleMeshFactory : EditorWindow
     // 表示設定
     private bool _showWireframe = true;
     private bool _showVertices = true;
+    private bool _showMesh = true;              // メッシュ本体表示
     private bool _vertexEditMode = true;  // Show Verticesと連動  
     private bool _showSelectedMeshOnly = false;  // 
     private bool _showVertexIndices = true;     // 
+    private bool _showUnselectedWireframe = true;  // 非選択メッシュのワイヤフレーム表示
+    private bool _showUnselectedVertices = true;   // 非選択メッシュの頂点表示 
     /// <summary>
     /// ツールの状態
     /// </summary>
@@ -316,8 +319,11 @@ public partial class SimpleMeshFactory : EditorWindow
         {
             _undoController.EditorState.ShowWireframe = _showWireframe;
             _undoController.EditorState.ShowVertices = _showVertices;
+            _undoController.EditorState.ShowMesh = _showMesh;
             _undoController.EditorState.ShowSelectedMeshOnly = _showSelectedMeshOnly;
             _undoController.EditorState.ShowVertexIndices = _showVertexIndices;
+            _undoController.EditorState.ShowUnselectedWireframe = _showUnselectedWireframe;
+            _undoController.EditorState.ShowUnselectedVertices = _showUnselectedVertices;
             _undoController.EditorState.AddToCurrentMesh = _addToCurrentMesh;
             _undoController.EditorState.AutoMergeOnCreate = _autoMergeOnCreate;
             _undoController.EditorState.AutoMergeThreshold = _autoMergeThreshold;
@@ -369,6 +375,9 @@ public partial class SimpleMeshFactory : EditorWindow
         _selectionState = new SelectionState();
         _meshTopology = new TopologyCache();
         _selectionOps = new SelectionOperations(_selectionState, _meshTopology);
+        
+        // GPU/CPUヒットテストの閾値を統一（HOVER_LINE_DISTANCE = 18f と同じ）
+        _selectionOps.EdgeHitDistance = 18f;
 
         _selectionState.OnSelectionChanged += SyncSelectionToLegacy;
 
@@ -542,8 +551,11 @@ public partial class SimpleMeshFactory : EditorWindow
 
         _showWireframe = editorState.ShowWireframe;
         _showVertices = editorState.ShowVertices;
+        _showMesh = editorState.ShowMesh;
         _showSelectedMeshOnly = editorState.ShowSelectedMeshOnly;
         _showVertexIndices = editorState.ShowVertexIndices;
+        _showUnselectedWireframe = editorState.ShowUnselectedWireframe;
+        _showUnselectedVertices = editorState.ShowUnselectedVertices;
         _addToCurrentMesh = editorState.AddToCurrentMesh;
         _autoMergeOnCreate = editorState.AutoMergeOnCreate;
         _autoMergeThreshold = editorState.AutoMergeThreshold;

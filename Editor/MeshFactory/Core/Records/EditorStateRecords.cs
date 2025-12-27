@@ -25,8 +25,11 @@ namespace MeshFactory.UndoSystem
         // 表示設定
         public bool ShowWireframe = true;
         public bool ShowVertices = true;
+        public bool ShowMesh = true;                    // メッシュ本体表示
         public bool ShowSelectedMeshOnly = true;
         public bool ShowVertexIndices = true;
+        public bool ShowUnselectedWireframe = true;     // 非選択メッシュのワイヤフレーム
+        public bool ShowUnselectedVertices = true;      // 非選択メッシュの頂点
         public bool BackfaceCullingEnabled = true;
 
         // 編集モード
@@ -83,8 +86,11 @@ namespace MeshFactory.UndoSystem
                 CameraTarget = CameraTarget,
                 ShowWireframe = ShowWireframe,
                 ShowVertices = ShowVertices,
+                ShowMesh = ShowMesh,
                 ShowSelectedMeshOnly = ShowSelectedMeshOnly,
                 ShowVertexIndices = ShowVertexIndices,
+                ShowUnselectedWireframe = ShowUnselectedWireframe,
+                ShowUnselectedVertices = ShowUnselectedVertices,
                 BackfaceCullingEnabled = BackfaceCullingEnabled,
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
@@ -115,8 +121,11 @@ namespace MeshFactory.UndoSystem
             CameraTarget = snapshot.CameraTarget;
             ShowWireframe = snapshot.ShowWireframe;
             ShowVertices = snapshot.ShowVertices;
+            ShowMesh = snapshot.ShowMesh;
             ShowSelectedMeshOnly = snapshot.ShowSelectedMeshOnly;
             ShowVertexIndices = snapshot.ShowVertexIndices;
+            ShowUnselectedWireframe = snapshot.ShowUnselectedWireframe;
+            ShowUnselectedVertices = snapshot.ShowUnselectedVertices;
             BackfaceCullingEnabled = snapshot.BackfaceCullingEnabled;
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
@@ -159,8 +168,9 @@ namespace MeshFactory.UndoSystem
     {
         public float RotationX, RotationY, CameraDistance;
         public Vector3 CameraTarget;
-        public bool ShowWireframe, ShowVertices, VertexEditMode;
+        public bool ShowWireframe, ShowVertices, ShowMesh, VertexEditMode;
         public bool ShowSelectedMeshOnly, ShowVertexIndices;
+        public bool ShowUnselectedWireframe, ShowUnselectedVertices;
         public bool BackfaceCullingEnabled;
         public string CurrentToolName;
 
@@ -190,8 +200,11 @@ namespace MeshFactory.UndoSystem
                 Vector3.Distance(CameraTarget, other.CameraTarget) > 0.0001f ||
                 ShowWireframe != other.ShowWireframe ||
                 ShowVertices != other.ShowVertices ||
+                ShowMesh != other.ShowMesh ||
                 ShowSelectedMeshOnly != other.ShowSelectedMeshOnly ||
                 ShowVertexIndices != other.ShowVertexIndices ||
+                ShowUnselectedWireframe != other.ShowUnselectedWireframe ||
+                ShowUnselectedVertices != other.ShowUnselectedVertices ||
                 BackfaceCullingEnabled != other.BackfaceCullingEnabled ||
                 VertexEditMode != other.VertexEditMode ||
                 CurrentToolName != other.CurrentToolName ||

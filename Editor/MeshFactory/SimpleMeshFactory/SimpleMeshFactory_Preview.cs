@@ -41,6 +41,20 @@ public partial class SimpleMeshFactory
         {
             Debug.LogWarning("SimpleMeshFactory: GPU Rendering not available, using CPU fallback");
         }
+
+        // 3D描画用シェーダー初期化
+        var wireframe3DShader = Shader.Find("MeshFactory/Wireframe3D");
+        var point3DShader = Shader.Find("MeshFactory/Point3D");
+
+        if (wireframe3DShader == null)
+            Debug.LogWarning("SimpleMeshFactory: Wireframe3D shader not found!");
+        if (point3DShader == null)
+            Debug.LogWarning("SimpleMeshFactory: Point3D shader not found!");
+
+        if (wireframe3DShader != null && point3DShader != null)
+        {
+            _gpuRenderer.Initialize3D(wireframe3DShader, point3DShader);
+        }
     }
 
     /// <summary>
@@ -119,142 +133,357 @@ public partial class SimpleMeshFactory
         _preview.camera.transform.rotation = lookRot * rollRot;
 
         // メッシュ描画
-        if (_showSelectedMeshOnly)
+        if (_showMesh)
         {
-            // 選択メッシュのみ表示モードでもIsVisibleをチェック
-            if (meshContext != null && meshContext.IsVisible)
+            if (_showSelectedMeshOnly)
             {
-                DrawMeshWithMaterials(meshContext, mesh);
+                // 選択メッシュのみ表示モードでもIsVisibleをチェック
+                if (meshContext != null && meshContext.IsVisible)
+                {
+                    DrawMeshWithMaterials(meshContext, mesh);
+                }
             }
-        }
-        else
-        {
-            for (int i = 0; i < _meshContextList.Count; i++)
+            else
             {
-                var ctx = _meshContextList[i];
-                if (ctx?.UnityMesh == null) continue;
-                if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    var ctx = _meshContextList[i];
+                    if (ctx?.UnityMesh == null) continue;
+                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
 
-                bool isSelected = (i == _selectedIndex);
-                DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f);
+                    bool isSelected = (i == _selectedIndex);
+                    DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f);
+                }
             }
         }
 
         // ミラーメッシュ描画（グローバル設定 OR MeshContextごとの設定）
         // 条件判定はDrawMirroredMesh内で行う
-        if (_showSelectedMeshOnly)
-        {
-            if (meshContext != null && meshContext.IsVisible)
-            {
-                DrawMirroredMesh(meshContext, mesh);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < _meshContextList.Count; i++)
-            {
-                var ctx = _meshContextList[i];
-                if (ctx?.UnityMesh == null) continue;
-                if (!ctx.IsVisible) continue;
-
-                DrawMirroredMesh(ctx, ctx.UnityMesh);
-            }
-        }
-
-
-        _preview.camera.Render();
-
-        Texture result = _preview.EndPreview();
-        GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
-
-        // ================================================================
-        // ワイヤーフレーム・頂点描画（GPU/CPU切り替え）
-        // ================================================================
-        bool useGPU = _useGPURendering && _gpuRenderingAvailable;
-
-        if (useGPU)
+        if (_showMesh)
         {
             if (_showSelectedMeshOnly)
             {
-                // 選択メッシュのみGPU描画
                 if (meshContext != null && meshContext.IsVisible)
                 {
-                    DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+                    DrawMirroredMesh(meshContext, mesh);
                 }
             }
             else
             {
-                // 非選択メッシュを先に描画（下のレイヤー）
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    var ctx = _meshContextList[i];
+                    if (ctx?.UnityMesh == null) continue;
+                    if (!ctx.IsVisible) continue;
+
+                    DrawMirroredMesh(ctx, ctx.UnityMesh);
+                }
+            }
+        }
+
+
+        // ================================================================
+        // ワイヤフレーム・頂点の3D描画（camera.Render()の前に実行）
+        // 深度テスト付きで描画されるため、メッシュに隠れた部分は見えなくなる
+        // ================================================================
+        bool use3D = _useGPURendering && _gpuRenderingAvailable && _gpuRenderer.Is3DAvailable;
+
+        if (use3D)
+        {
+            Vector2 windowSize = new Vector2(position.width, position.height);
+            float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
+            Rect adjustedRect = new Rect(rect.x, rect.y + tabHeight, rect.width, rect.height - tabHeight);
+
+            // 非選択メッシュを先に描画（下のレイヤー）
+            if (_showUnselectedWireframe || _showUnselectedVertices)
+            {
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    if (i == _selectedIndex) continue;
+                    var ctx = _meshContextList[i];
+                    if (ctx?.MeshObject == null || !ctx.IsVisible) continue;
+
+                    _edgeCache.Update(ctx.MeshObject);
+                    _gpuRenderer.UpdateBuffers(ctx.MeshObject, _edgeCache);
+
+                    Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
+                    _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize);
+
+                    // 非選択ワイヤフレーム
+                    if (_showWireframe && _showUnselectedWireframe)
+                    {
+                        _gpuRenderer.UpdateWireframeMesh3D(ctx.MeshObject, _edgeCache, null, 0.4f);
+                        _gpuRenderer.DrawWireframe3D(_preview.camera);
+                    }
+
+                    // 非選択頂点
+                    if (_showVertices && _showUnselectedVertices)
+                    {
+                        float pointSize = CalculatePointSize3D(camPos, ctx.MeshObject) * 0.7f;
+                        _gpuRenderer.UpdatePointMesh3D(ctx.MeshObject, _preview.camera, null, -1, pointSize, 0.4f);
+                        _gpuRenderer.DrawPoints3D(_preview.camera);
+                    }
+                }
+            }
+
+            // 選択メッシュを描画（上のレイヤー）
+            if (meshContext != null && meshContext.IsVisible)
+            {
+                _edgeCache.Update(meshContext.MeshObject);
+                _gpuRenderer.UpdateBuffers(meshContext.MeshObject, _edgeCache);
+
+                Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
+                _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize);
+
+                // ワイヤフレーム3Dメッシュ生成・描画
+                if (_showWireframe)
+                {
+                    _gpuRenderer.UpdateWireframeMesh3D(
+                        meshContext.MeshObject,
+                        _edgeCache,
+                        null,  // selectedLines - 後で実装
+                        1f
+                    );
+                    _gpuRenderer.DrawWireframe3D(_preview.camera);
+                }
+
+                // 頂点3Dメッシュ生成・描画（ミラー用DispatchComputeの前に実行）
+                if (_showVertices)
+                {
+                    float pointSize = CalculatePointSize3D(camPos, meshContext.MeshObject);
+                    _gpuRenderer.UpdatePointMesh3D(
+                        meshContext.MeshObject,
+                        _preview.camera,
+                        _selectedVertices,
+                        _gpuRenderer.HoverVertexIndex,
+                        pointSize,
+                        1f
+                    );
+                    _gpuRenderer.DrawPoints3D(_preview.camera);
+                }
+
+                // ミラーワイヤフレーム3D（チェックボックスで制御）
+                // ミラー用DispatchComputeは可視性バッファを上書きするため、頂点描画の後に実行
+                if (_showWireframe && meshContext.IsMirrored && (_symmetrySettings == null || _symmetrySettings.ShowMirrorWireframe))
+                {
+                    var effectiveSettings = GetEffectiveSymmetrySettings(meshContext);
+                    if (effectiveSettings != null)
+                    {
+                        Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
+                        bool cullingEnabled = _gpuRenderer?.CullingEnabled ?? true;
+
+                        // ミラー用可視性計算（ミラー行列でDispatchCompute）
+                        if (cullingEnabled)
+                        {
+                            _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize, mirrorMatrix, true);
+                        }
+
+                        _gpuRenderer.UpdateMirrorWireframeMesh3D(meshContext.MeshObject, _edgeCache, mirrorMatrix, effectiveSettings.MirrorAlpha, cullingEnabled);
+                        _gpuRenderer.QueueMirrorWireframe3D();
+                    }
+                }
+            }
+
+            // 非選択メッシュのミラーワイヤフレーム3D（チェックボックスで制御）
+            if (_showWireframe && _showUnselectedWireframe && (_symmetrySettings == null || _symmetrySettings.ShowMirrorWireframe))
+            {
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    if (i == _selectedIndex) continue;
+                    var ctx = _meshContextList[i];
+                    if (ctx?.MeshObject == null || !ctx.IsVisible) continue;
+                    if (!ctx.IsMirrored) continue;
+
+                    _edgeCache.Update(ctx.MeshObject);
+                    _gpuRenderer.UpdateBuffers(ctx.MeshObject, _edgeCache);
+
+                    var effectiveSettings = GetEffectiveSymmetrySettings(ctx);
+                    if (effectiveSettings != null)
+                    {
+                        Matrix4x4 mvpUnsel = CalculateMVPMatrix(rect, camPos);
+                        Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
+                        bool cullingEnabled = _gpuRenderer?.CullingEnabled ?? true;
+
+                        // ミラー用可視性計算
+                        _gpuRenderer.DispatchCompute(mvpUnsel, adjustedRect, windowSize, mirrorMatrix, true);
+
+                        _gpuRenderer.UpdateMirrorWireframeMesh3D(ctx.MeshObject, _edgeCache, mirrorMatrix, effectiveSettings.MirrorAlpha * 0.4f, cullingEnabled);
+                        _gpuRenderer.QueueMirrorWireframe3D();
+                    }
+                }
+            }
+        }
+
+        // キューに入っているメッシュを描画
+        if (use3D)
+        {
+            _gpuRenderer.DrawQueued3D(_preview);
+        }
+
+        _preview.camera.Render();
+
+        // 3D描画のクリーンアップ（コピーメッシュを破棄）
+        if (use3D)
+        {
+            _gpuRenderer.CleanupQueued3D();
+
+            // 選択メッシュ用の可視性を再計算（ホバー・選択オーバーレイ用）
+            if (meshContext != null && meshContext.IsVisible)
+            {
+                Vector2 windowSize2 = new Vector2(position.width, position.height);
+                float tabHeight2 = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
+                Rect adjustedRect2 = new Rect(rect.x, rect.y + tabHeight2, rect.width, rect.height - tabHeight2);
+
+                _edgeCache.Update(meshContext.MeshObject);
+                _gpuRenderer.UpdateBuffers(meshContext.MeshObject, _edgeCache);
+                Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
+                _gpuRenderer.DispatchCompute(mvp, adjustedRect2, windowSize2);
+            }
+        }
+
+        Texture result = _preview.EndPreview();
+        GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
+
+        // ホバー線のGL描画（最前面に上書き）
+        if (use3D && _showWireframe && meshContext != null && meshContext.IsVisible)
+        {
+            DrawHoverLineOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget);
+        }
+
+        // ================================================================
+        // 頂点インデックス表示（2Dオーバーレイ）
+        // ================================================================
+        if (_showVertexIndices && meshContext != null && meshContext.IsVisible)
+        {
+            DrawVertexIndices(rect, meshContext.MeshObject, camPos, _cameraTarget);
+        }
+
+        // ================================================================
+        // ワイヤーフレーム・頂点描画（3D/2D切り替え）
+        // ================================================================
+        // 3D描画が有効な場合は2Dオーバーレイはスキップ（深度テスト付きで既に描画済み）
+        bool useGPU2D = _useGPURendering && _gpuRenderingAvailable;
+
+        if (use3D)
+        {
+            // 3D描画済み - 選択オーバーレイのみ追加で描画
+            if (meshContext != null && meshContext.IsVisible)
+            {
+                DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
+
+                // ホバー面描画（3D描画でもGPU 2Dオーバーレイで描画）
+                Vector2 windowSize3D = new Vector2(position.width, position.height);
+                _gpuRenderer.DrawHoverFace(windowSize3D, meshContext.MeshObject);
+
+                // 矩形選択オーバーレイ
+                if (_editState == VertexEditState.BoxSelecting)
+                {
+                    DrawBoxSelectOverlay();
+                }
+            }
+        }
+        else if (useGPU2D)
+        {
+            // 2D GPU描画（従来方式）
+            // 選択メッシュを描画
+            if (meshContext != null && meshContext.IsVisible)
+            {
+                DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+            }
+
+            // 非選択メッシュを描画（フラグで制御）
+            if (!_showSelectedMeshOnly)
+            {
                 for (int i = 0; i < _meshContextList.Count; i++)
                 {
                     if (i == _selectedIndex) continue;
                     var ctx = _meshContextList[i];
                     if (ctx?.MeshObject == null) continue;
-                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
-                    DrawWithGPU(rect, ctx, camPos, false);
-                }
+                    if (!ctx.IsVisible) continue;
 
-                // 選択メッシュを最後に描画（上のレイヤー）
-                if (meshContext != null && meshContext.IsVisible)
-                {
-                    DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+                    // 非選択表示フラグで制御
+                    bool showWireframe = _showWireframe && _showUnselectedWireframe;
+                    bool showVertices = _showVertices && _showUnselectedVertices;
+
+                    if (showWireframe || showVertices)
+                    {
+                        DrawWithGPU(rect, ctx, camPos, false, null, showWireframe, showVertices);
+                    }
                 }
             }
         }
         else
         {
-            // CPU描画（従来方式）
-            if (_showWireframe)
+            // CPU描画（フォールバック）
+            // 選択メッシュのワイヤフレーム
+            if (_showWireframe && meshContext != null && meshContext.IsVisible)
             {
-                if (_showSelectedMeshOnly)
-                {
-                    if (meshContext != null && meshContext.IsVisible)
-                    {
-                        DrawWireframeOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < _meshContextList.Count; i++)
-                    {
-                        var ctx = _meshContextList[i];
-                        if (ctx?.MeshObject == null) continue;
-                        if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
-                        bool isActive = (i == _selectedIndex);
-                        DrawWireframeOverlay(rect, ctx.MeshObject, camPos, _cameraTarget, isActive);
-                    }
-                }
+                DrawWireframeOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
             }
 
-            // 頂点描画（CPU）
-            if (_showSelectedMeshOnly)
-            {
-                if (meshContext != null && meshContext.IsVisible)
-                {
-                    DrawVertexHandles(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
-                }
-            }
-            else
+            // 非選択メッシュのワイヤフレーム
+            if (_showWireframe && _showUnselectedWireframe && !_showSelectedMeshOnly)
             {
                 for (int i = 0; i < _meshContextList.Count; i++)
                 {
+                    if (i == _selectedIndex) continue;
                     var ctx = _meshContextList[i];
                     if (ctx?.MeshObject == null) continue;
-                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
-                    bool isActive = (i == _selectedIndex);
-                    DrawVertexHandles(rect, ctx.MeshObject, camPos, _cameraTarget, isActive);
+                    if (!ctx.IsVisible) continue;
+                    DrawWireframeOverlay(rect, ctx.MeshObject, camPos, _cameraTarget, false);
+                }
+            }
+
+            // 選択メッシュの頂点
+            if (_showVertices && meshContext != null && meshContext.IsVisible)
+            {
+                DrawVertexHandles(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
+            }
+
+            // 非選択メッシュの頂点
+            if (_showVertices && _showUnselectedVertices && !_showSelectedMeshOnly)
+            {
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    if (i == _selectedIndex) continue;
+                    var ctx = _meshContextList[i];
+                    if (ctx?.MeshObject == null) continue;
+                    if (!ctx.IsVisible) continue;
+                    DrawVertexHandles(rect, ctx.MeshObject, camPos, _cameraTarget, false);
                 }
             }
         }
 
-        // ミラーワイヤーフレーム描画（常にCPU）
-        if (_showWireframe && _symmetrySettings != null && _symmetrySettings.IsEnabled)
+        // ミラーワイヤーフレーム描画（MeshContextのMirror属性を使用）
+        // 3D描画時は上で処理済みなのでスキップ
+        if (_showWireframe && !use3D)
         {
-            DrawMirroredWireframe(rect, meshContext.MeshObject, camPos, _cameraTarget);
+            // 選択メッシュのミラーワイヤフレーム
+            if (meshContext != null && meshContext.IsMirrored)
+            {
+                DrawMirroredWireframe(rect, meshContext, camPos, _cameraTarget);
+            }
+
+            // 非選択メッシュのミラーワイヤフレーム
+            if (_showUnselectedWireframe && !_showSelectedMeshOnly)
+            {
+                for (int i = 0; i < _meshContextList.Count; i++)
+                {
+                    if (i == _selectedIndex) continue;
+                    var ctx = _meshContextList[i];
+                    if (ctx?.MeshObject == null || !ctx.IsVisible) continue;
+                    if (!ctx.IsMirrored) continue;
+
+                    DrawMirroredWireframe(rect, ctx, camPos, _cameraTarget);
+                }
+            }
         }
 
-        // 選択状態のオーバーレイ描画
-        DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, useGPU);
+        // 選択状態のオーバーレイ描画（3D描画時は上で処理済み）
+        if (!use3D)
+        {
+            DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, useGPU2D);
+        }
 
         // ローカル原点マーカー
         DrawOriginMarker(rect, camPos, _cameraTarget);
@@ -278,13 +507,69 @@ public partial class SimpleMeshFactory
     }
 
     // ================================================================
+    // 3D描画ヘルパーメソッド
+    // ================================================================
+
+    /// <summary>
+    /// カメラ距離に基づいて頂点の3Dサイズを計算
+    /// ホバー判定（10ピクセル）と一致するサイズを返す
+    /// </summary>
+    private float CalculatePointSize3D(Vector3 camPos, MeshObject meshObject, float targetPixelSize = 10f)
+    {
+        if (meshObject == null || meshObject.VertexCount == 0 || _preview == null)
+            return 0.01f;
+
+        // メッシュの中心までの距離
+        Bounds bounds = meshObject.CalculateBounds();
+        float distance = Vector3.Distance(camPos, bounds.center);
+
+        // 画面上でtargetPixelSizeピクセルのサイズになるように計算
+        float screenHeight = _preview.camera.pixelHeight;
+        if (screenHeight <= 0) screenHeight = 500f;  // フォールバック
+
+        float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
+        float tanHalfFov = Mathf.Tan(fovRad * 0.5f);
+
+        float worldSize = targetPixelSize * distance * 2f * tanHalfFov / screenHeight;
+
+        return Mathf.Clamp(worldSize, 0.001f, 0.1f);
+    }
+
+    /// <summary>
+    /// 頂点インデックスを2Dオーバーレイで描画（選択メッシュのみ）
+    /// 可視性をチェックして表示
+    /// </summary>
+    private void DrawVertexIndices(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
+    {
+        if (meshObject == null)
+            return;
+
+        // 可視性データを取得
+        float[] vertexVisibility = _gpuRenderer?.GetVertexVisibility();
+
+        for (int i = 0; i < meshObject.VertexCount; i++)
+        {
+            // 可視性チェック（GPUデータがあれば使用）
+            if (vertexVisibility != null && i < vertexVisibility.Length && vertexVisibility[i] < 0.5f)
+                continue;
+
+            Vector2 screenPos = WorldToPreviewPos(meshObject.Vertices[i].Position, previewRect, camPos, lookAt);
+
+            if (!previewRect.Contains(screenPos))
+                continue;
+
+            GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 40, 16), i.ToString(), EditorStyles.miniLabel);
+        }
+    }
+
+    // ================================================================
     // GPU描画メソッド
     // ================================================================
 
     /// <summary>
     /// GPU描画（isSelected: trueなら選択メッシュとして明るく描画）
     /// </summary>
-    private void DrawWithGPU(Rect rect, MeshContext meshContext, Vector3 camPos, bool isSelected, HashSet<int> selectedVertices = null)
+    private void DrawWithGPU(Rect rect, MeshContext meshContext, Vector3 camPos, bool isSelected, HashSet<int> selectedVertices = null, bool? overrideShowWireframe = null, bool? overrideShowVertices = null)
     {
         if (_gpuRenderer == null || meshContext?.MeshObject == null)
             return;
@@ -326,7 +611,11 @@ public partial class SimpleMeshFactory
         float alpha = isSelected ? 1f : 0.4f;
         float pointSize = isSelected ? 8f : 4f;
 
-        if (_showWireframe)
+        // ワイヤフレーム/頂点表示のオーバーライド
+        bool showWireframe = overrideShowWireframe ?? _showWireframe;
+        bool showVertices = overrideShowVertices ?? _showVertices;
+
+        if (showWireframe)
         {
             // 選択メッシュ: 緑、非選択メッシュ: グレー
             Color edgeColor = isSelected
@@ -342,7 +631,7 @@ public partial class SimpleMeshFactory
             _gpuRenderer.DrawLines(adjustedRect, windowSize, guiOffset, 2f, alpha, edgeColor);
         }
 
-        if (_showVertices)
+        if (showVertices)
         {
             _gpuRenderer.DrawPoints(adjustedRect, windowSize, guiOffset, pointSize, alpha);
         }
@@ -378,29 +667,6 @@ public partial class SimpleMeshFactory
         Matrix4x4 proj = Matrix4x4.Perspective(_preview.cameraFieldOfView, aspect, 0.01f, 100f);
 
         return proj * view;
-    }
-
-    /// <summary>
-    /// 頂点インデックス表示（GPU描画時のCPUフォールバック）
-    /// </summary>
-    private void DrawVertexIndices(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
-    {
-        if (meshObject == null)
-            return;
-
-        for (int i = 0; i < meshObject.VertexCount; i++)
-        {
-            Vector3 worldPos = meshObject.Vertices[i].Position;
-            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
-
-            if (!previewRect.Contains(screenPos))
-                continue;
-
-            GUI.Label(
-                new Rect(screenPos.x + 6, screenPos.y - 8, 30, 16),
-                i.ToString(),
-                EditorStyles.miniLabel);
-        }
     }
 
     // ================================================================
@@ -758,5 +1024,43 @@ public partial class SimpleMeshFactory
         DrawRectBorder(selectRect, borderColor);
 
         UnityEditor_Handles.EndGUI();
+    }
+
+    // ================================================================
+    // ホバー線描画（GLGizmoDrawer経由）
+    // ================================================================
+
+    /// <summary>
+    /// ホバー線を2Dオーバーレイで描画（GLGizmoDrawer経由）
+    /// </summary>
+    private void DrawHoverLineOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
+    {
+        if (_gpuRenderer == null || _edgeCache == null || meshObject == null)
+            return;
+
+        int hoverLineIndex = _gpuRenderer.HoverLineIndex;
+        if (hoverLineIndex < 0)
+            return;
+
+        var lines = _edgeCache.Lines;
+        if (hoverLineIndex >= lines.Count)
+            return;
+
+        var line = lines[hoverLineIndex];
+        if (line.V1 < 0 || line.V1 >= meshObject.VertexCount ||
+            line.V2 < 0 || line.V2 >= meshObject.VertexCount)
+            return;
+
+        Vector2 p1 = WorldToPreviewPos(meshObject.Vertices[line.V1].Position, previewRect, camPos, lookAt);
+        Vector2 p2 = WorldToPreviewPos(meshObject.Vertices[line.V2].Position, previewRect, camPos, lookAt);
+
+        // 画面外チェック
+        if (!previewRect.Contains(p1) && !previewRect.Contains(p2))
+            return;
+
+        UnityEditor_Handles.Begin();
+        UnityEditor_Handles.Color = new Color(1f, 0f, 0f, 1f);  // 赤色
+        UnityEditor_Handles.DrawLine(p1, p2, 3f);
+        UnityEditor_Handles.End();
     }
 }

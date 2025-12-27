@@ -70,31 +70,57 @@ public partial class SimpleMeshFactory
                 EditorGUI.indentLevel++;
 
                 EditorGUI.BeginChangeCheck();
+                
+                // メッシュ表示
+                bool newShowMesh = EditorGUILayout.Toggle(L.Get("ShowMesh"), _showMesh);
+                EditorGUI.indentLevel++;
+                EditorGUI.BeginDisabledGroup(!newShowMesh);
+                bool newShowSelectedMeshOnly = !EditorGUILayout.Toggle(L.Get("ShowUnselected"), !_showSelectedMeshOnly);
+                EditorGUI.EndDisabledGroup();
+                EditorGUI.indentLevel--;
+                
+                // ワイヤフレーム表示
                 bool newShowWireframe = EditorGUILayout.Toggle(L.Get("Wireframe"), _showWireframe);
+                EditorGUI.indentLevel++;
+                EditorGUI.BeginDisabledGroup(!newShowWireframe);
+                bool newShowUnselectedWireframe = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedWireframe);
+                EditorGUI.EndDisabledGroup();
+                EditorGUI.indentLevel--;
+                
+                // 頂点表示
                 bool newShowVertices = EditorGUILayout.Toggle(L.Get("ShowVertices"), _showVertices);
-                bool newShowVertexIndices = EditorGUILayout.Toggle(L.Get("ShowVertexIndices"), _showVertexIndices);  // ★追加
-                bool newShowSelectedMeshOnly = EditorGUILayout.Toggle(L.Get("ShowSelectedMeshOnly"), _showSelectedMeshOnly);  // ★追加
-                //bool newVertexEditMode = newShowVertices;
+                EditorGUI.indentLevel++;
+                EditorGUI.BeginDisabledGroup(!newShowVertices);
+                bool newShowUnselectedVertices = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedVertices);
+                EditorGUI.EndDisabledGroup();
+                EditorGUI.indentLevel--;
+                
+                // 頂点インデックス（選択メッシュのみ）
+                bool newShowVertexIndices = EditorGUILayout.Toggle(L.Get("ShowVertexIndices"), _showVertexIndices);
 
                 if (EditorGUI.EndChangeCheck())
                 {
                     bool hasDisplayChange =
+                        newShowMesh != _showMesh ||
                         newShowWireframe != _showWireframe ||
                         newShowVertices != _showVertices ||
                         newShowVertexIndices != _showVertexIndices ||
-                        newShowSelectedMeshOnly != _showSelectedMeshOnly;// ||
-                                                                         //newVertexEditMode != _vertexEditMode;
+                        newShowSelectedMeshOnly != _showSelectedMeshOnly ||
+                        newShowUnselectedVertices != _showUnselectedVertices ||
+                        newShowUnselectedWireframe != _showUnselectedWireframe;
 
                     if (hasDisplayChange && _undoController != null)
                     {
                         _undoController.BeginEditorStateDrag();
                     }
 
+                    _showMesh = newShowMesh;
                     _showWireframe = newShowWireframe;
                     _showVertices = newShowVertices;
                     _showVertexIndices = newShowVertexIndices;
                     _showSelectedMeshOnly = newShowSelectedMeshOnly;
-                    //_vertexEditMode = newVertexEditMode;
+                    _showUnselectedVertices = newShowUnselectedVertices;
+                    _showUnselectedWireframe = newShowUnselectedWireframe;
 
                     if (_undoController != null)
                     {
@@ -102,7 +128,6 @@ public partial class SimpleMeshFactory
                         _undoController.EditorState.ShowVertices = _showVertices;
                         _undoController.EditorState.ShowSelectedMeshOnly = _showSelectedMeshOnly;
                         _undoController.EditorState.ShowVertexIndices = _showVertexIndices;
-                        //_undoController.EditorState.VertexEditMode = _vertexEditMode;
                         _undoController.EndEditorStateDrag("Change Display Settings");
                     }
                 }

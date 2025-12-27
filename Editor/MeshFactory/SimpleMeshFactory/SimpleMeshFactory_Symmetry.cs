@@ -164,22 +164,19 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// メッシュコンテキストがミラー表示対象かどうか判定
-    /// IsMirrored=trueのメッシュのみが対象、グローバル設定でフィルター
+    /// MeshContextにIsMirroredフラグがあれば表示対象
     /// </summary>
     private bool ShouldDrawMirror(MeshContext meshContext)
     {
         if (meshContext == null) return false;
 
-        // 1. MeshContextにミラーフラグがないメッシュは対象外
+        // MeshContextにミラーフラグがないメッシュは対象外
         if (!meshContext.IsMirrored)
             return false;
 
-        // 2. グローバル「ミラー有効」がOFFなら表示しない（マスタースイッチ）
-        if (_symmetrySettings == null || !_symmetrySettings.IsEnabled)
-            return false;
-
-        // 3. 「ミラーメッシュ」がOFFなら表示しない
-        if (!_symmetrySettings.ShowMirrorMesh)
+        // グローバル設定で「ミラーメッシュ」をOFFにしている場合は表示しない
+        // ただし、グローバルミラーが無効でもMeshContextごとのミラーは表示する
+        if (_symmetrySettings != null && !_symmetrySettings.ShowMirrorMesh)
             return false;
 
         return true;
@@ -187,21 +184,19 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// ミラーワイヤーフレーム表示対象かどうか判定
+    /// MeshContextにIsMirroredフラグがあれば表示対象
     /// </summary>
     private bool ShouldDrawMirrorWireframe(MeshContext meshContext)
     {
         if (meshContext == null) return false;
 
-        // 1. MeshContextにミラーフラグがないメッシュは対象外
+        // MeshContextにミラーフラグがないメッシュは対象外
         if (!meshContext.IsMirrored)
             return false;
 
-        // 2. グローバル「ミラー有効」がOFFなら表示しない
-        if (_symmetrySettings == null || !_symmetrySettings.IsEnabled)
-            return false;
-
-        // 3. 「ミラーワイヤーフレーム」がOFFなら表示しない
-        if (!_symmetrySettings.ShowMirrorWireframe)
+        // グローバル設定で「ミラーワイヤーフレーム」をOFFにしている場合は表示しない
+        // ただし、グローバルミラーが無効でもMeshContextごとのミラーは表示する
+        if (_symmetrySettings != null && !_symmetrySettings.ShowMirrorWireframe)
             return false;
 
         return true;
@@ -356,8 +351,9 @@ public partial class SimpleMeshFactory
             _mirrorMaterial.SetFloat("_Blend", 0);   // Alpha
             _mirrorMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
             _mirrorMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            _mirrorMaterial.SetInt("_ZWrite", 0);
-            _mirrorMaterial.renderQueue = 3000;
+            // ZWriteを有効にしてミラーワイヤフレームのZTestを機能させる
+            _mirrorMaterial.SetInt("_ZWrite", 1);
+            _mirrorMaterial.renderQueue = 2450;  // Geometry（2000）より後、Transparent（3000）より前
         }
         else
         {
