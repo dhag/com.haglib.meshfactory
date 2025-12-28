@@ -76,12 +76,9 @@ void ComputeScreenPositions(uint3 id : SV_DispatchThreadID)
     uint index = id.x;
     if (index >= _VertexCount) return;
     float3 localPos = _PositionBuffer[index];
-    // ModelMatrixで変換（_IsMirrored=1の時のみ適用、通常時はそのまま使用）
-    float3 worldPos = localPos;
-    if (_IsMirrored != 0)
-    {
-        worldPos = mul(_ModelMatrix, float4(localPos, 1.0)).xyz;
-    }
+    // ModelMatrixで変換（トランスフォーム表示、ミラー等に使用）
+    // 単位行列の場合は元の位置のまま
+    float3 worldPos = mul(_ModelMatrix, float4(localPos, 1.0)).xyz;
     float4 clipPos = mul(_MATRIX_MVP, float4(worldPos, 1.0));
     if (clipPos.w > 0.0001)
     {

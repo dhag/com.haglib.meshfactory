@@ -401,6 +401,7 @@ namespace MeshFactory.Rendering
         private Matrix4x4 _cachedMVP;
         private Rect _cachedPreviewRect;
         private Vector2 _cachedWindowSize;
+        private Matrix4x4 _cachedModelMatrix = Matrix4x4.identity;  // 表示用トランスフォーム行列
         private bool _computeParamsCached = false;
 
         /// <summary>
@@ -416,10 +417,15 @@ namespace MeshFactory.Rendering
             if (!_initialized || _vertexCount == 0) return;
 
             // パラメータをキャッシュ（DispatchHitTest用）
-            _cachedMVP = mvp;
-            _cachedPreviewRect = previewRect;
-            _cachedWindowSize = windowSize;
-            _computeParamsCached = true;
+            // ミラー描画時は元のメッシュ用パラメータを保持するためキャッシュしない
+            if (!isMirrored)
+            {
+                _cachedMVP = mvp;
+                _cachedPreviewRect = previewRect;
+                _cachedWindowSize = windowSize;
+                _cachedModelMatrix = modelMatrix ?? Matrix4x4.identity;
+                _computeParamsCached = true;
+            }
 
             // 共通パラメータ設定
             _computeShader.SetMatrix("_MATRIX_MVP", mvp);
@@ -620,9 +626,9 @@ namespace MeshFactory.Rendering
             }
             else
             {
-                // キャッシュされたパラメータで可視性を再計算
+                // キャッシュされたパラメータで可視性を再計算（表示用トランスフォーム行列も含む）
                 Rect adjustedRect = new Rect(rect.x, rect.y + tabHeight, rect.width, rect.height - tabHeight);
-                DispatchCompute(_cachedMVP, adjustedRect, _cachedWindowSize);
+                DispatchCompute(_cachedMVP, adjustedRect, _cachedWindowSize, _cachedModelMatrix);
             }
 
             // マウス座標を adjustedRect 座標系に変換

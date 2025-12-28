@@ -48,6 +48,10 @@ namespace MeshFactory.UndoSystem
         public bool BakeMirror = false;
         public bool MirrorFlipU = true;
 
+        // トランスフォーム表示モード
+        public bool ShowLocalTransform = false;   // 自身のExportSettingsを反映
+        public bool ShowWorldTransform = false;   // 親を遡ったExportSettingsを累積適用
+
         // 汎用ツール設定ストレージ
         public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();
 
@@ -100,6 +104,8 @@ namespace MeshFactory.UndoSystem
                 ExportSelectedMeshOnly = ExportSelectedMeshOnly,
                 BakeMirror = BakeMirror,
                 MirrorFlipU = MirrorFlipU,
+                ShowLocalTransform = ShowLocalTransform,
+                ShowWorldTransform = ShowWorldTransform,
                 RecordFoldoutChanges = RecordFoldoutChanges,
                 FoldoutStates = new Dictionary<string, bool>(FoldoutStates),
             };
@@ -135,6 +141,8 @@ namespace MeshFactory.UndoSystem
             ExportSelectedMeshOnly = snapshot.ExportSelectedMeshOnly;
             BakeMirror = snapshot.BakeMirror;
             MirrorFlipU = snapshot.MirrorFlipU;
+            ShowLocalTransform = snapshot.ShowLocalTransform;
+            ShowWorldTransform = snapshot.ShowWorldTransform;
             RecordFoldoutChanges = snapshot.RecordFoldoutChanges;
             
             // FoldoutStates復元
@@ -184,6 +192,10 @@ namespace MeshFactory.UndoSystem
         public bool BakeMirror;
         public bool MirrorFlipU;
 
+        // トランスフォーム表示モード
+        public bool ShowLocalTransform;
+        public bool ShowWorldTransform;
+
         // 汎用ツール設定
         public ToolSettingsStorage ToolSettings;
         
@@ -214,6 +226,8 @@ namespace MeshFactory.UndoSystem
                 ExportSelectedMeshOnly != other.ExportSelectedMeshOnly ||
                 BakeMirror != other.BakeMirror ||
                 MirrorFlipU != other.MirrorFlipU ||
+                ShowLocalTransform != other.ShowLocalTransform ||
+                ShowWorldTransform != other.ShowWorldTransform ||
                 RecordFoldoutChanges != other.RecordFoldoutChanges)
             {
                 return true;

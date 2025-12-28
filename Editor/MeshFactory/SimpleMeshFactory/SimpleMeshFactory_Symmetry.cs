@@ -373,7 +373,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ミラーワイヤーフレームを描画
     /// </summary>
-    private void DrawMirroredWireframe(Rect previewRect, MeshContext meshContext, Vector3 camPos, Vector3 lookAt)
+    private void DrawMirroredWireframe(Rect previewRect, MeshContext meshContext, Vector3 camPos, Vector3 lookAt, int meshIndex = -1)
     {
         // ミラーワイヤーフレーム表示対象かチェック
         if (!ShouldDrawMirrorWireframe(meshContext))
@@ -389,6 +389,11 @@ public partial class SimpleMeshFactory
             return;
 
         Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
+        
+        // 表示用トランスフォーム行列を取得し、ミラー行列と合成
+        Matrix4x4 displayMatrix = GetDisplayMatrix(meshIndex);
+        Matrix4x4 combinedMatrix = displayMatrix * mirrorMatrix;
+        
         float alpha = effectiveSettings.MirrorAlpha * 0.7f;  // ワイヤーフレームはやや薄く
 
         var edges = new HashSet<(int, int)>();
@@ -418,8 +423,8 @@ public partial class SimpleMeshFactory
         UnityEditor_Handles.color = new Color(0f, 0.8f, 0.8f, alpha);
         foreach (var edge in edges)
         {
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item2].Position);
+            Vector3 p1World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item1].Position);
+            Vector3 p2World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -440,8 +445,8 @@ public partial class SimpleMeshFactory
                 line.Item2 < 0 || line.Item2 >= meshObject.VertexCount)
                 continue;
 
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item2].Position);
+            Vector3 p1World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item1].Position);
+            Vector3 p2World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);

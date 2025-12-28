@@ -154,6 +154,29 @@ public partial class SimpleMeshFactory
                     Repaint();  // ★追加
                 }
 
+                // === トランスフォーム表示設定 ===
+                EditorGUILayout.Space(2);
+                EditorGUILayout.LabelField(L.Get("TransformDisplay"), EditorStyles.miniLabel);
+                
+                EditorGUI.BeginChangeCheck();
+                bool currentShowLocal = _undoController?.EditorState.ShowLocalTransform ?? false;
+                bool currentShowWorld = _undoController?.EditorState.ShowWorldTransform ?? false;
+                
+                bool newShowLocal = EditorGUILayout.Toggle(L.Get("ShowLocalTransform"), currentShowLocal);
+                bool newShowWorld = EditorGUILayout.Toggle(L.Get("ShowWorldTransform"), currentShowWorld);
+                
+                if (EditorGUI.EndChangeCheck())
+                {
+                    if (_undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                        _undoController.EditorState.ShowLocalTransform = newShowLocal;
+                        _undoController.EditorState.ShowWorldTransform = newShowWorld;
+                        _undoController.EndEditorStateDrag("Change Transform Display");
+                    }
+                    Repaint();
+                }
+
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField(L.Get("Zoom"), EditorStyles.miniLabel);
                 EditorGUI.BeginChangeCheck();

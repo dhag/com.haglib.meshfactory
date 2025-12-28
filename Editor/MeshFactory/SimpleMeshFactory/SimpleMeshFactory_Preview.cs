@@ -140,7 +140,7 @@ public partial class SimpleMeshFactory
                 // 選択メッシュのみ表示モードでもIsVisibleをチェック
                 if (meshContext != null && meshContext.IsVisible)
                 {
-                    DrawMeshWithMaterials(meshContext, mesh);
+                    DrawMeshWithMaterials(meshContext, mesh, 1f, _selectedIndex);
                 }
             }
             else
@@ -152,7 +152,7 @@ public partial class SimpleMeshFactory
                     if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
 
                     bool isSelected = (i == _selectedIndex);
-                    DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f);
+                    DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f, i);
                 }
             }
         }
@@ -203,16 +203,19 @@ public partial class SimpleMeshFactory
                     var ctx = _meshContextList[i];
                     if (ctx?.MeshObject == null || !ctx.IsVisible) continue;
 
+                    // 表示用行列を取得
+                    Matrix4x4 displayMatrix = GetDisplayMatrix(i);
+
                     _edgeCache.Update(ctx.MeshObject);
                     _gpuRenderer.UpdateBuffers(ctx.MeshObject, _edgeCache);
 
                     Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
-                    _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize);
+                    _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize, displayMatrix);
 
                     // 非選択ワイヤフレーム
                     if (_showWireframe && _showUnselectedWireframe)
                     {
-                        _gpuRenderer.UpdateWireframeMesh3D(ctx.MeshObject, _edgeCache, null, 0.4f);
+                        _gpuRenderer.UpdateWireframeMesh3D(ctx.MeshObject, _edgeCache, null, 0.4f, displayMatrix);
                         _gpuRenderer.DrawWireframe3D(_preview.camera);
                     }
 
@@ -220,7 +223,7 @@ public partial class SimpleMeshFactory
                     if (_showVertices && _showUnselectedVertices)
                     {
                         float pointSize = CalculatePointSize3D(camPos, ctx.MeshObject) * 0.7f;
-                        _gpuRenderer.UpdatePointMesh3D(ctx.MeshObject, _preview.camera, null, -1, pointSize, 0.4f);
+                        _gpuRenderer.UpdatePointMesh3D(ctx.MeshObject, _preview.camera, null, -1, pointSize, 0.4f, displayMatrix);
                         _gpuRenderer.DrawPoints3D(_preview.camera);
                     }
                 }
@@ -229,11 +232,14 @@ public partial class SimpleMeshFactory
             // 選択メッシュを描画（上のレイヤー）
             if (meshContext != null && meshContext.IsVisible)
             {
+                // 表示用行列を取得
+                Matrix4x4 displayMatrix = GetDisplayMatrix(_selectedIndex);
+
                 _edgeCache.Update(meshContext.MeshObject);
                 _gpuRenderer.UpdateBuffers(meshContext.MeshObject, _edgeCache);
 
                 Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
-                _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize);
+                _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize, displayMatrix);
 
                 // ワイヤフレーム3Dメッシュ生成・描画
                 if (_showWireframe)
@@ -242,7 +248,8 @@ public partial class SimpleMeshFactory
                         meshContext.MeshObject,
                         _edgeCache,
                         null,  // selectedLines - 後で実装
-                        1f
+                        1f,
+                        displayMatrix
                     );
                     _gpuRenderer.DrawWireframe3D(_preview.camera);
                 }
@@ -257,7 +264,8 @@ public partial class SimpleMeshFactory
                         _selectedVertices,
                         _gpuRenderer.HoverVertexIndex,
                         pointSize,
-                        1f
+                        1f,
+                        displayMatrix
                     );
                     _gpuRenderer.DrawPoints3D(_preview.camera);
                 }
@@ -272,13 +280,16 @@ public partial class SimpleMeshFactory
                         Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
                         bool cullingEnabled = _gpuRenderer?.CullingEnabled ?? true;
 
-                        // ミラー用可視性計算（ミラー行列でDispatchCompute）
+                        // 合成行列: displayMatrix * mirrorMatrix
+                        Matrix4x4 combinedMatrix = displayMatrix * mirrorMatrix;
+
+                        // ミラー用可視性計算（合成行列でDispatchCompute）
                         if (cullingEnabled)
                         {
-                            _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize, mirrorMatrix, true);
+                            _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize, combinedMatrix, true);
                         }
 
-                        _gpuRenderer.UpdateMirrorWireframeMesh3D(meshContext.MeshObject, _edgeCache, mirrorMatrix, effectiveSettings.MirrorAlpha, cullingEnabled);
+                        _gpuRenderer.UpdateMirrorWireframeMesh3D(meshContext.MeshObject, _edgeCache, mirrorMatrix, effectiveSettings.MirrorAlpha, cullingEnabled, displayMatrix);
                         _gpuRenderer.QueueMirrorWireframe3D();
                     }
                 }
@@ -294,6 +305,9 @@ public partial class SimpleMeshFactory
                     if (ctx?.MeshObject == null || !ctx.IsVisible) continue;
                     if (!ctx.IsMirrored) continue;
 
+                    // 表示用行列を取得
+                    Matrix4x4 unselDisplayMatrix = GetDisplayMatrix(i);
+
                     _edgeCache.Update(ctx.MeshObject);
                     _gpuRenderer.UpdateBuffers(ctx.MeshObject, _edgeCache);
 
@@ -304,10 +318,13 @@ public partial class SimpleMeshFactory
                         Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
                         bool cullingEnabled = _gpuRenderer?.CullingEnabled ?? true;
 
-                        // ミラー用可視性計算
-                        _gpuRenderer.DispatchCompute(mvpUnsel, adjustedRect, windowSize, mirrorMatrix, true);
+                        // 合成行列: displayMatrix * mirrorMatrix
+                        Matrix4x4 combinedMatrix = unselDisplayMatrix * mirrorMatrix;
 
-                        _gpuRenderer.UpdateMirrorWireframeMesh3D(ctx.MeshObject, _edgeCache, mirrorMatrix, effectiveSettings.MirrorAlpha * 0.4f, cullingEnabled);
+                        // ミラー用可視性計算
+                        _gpuRenderer.DispatchCompute(mvpUnsel, adjustedRect, windowSize, combinedMatrix, true);
+
+                        _gpuRenderer.UpdateMirrorWireframeMesh3D(ctx.MeshObject, _edgeCache, mirrorMatrix, effectiveSettings.MirrorAlpha * 0.4f, cullingEnabled, unselDisplayMatrix);
                         _gpuRenderer.QueueMirrorWireframe3D();
                     }
                 }
@@ -330,6 +347,9 @@ public partial class SimpleMeshFactory
             // 選択メッシュ用の可視性を再計算（ホバー・選択オーバーレイ用）
             if (meshContext != null && meshContext.IsVisible)
             {
+                // 表示用行列を取得（ヒットテストで使用するためキャッシュされる）
+                Matrix4x4 displayMatrix = GetDisplayMatrix(_selectedIndex);
+
                 Vector2 windowSize2 = new Vector2(position.width, position.height);
                 float tabHeight2 = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
                 Rect adjustedRect2 = new Rect(rect.x, rect.y + tabHeight2, rect.width, rect.height - tabHeight2);
@@ -337,17 +357,20 @@ public partial class SimpleMeshFactory
                 _edgeCache.Update(meshContext.MeshObject);
                 _gpuRenderer.UpdateBuffers(meshContext.MeshObject, _edgeCache);
                 Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
-                _gpuRenderer.DispatchCompute(mvp, adjustedRect2, windowSize2);
+                _gpuRenderer.DispatchCompute(mvp, adjustedRect2, windowSize2, displayMatrix);
             }
         }
 
         Texture result = _preview.EndPreview();
         GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
 
+        // 選択メッシュ用の表示行列を取得
+        Matrix4x4 selectedDisplayMatrix = GetDisplayMatrix(_selectedIndex);
+
         // ホバー線のGL描画（最前面に上書き）
         if (use3D && _showWireframe && meshContext != null && meshContext.IsVisible)
         {
-            DrawHoverLineOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget);
+            DrawHoverLineOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, selectedDisplayMatrix);
         }
 
         // ================================================================
@@ -355,7 +378,7 @@ public partial class SimpleMeshFactory
         // ================================================================
         if (_showVertexIndices && meshContext != null && meshContext.IsVisible)
         {
-            DrawVertexIndices(rect, meshContext.MeshObject, camPos, _cameraTarget);
+            DrawVertexIndices(rect, meshContext.MeshObject, camPos, _cameraTarget, selectedDisplayMatrix);
         }
 
         // ================================================================
@@ -369,7 +392,7 @@ public partial class SimpleMeshFactory
             // 3D描画済み - 選択オーバーレイのみ追加で描画
             if (meshContext != null && meshContext.IsVisible)
             {
-                DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
+                DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true, selectedDisplayMatrix);
 
                 // ホバー面描画（3D描画でもGPU 2Dオーバーレイで描画）
                 Vector2 windowSize3D = new Vector2(position.width, position.height);
@@ -388,7 +411,7 @@ public partial class SimpleMeshFactory
             // 選択メッシュを描画
             if (meshContext != null && meshContext.IsVisible)
             {
-                DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices);
+                DrawWithGPU(rect, meshContext, camPos, true, _selectedVertices, null, null, _selectedIndex);
             }
 
             // 非選択メッシュを描画（フラグで制御）
@@ -407,7 +430,7 @@ public partial class SimpleMeshFactory
 
                     if (showWireframe || showVertices)
                     {
-                        DrawWithGPU(rect, ctx, camPos, false, null, showWireframe, showVertices);
+                        DrawWithGPU(rect, ctx, camPos, false, null, showWireframe, showVertices, i);
                     }
                 }
             }
@@ -418,7 +441,7 @@ public partial class SimpleMeshFactory
             // 選択メッシュのワイヤフレーム
             if (_showWireframe && meshContext != null && meshContext.IsVisible)
             {
-                DrawWireframeOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
+                DrawWireframeOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true, selectedDisplayMatrix);
             }
 
             // 非選択メッシュのワイヤフレーム
@@ -430,14 +453,15 @@ public partial class SimpleMeshFactory
                     var ctx = _meshContextList[i];
                     if (ctx?.MeshObject == null) continue;
                     if (!ctx.IsVisible) continue;
-                    DrawWireframeOverlay(rect, ctx.MeshObject, camPos, _cameraTarget, false);
+                    Matrix4x4 ctxDisplayMatrix = GetDisplayMatrix(i);
+                    DrawWireframeOverlay(rect, ctx.MeshObject, camPos, _cameraTarget, false, ctxDisplayMatrix);
                 }
             }
 
             // 選択メッシュの頂点
             if (_showVertices && meshContext != null && meshContext.IsVisible)
             {
-                DrawVertexHandles(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
+                DrawVertexHandles(rect, meshContext.MeshObject, camPos, _cameraTarget, true, selectedDisplayMatrix);
             }
 
             // 非選択メッシュの頂点
@@ -449,7 +473,8 @@ public partial class SimpleMeshFactory
                     var ctx = _meshContextList[i];
                     if (ctx?.MeshObject == null) continue;
                     if (!ctx.IsVisible) continue;
-                    DrawVertexHandles(rect, ctx.MeshObject, camPos, _cameraTarget, false);
+                    Matrix4x4 ctxDisplayMatrix = GetDisplayMatrix(i);
+                    DrawVertexHandles(rect, ctx.MeshObject, camPos, _cameraTarget, false, ctxDisplayMatrix);
                 }
             }
         }
@@ -461,7 +486,7 @@ public partial class SimpleMeshFactory
             // 選択メッシュのミラーワイヤフレーム
             if (meshContext != null && meshContext.IsMirrored)
             {
-                DrawMirroredWireframe(rect, meshContext, camPos, _cameraTarget);
+                DrawMirroredWireframe(rect, meshContext, camPos, _cameraTarget, _selectedIndex);
             }
 
             // 非選択メッシュのミラーワイヤフレーム
@@ -474,7 +499,7 @@ public partial class SimpleMeshFactory
                     if (ctx?.MeshObject == null || !ctx.IsVisible) continue;
                     if (!ctx.IsMirrored) continue;
 
-                    DrawMirroredWireframe(rect, ctx, camPos, _cameraTarget);
+                    DrawMirroredWireframe(rect, ctx, camPos, _cameraTarget, i);
                 }
             }
         }
@@ -482,7 +507,7 @@ public partial class SimpleMeshFactory
         // 選択状態のオーバーレイ描画（3D描画時は上で処理済み）
         if (!use3D)
         {
-            DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, useGPU2D);
+            DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, useGPU2D, selectedDisplayMatrix);
         }
 
         // ローカル原点マーカー
@@ -539,10 +564,12 @@ public partial class SimpleMeshFactory
     /// 頂点インデックスを2Dオーバーレイで描画（選択メッシュのみ）
     /// 可視性をチェックして表示
     /// </summary>
-    private void DrawVertexIndices(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
+    private void DrawVertexIndices(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, Matrix4x4? displayMatrix = null)
     {
         if (meshObject == null)
             return;
+
+        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
 
         // 可視性データを取得
         float[] vertexVisibility = _gpuRenderer?.GetVertexVisibility();
@@ -553,7 +580,8 @@ public partial class SimpleMeshFactory
             if (vertexVisibility != null && i < vertexVisibility.Length && vertexVisibility[i] < 0.5f)
                 continue;
 
-            Vector2 screenPos = WorldToPreviewPos(meshObject.Vertices[i].Position, previewRect, camPos, lookAt);
+            Vector3 transformedPos = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
+            Vector2 screenPos = WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
 
             if (!previewRect.Contains(screenPos))
                 continue;
@@ -569,10 +597,14 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// GPU描画（isSelected: trueなら選択メッシュとして明るく描画）
     /// </summary>
-    private void DrawWithGPU(Rect rect, MeshContext meshContext, Vector3 camPos, bool isSelected, HashSet<int> selectedVertices = null, bool? overrideShowWireframe = null, bool? overrideShowVertices = null)
+    private void DrawWithGPU(Rect rect, MeshContext meshContext, Vector3 camPos, bool isSelected, HashSet<int> selectedVertices = null, bool? overrideShowWireframe = null, bool? overrideShowVertices = null, int meshIndex = -1)
     {
         if (_gpuRenderer == null || meshContext?.MeshObject == null)
             return;
+
+        // メッシュインデックスを特定
+        int idx = meshIndex >= 0 ? meshIndex : _meshContextList.IndexOf(meshContext);
+        Matrix4x4 displayMatrix = GetDisplayMatrix(idx);
 
         Vector2 windowSize = new Vector2(position.width, position.height);
         Vector2 guiOffset = Vector2.zero;
@@ -605,7 +637,7 @@ public partial class SimpleMeshFactory
         }
 
         Matrix4x4 mvp = CalculateMVPMatrix(rect, camPos);
-        _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize);
+        _gpuRenderer.DispatchCompute(mvp, adjustedRect, windowSize, displayMatrix);
 
         // アルファ：選択=1.0、非選択=0.4
         float alpha = isSelected ? 1f : 0.4f;
@@ -639,7 +671,7 @@ public partial class SimpleMeshFactory
         // インデックス表示は選択メッシュのみ
         if (_showVertexIndices && isSelected)
         {
-            DrawVertexIndices(rect, meshContext.MeshObject, camPos, _cameraTarget);
+            DrawVertexIndices(rect, meshContext.MeshObject, camPos, _cameraTarget, displayMatrix);
         }
 
         // 矩形選択オーバーレイは選択メッシュのみ
@@ -676,10 +708,21 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マルチマテリアル対応でメッシュを描画
     /// </summary>
-    private void DrawMeshWithMaterials(MeshContext meshContext, Mesh mesh, float alpha = 1f)
+    private void DrawMeshWithMaterials(MeshContext meshContext, Mesh mesh, float alpha = 1f, int meshIndex = -1)
     {
         if (mesh == null)
             return;
+
+        // 表示用行列を取得（meshIndex が -1 の場合は meshContext から検索）
+        Matrix4x4 displayMatrix;
+        if (meshIndex >= 0)
+        {
+            displayMatrix = GetDisplayMatrix(meshIndex);
+        }
+        else
+        {
+            displayMatrix = GetDisplayMatrix(meshContext);
+        }
 
         int subMeshCount = mesh.subMeshCount;
         Material defaultMat = GetPreviewMaterial();
@@ -696,7 +739,7 @@ public partial class SimpleMeshFactory
             {
                 mat = defaultMat;
             }
-            _preview.DrawMesh(mesh, Matrix4x4.identity, mat, i);
+            _preview.DrawMesh(mesh, displayMatrix, mat, i);
         }
     }
 
@@ -742,10 +785,12 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ワイヤーフレーム描画（MeshObjectベース）
     /// </summary>
-    private void DrawWireframeOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
+    private void DrawWireframeOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true, Matrix4x4? displayMatrix = null)
     {
         if (meshObject == null)
             return;
+
+        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
 
         var edges = new HashSet<(int, int)>();
         var lines = new List<(int, int)>();
@@ -776,8 +821,8 @@ public partial class SimpleMeshFactory
             : new Color(0.4f, 0.4f, 0.4f, 0.5f);
         foreach (var edge in edges)
         {
-            Vector3 p1World = meshObject.Vertices[edge.Item1].Position;
-            Vector3 p2World = meshObject.Vertices[edge.Item2].Position;
+            Vector3 p1World = matrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item1].Position);
+            Vector3 p2World = matrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -797,8 +842,8 @@ public partial class SimpleMeshFactory
                 line.Item2 < 0 || line.Item2 >= meshObject.VertexCount)
                 continue;
 
-            Vector3 p1World = meshObject.Vertices[line.Item1].Position;
-            Vector3 p2World = meshObject.Vertices[line.Item2].Position;
+            Vector3 p1World = matrix.MultiplyPoint3x4(meshObject.Vertices[line.Item1].Position);
+            Vector3 p2World = matrix.MultiplyPoint3x4(meshObject.Vertices[line.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -821,21 +866,23 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 選択状態のオーバーレイを描画
     /// </summary>
-    private void DrawSelectionOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool gpuRendering = false)
+    private void DrawSelectionOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool gpuRendering = false, Matrix4x4? displayMatrix = null)
     {
         if (meshObject == null || _selectionState == null)
             return;
 
+        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
+
         try
         {
             UnityEditor_Handles.BeginGUI();
-            DrawSelectedFaces(previewRect, meshObject, camPos, lookAt);
+            DrawSelectedFaces(previewRect, meshObject, camPos, lookAt, matrix);
 
             // GPU描画時はエッジと線分はシェーダーで描画済みなのでスキップ
             if (!gpuRendering)
             {
-                DrawSelectedEdges(previewRect, meshObject, camPos, lookAt);
-                DrawSelectedLines(previewRect, meshObject, camPos, lookAt);
+                DrawSelectedEdges(previewRect, meshObject, camPos, lookAt, matrix);
+                DrawSelectedLines(previewRect, meshObject, camPos, lookAt, matrix);
             }
         }
         finally
@@ -844,7 +891,7 @@ public partial class SimpleMeshFactory
         }
     }
 
-    private void DrawSelectedFaces(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
+    private void DrawSelectedFaces(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, Matrix4x4 matrix)
     {
         if (_selectionState.Faces.Count == 0)
             return;
@@ -865,7 +912,7 @@ public partial class SimpleMeshFactory
 
             for (int i = 0; i < face.VertexCount; i++)
             {
-                var worldPos = meshObject.Vertices[face.VertexIndices[i]].Position;
+                var worldPos = matrix.MultiplyPoint3x4(meshObject.Vertices[face.VertexIndices[i]].Position);
                 screenPoints[i] = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
             }
 
@@ -882,7 +929,7 @@ public partial class SimpleMeshFactory
         }
     }
 
-    private void DrawSelectedEdges(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
+    private void DrawSelectedEdges(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, Matrix4x4 matrix)
     {
         if (_selectionState.Edges.Count == 0)
             return;
@@ -895,8 +942,8 @@ public partial class SimpleMeshFactory
                 edge.V2 < 0 || edge.V2 >= meshObject.VertexCount)
                 continue;
 
-            Vector3 p1World = meshObject.Vertices[edge.V1].Position;
-            Vector3 p2World = meshObject.Vertices[edge.V2].Position;
+            Vector3 p1World = matrix.MultiplyPoint3x4(meshObject.Vertices[edge.V1].Position);
+            Vector3 p2World = matrix.MultiplyPoint3x4(meshObject.Vertices[edge.V2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -910,7 +957,7 @@ public partial class SimpleMeshFactory
         }
     }
 
-    private void DrawSelectedLines(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
+    private void DrawSelectedLines(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, Matrix4x4 matrix)
     {
         if (_selectionState.Lines.Count == 0)
             return;
@@ -926,8 +973,8 @@ public partial class SimpleMeshFactory
             if (face.VertexCount != 2)
                 continue;
 
-            Vector3 p1World = meshObject.Vertices[face.VertexIndices[0]].Position;
-            Vector3 p2World = meshObject.Vertices[face.VertexIndices[1]].Position;
+            Vector3 p1World = matrix.MultiplyPoint3x4(meshObject.Vertices[face.VertexIndices[0]].Position);
+            Vector3 p2World = matrix.MultiplyPoint3x4(meshObject.Vertices[face.VertexIndices[1]].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -945,16 +992,18 @@ public partial class SimpleMeshFactory
     // 頂点ハンドル描画（CPU版）
     // ================================================================
 
-    private void DrawVertexHandles(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
+    private void DrawVertexHandles(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true, Matrix4x4? displayMatrix = null)
     {
         if (!_showVertices || meshObject == null)
             return;
 
+        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
         float handleSize = isActiveMesh ? 8f : 4f;
 
         for (int i = 0; i < meshObject.VertexCount; i++)
         {
-            Vector2 screenPos = WorldToPreviewPos(meshObject.Vertices[i].Position, previewRect, camPos, lookAt);
+            Vector3 transformedPos = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
+            Vector2 screenPos = WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
 
             if (!previewRect.Contains(screenPos))
                 continue;
@@ -1033,7 +1082,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ホバー線を2Dオーバーレイで描画（GLGizmoDrawer経由）
     /// </summary>
-    private void DrawHoverLineOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
+    private void DrawHoverLineOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, Matrix4x4? displayMatrix = null)
     {
         if (_gpuRenderer == null || _edgeCache == null || meshObject == null)
             return;
@@ -1051,8 +1100,12 @@ public partial class SimpleMeshFactory
             line.V2 < 0 || line.V2 >= meshObject.VertexCount)
             return;
 
-        Vector2 p1 = WorldToPreviewPos(meshObject.Vertices[line.V1].Position, previewRect, camPos, lookAt);
-        Vector2 p2 = WorldToPreviewPos(meshObject.Vertices[line.V2].Position, previewRect, camPos, lookAt);
+        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
+        Vector3 p1World = matrix.MultiplyPoint3x4(meshObject.Vertices[line.V1].Position);
+        Vector3 p2World = matrix.MultiplyPoint3x4(meshObject.Vertices[line.V2].Position);
+
+        Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
+        Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
 
         // 画面外チェック
         if (!previewRect.Contains(p1) && !previewRect.Contains(p2))
@@ -1062,5 +1115,100 @@ public partial class SimpleMeshFactory
         UnityEditor_Handles.Color = new Color(1f, 0f, 0f, 1f);  // 赤色
         UnityEditor_Handles.DrawLine(p1, p2, 3f);
         UnityEditor_Handles.End();
+    }
+
+    // ================================================================
+    // トランスフォーム表示用行列計算
+    // ================================================================
+
+    /// <summary>
+    /// メッシュのローカルトランスフォーム行列を取得
+    /// ExportSettings の Position/Rotation/Scale から生成
+    /// </summary>
+    private Matrix4x4 GetLocalTransformMatrix(MeshContext ctx)
+    {
+        if (ctx?.ExportSettings == null || !ctx.ExportSettings.UseLocalTransform)
+            return Matrix4x4.identity;
+
+        return ctx.ExportSettings.TransformMatrix;
+    }
+
+    /// <summary>
+    /// メッシュのワールドトランスフォーム行列を取得
+    /// HierarchyParentIndex を遡って累積計算
+    /// </summary>
+    private Matrix4x4 GetWorldTransformMatrix(int meshIndex)
+    {
+        if (meshIndex < 0 || meshIndex >= _meshContextList.Count)
+            return Matrix4x4.identity;
+
+        // 親子チェーンを遡ってスタックに積む
+        var chain = new System.Collections.Generic.Stack<int>();
+        int current = meshIndex;
+
+        // 循環参照検出用
+        var visited = new System.Collections.Generic.HashSet<int>();
+
+        while (current >= 0 && current < _meshContextList.Count)
+        {
+            if (visited.Contains(current))
+                break; // 循環参照を検出したら終了
+
+            visited.Add(current);
+            chain.Push(current);
+
+            var ctx = _meshContextList[current];
+            current = ctx?.HierarchyParentIndex ?? -1;
+        }
+
+        // ルートから順に行列を累積
+        Matrix4x4 worldMatrix = Matrix4x4.identity;
+        while (chain.Count > 0)
+        {
+            int idx = chain.Pop();
+            var ctx = _meshContextList[idx];
+            if (ctx?.ExportSettings != null && ctx.ExportSettings.UseLocalTransform)
+            {
+                worldMatrix *= ctx.ExportSettings.TransformMatrix;
+            }
+        }
+
+        return worldMatrix;
+    }
+
+    /// <summary>
+    /// 現在の表示モードに応じた表示用行列を取得
+    /// </summary>
+    /// <param name="meshIndex">メッシュインデックス</param>
+    /// <returns>表示用変換行列（identity, local, または world）</returns>
+    private Matrix4x4 GetDisplayMatrix(int meshIndex)
+    {
+        var editorState = _undoController?.EditorState;
+        if (editorState == null)
+            return Matrix4x4.identity;
+
+        // WorldTransform が優先（両方ONの場合）
+        if (editorState.ShowWorldTransform)
+        {
+            return GetWorldTransformMatrix(meshIndex);
+        }
+        else if (editorState.ShowLocalTransform)
+        {
+            if (meshIndex >= 0 && meshIndex < _meshContextList.Count)
+            {
+                return GetLocalTransformMatrix(_meshContextList[meshIndex]);
+            }
+        }
+
+        return Matrix4x4.identity;
+    }
+
+    /// <summary>
+    /// MeshContext から直接表示用行列を取得（選択メッシュ用）
+    /// </summary>
+    private Matrix4x4 GetDisplayMatrix(MeshContext ctx)
+    {
+        int index = _meshContextList.IndexOf(ctx);
+        return GetDisplayMatrix(index);
     }
 }

@@ -187,8 +187,15 @@ public partial class SimpleMeshFactory
 
         _mouseDownScreenPos = mousePos;
 
-        // ワールド→スクリーン変換デリゲート
-        Func<Vector3, Vector2> worldToScreen = (worldPos) => WorldToPreviewPos(worldPos, rect, camPos, lookAt);
+        // 表示用トランスフォーム行列を取得（トランスフォーム表示モード対応）
+        Matrix4x4 displayMatrix = GetDisplayMatrix(_selectedIndex);
+
+        // ワールド→スクリーン変換デリゲート（トランスフォーム行列適用）
+        Func<Vector3, Vector2> worldToScreen = (worldPos) => 
+        {
+            Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(worldPos);
+            return WorldToPreviewPos(transformedPos, rect, camPos, lookAt);
+        };
 
         // MeshObject を TopologyCache に設定
         _meshTopology?.SetMeshObject(meshObject);
@@ -515,8 +522,15 @@ public partial class SimpleMeshFactory
             Mathf.Abs(_boxSelectEnd.y - _boxSelectStart.y)
         );
 
-        // ワールド→スクリーン変換デリゲート
-        Func<Vector3, Vector2> worldToScreen = (worldPos) => WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+        // 表示用トランスフォーム行列を取得（トランスフォーム表示モード対応）
+        Matrix4x4 displayMatrix = GetDisplayMatrix(_selectedIndex);
+
+        // ワールド→スクリーン変換デリゲート（トランスフォーム行列適用）
+        Func<Vector3, Vector2> worldToScreen = (worldPos) => 
+        {
+            Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(worldPos);
+            return WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
+        };
 
         // SelectionOperationsを使用（複数モード対応）
         if (_selectionState != null && _selectionOps != null)

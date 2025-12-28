@@ -95,13 +95,16 @@ namespace MeshFactory.Rendering
             MeshObject meshObject, 
             MeshEdgeCache edgeCache,
             HashSet<int> selectedLines = null,
-            float alpha = 1f)
+            float alpha = 1f,
+            Matrix4x4? modelMatrix = null)
         {
             if (meshObject == null || edgeCache == null)
             {
                 if (_wireframeMesh != null) _wireframeMesh.Clear();
                 return;
             }
+            
+            Matrix4x4 matrix = modelMatrix ?? Matrix4x4.identity;
             
             // 可視性データを取得
             float[] lineVisibility = GetLineVisibility();
@@ -141,8 +144,9 @@ namespace MeshFactory.Rendering
                     line.V2 < 0 || line.V2 >= meshObject.VertexCount)
                     continue;
                 
-                Vector3 p1 = meshObject.Vertices[line.V1].Position;
-                Vector3 p2 = meshObject.Vertices[line.V2].Position;
+                // モデル行列で変換
+                Vector3 p1 = matrix.MultiplyPoint3x4(meshObject.Vertices[line.V1].Position);
+                Vector3 p2 = matrix.MultiplyPoint3x4(meshObject.Vertices[line.V2].Position);
                 
                 // 色決定
                 Color lineColor;
@@ -182,13 +186,16 @@ namespace MeshFactory.Rendering
             HashSet<int> selectedVertices = null,
             int hoverVertex = -1,
             float pointSize = 0.02f,
-            float alpha = 1f)
+            float alpha = 1f,
+            Matrix4x4? modelMatrix = null)
         {
             if (meshObject == null || camera == null)
             {
                 if (_pointMesh != null) _pointMesh.Clear();
                 return;
             }
+            
+            Matrix4x4 matrix = modelMatrix ?? Matrix4x4.identity;
             
             // 可視性データを取得
             float[] vertexVisibility = GetVertexVisibility();
@@ -225,7 +232,8 @@ namespace MeshFactory.Rendering
                 if (!isHover && vertexVisibility != null && i < vertexVisibility.Length && vertexVisibility[i] < 0.5f)
                     continue;
                 
-                Vector3 center = meshObject.Vertices[i].Position;
+                // モデル行列で変換
+                Vector3 center = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
                 
                 // 選択状態をcolor.aにエンコード
                 // 1.0 = selected, 0.5 = normal, 0.0 = hover
@@ -372,20 +380,25 @@ namespace MeshFactory.Rendering
         
         /// <summary>
         /// ミラーワイヤフレーム用3Dメッシュを生成
-        /// 事前にDispatchCompute(modelMatrix: mirrorMatrix, isMirrored: true)を呼んでおくこと
+        /// 事前にDispatchCompute(modelMatrix: combinedMatrix, isMirrored: true)を呼んでおくこと
         /// </summary>
+        /// <param name="displayMatrix">表示用トランスフォーム行列（nullならidentity）</param>
         public void UpdateMirrorWireframeMesh3D(
             MeshObject meshObject, 
             MeshEdgeCache edgeCache,
             Matrix4x4 mirrorMatrix,
             float alpha = 1f,
-            bool useCulling = true)
+            bool useCulling = true,
+            Matrix4x4? displayMatrix = null)
         {
             if (meshObject == null || edgeCache == null)
             {
                 if (_mirrorWireframeMesh != null) _mirrorWireframeMesh.Clear();
                 return;
             }
+            
+            // 合成行列: displayMatrix * mirrorMatrix
+            Matrix4x4 combinedMatrix = (displayMatrix ?? Matrix4x4.identity) * mirrorMatrix;
             
             // 可視性データを取得（DispatchComputeで計算済み）
             float[] lineVisibility = useCulling ? GetLineVisibility() : null;
@@ -423,9 +436,9 @@ namespace MeshFactory.Rendering
                     line.V2 < 0 || line.V2 >= meshObject.VertexCount)
                     continue;
                 
-                // ミラー変換後の位置
-                Vector3 p1 = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.V1].Position);
-                Vector3 p2 = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.V2].Position);
+                // 合成行列で変換（ミラー + 表示トランスフォーム）
+                Vector3 p1 = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[line.V1].Position);
+                Vector3 p2 = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[line.V2].Position);
                 
                 // 色決定
                 Color lineColor = (line.LineType == 1) ? auxColor : normalColor;

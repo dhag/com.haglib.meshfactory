@@ -198,6 +198,11 @@ namespace MeshFactory.Localization
             ["ResetOffset"] = new() { ["en"] = "Reset Offset", ["ja"] = "リセット", ["hi"] = "もどす" },
             ["BackfaceCulling"] = new() { ["en"] = "Backface Culling", ["ja"] = "背面カリング", ["hi"] = "うらめんかくす" },
 
+            // トランスフォーム表示
+            ["TransformDisplay"] = new() { ["en"] = "Transform Display", ["ja"] = "トランスフォーム表示", ["hi"] = "へんけいひょうじ" },
+            ["ShowLocalTransform"] = new() { ["en"] = "Local Transform", ["ja"] = "ローカル変換", ["hi"] = "ろーかるへんかん" },
+            ["ShowWorldTransform"] = new() { ["en"] = "World Transform", ["ja"] = "ワールド変換", ["hi"] = "わーるどへんかん" },
+
             ["DisplayOptions"] = new() { ["en"] = "Display Options", ["ja"] = "表示オプション", ["hi"] = "ひょうじせってい" },
             ["MirrorMesh"] = new() { ["en"] = "Mirror Mesh", ["ja"] = "ミラーメッシュ", ["hi"] = "かがみめっしゅ" },
             ["MirrorWireframe"] = new() { ["en"] = "Mirror Wireframe", ["ja"] = "ミラーワイヤー", ["hi"] = "かがみわいやー" },
