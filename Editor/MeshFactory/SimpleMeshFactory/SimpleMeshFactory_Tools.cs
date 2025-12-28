@@ -190,6 +190,36 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.CameraPosition = camPos;
         ctx.CameraTarget = _cameraTarget;
         ctx.CameraDistance = camDist;
+
+        // 表示用変換行列
+        Matrix4x4 displayMatrix = GetDisplayMatrix(_selectedIndex);
+        ctx.DisplayMatrix = displayMatrix;
+
+        // DisplayMatrix対応のWorldToScreenPos
+        ctx.WorldToScreenPos = (worldPos, previewRect, cameraPos, lookAt) => {
+            Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(worldPos);
+            return WorldToPreviewPos(transformedPos, previewRect, cameraPos, lookAt);
+        };
+
+        // DisplayMatrix対応のFindVertexAtScreenPos
+        ctx.FindVertexAtScreenPos = (screenPos, meshObject, previewRect, cameraPos, lookAt, radius) => {
+            if (meshObject == null) return -1;
+            int closestVertex = -1;
+            float closestDist = radius;
+            for (int i = 0; i < meshObject.VertexCount; i++)
+            {
+                Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
+                Vector2 vertScreenPos = WorldToPreviewPos(transformedPos, previewRect, cameraPos, lookAt);
+                float dist = Vector2.Distance(screenPos, vertScreenPos);
+                if (dist < closestDist)
+                {
+                    closestDist = dist;
+                    closestVertex = i;
+                }
+            }
+            return closestVertex;
+        };
+
         ctx.SelectedVertices = _selectedVertices;
         ctx.VertexOffsets = _vertexOffsets;
         ctx.GroupOffsets = _groupOffsets;

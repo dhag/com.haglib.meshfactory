@@ -1,5 +1,6 @@
 // Assets/Editor/MeshFactory/Tools/Selection/Modes/EdgeLoopSelectMode.cs
 // 連続エッジ選択モード
+// ローカライズ対応版
 
 using System.Collections.Generic;
 using System.Linq;
@@ -7,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
+using static MeshFactory.Tools.SelectModeTexts;
 
 namespace MeshFactory.Tools
 {
@@ -80,12 +82,7 @@ namespace MeshFactory.Tools
 
         public void DrawModeSettingsUI()
         {
-            EditorGUILayout.HelpBox(
-                "Click edge to select edge loop.\n" +
-                "• Vertex: loop vertices\n" +
-                "• Edge: loop edges\n" +
-                "• Face: adjacent faces",
-                MessageType.Info);
+            EditorGUILayout.HelpBox(T("EdgeLoopHelp"), MessageType.Info);
         }
 
         // ================================================================

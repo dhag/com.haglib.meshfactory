@@ -1,6 +1,7 @@
 // Assets/Editor/MeshFactory/Tools/Creators/MeshCreatorWindowBase.cs
 // メッシュ生成ウィンドウの基底クラス
 // 共通処理（プレビュー、Undo、AutoMerge、ボタン）を集約
+// ローカライズ対応版
 
 using System;
 using System.Linq;
@@ -9,6 +10,7 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
 using MeshFactory.Utilities;
+using static MeshFactory.Tools.Creators.MeshCreatorTexts;
 
 namespace MeshFactory.Tools.Creators
 {
@@ -204,13 +206,13 @@ namespace MeshFactory.Tools.Creators
         /// </summary>
         protected virtual void DrawAutoMergeUI()
         {
-            EditorGUILayout.LabelField("Options", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField(T("Options"), EditorStyles.miniBoldLabel);
 
             EditorGUILayout.BeginHorizontal();
-            _autoMergeOnCreate = EditorGUILayout.ToggleLeft("Auto Merge Vertices", _autoMergeOnCreate, GUILayout.Width(140));
+            _autoMergeOnCreate = EditorGUILayout.ToggleLeft(T("AutoMergeVertices"), _autoMergeOnCreate, GUILayout.Width(140));
 
             EditorGUI.BeginDisabledGroup(!_autoMergeOnCreate);
-            EditorGUILayout.LabelField("Threshold:", GUILayout.Width(60));
+            EditorGUILayout.LabelField(T("Threshold"), GUILayout.Width(60));
             _autoMergeThreshold = EditorGUILayout.FloatField(_autoMergeThreshold, GUILayout.Width(60));
             _autoMergeThreshold = Mathf.Max(0.0001f, _autoMergeThreshold);
             EditorGUI.EndDisabledGroup();
@@ -225,7 +227,7 @@ namespace MeshFactory.Tools.Creators
         protected virtual void DrawPreview()
         {
             // GUILayoutコントロールは常に実行（Layout/Repaint整合性のため）
-            EditorGUILayout.LabelField("Preview", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(T("Preview"), EditorStyles.boldLabel);
 
             Rect previewRect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
@@ -233,7 +235,7 @@ namespace MeshFactory.Tools.Creators
             if (_previewMeshObject != null)
             {
                 EditorGUILayout.LabelField(
-                    $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
+                    T("VertsFaces", _previewMeshObject.VertexCount, _previewMeshObject.FaceCount),
                     EditorStyles.miniLabel);
             }
             else
@@ -298,12 +300,12 @@ namespace MeshFactory.Tools.Creators
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
 
-            if (GUILayout.Button("Create", GUILayout.Width(100), GUILayout.Height(30)))
+            if (GUILayout.Button(T("Create"), GUILayout.Width(100), GUILayout.Height(30)))
             {
                 CreateMesh();
             }
 
-            if (GUILayout.Button("Cancel", GUILayout.Width(80), GUILayout.Height(30)))
+            if (GUILayout.Button(T("Cancel"), GUILayout.Width(80), GUILayout.Height(30)))
             {
                 Close();
             }
@@ -340,7 +342,7 @@ namespace MeshFactory.Tools.Creators
             var meshObject = GenerateMeshObject();
             if (meshObject == null)
             {
-                Debug.LogWarning($"[{WindowName}] Failed to generate mesh data");
+                Debug.LogWarning($"[{WindowName}] {T("FailedToGenerate")}");
                 return;
             }
 
@@ -352,14 +354,14 @@ namespace MeshFactory.Tools.Creators
                 var result = MeshMergeHelper.MergeAllVerticesAtSamePosition(meshObject, _autoMergeThreshold);
                 if (result.RemovedVertexCount > 0)
                 {
-                    Debug.Log($"[{WindowName}] Auto-merged {result.RemovedVertexCount} vertices");
+                    Debug.Log($"[{WindowName}] {T("AutoMergedVertices", result.RemovedVertexCount)}");
                 }
             }
 
             // コールバック呼び出し
             _onMeshObjectCreated?.Invoke(meshObject, meshName);
 
-            Debug.Log($"[{WindowName}] Created mesh: {meshName} (V:{meshObject.VertexCount}, F:{meshObject.FaceCount})");
+            Debug.Log($"[{WindowName}] {T("CreatedMesh", meshName, meshObject.VertexCount, meshObject.FaceCount)}");
         }
 
         // ================================================================

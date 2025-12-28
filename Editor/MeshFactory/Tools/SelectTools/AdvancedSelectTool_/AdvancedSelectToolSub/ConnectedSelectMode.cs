@@ -1,5 +1,6 @@
 // Assets/Editor/MeshFactory/Tools/Selection/Modes/ConnectedSelectMode.cs
 // 接続領域選択モード
+// ローカライズ対応版
 
 using System.Collections.Generic;
 using System.Linq;
@@ -7,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
+using static MeshFactory.Tools.SelectModeTexts;
 
 namespace MeshFactory.Tools
 {
@@ -154,10 +156,7 @@ namespace MeshFactory.Tools
 
         public void DrawModeSettingsUI()
         {
-            EditorGUILayout.HelpBox(
-                "Click element to select all connected.\n" +
-                "Output: All enabled modes (V/E/F/L)",
-                MessageType.Info);
+            EditorGUILayout.HelpBox(T("ConnectedHelp"), MessageType.Info);
         }
 
         // ================================================================

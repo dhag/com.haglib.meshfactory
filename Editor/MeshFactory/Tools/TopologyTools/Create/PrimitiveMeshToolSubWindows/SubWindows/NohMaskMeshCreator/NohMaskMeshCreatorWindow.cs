@@ -1,6 +1,7 @@
 // Assets/Editor/MeshCreators/NohMaskMeshCreatorWindow.cs
 // 能面（Noh Mask）ベースメッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
 // MeshObject（Vertex/Face）ベース対応版 - 四角形面で構築
+// ローカライズ対応版
 //
 // 【頂点順序の規約】
 // グリッド配置: i0=左下, i1=右下, i2=右上, i3=左上
@@ -12,7 +13,7 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools.Creators;
 
-public class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreatorWindow.NohMaskParams>
+public partial class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreatorWindow.NohMaskParams>
 {
     // ================================================================
     // パラメータ構造体
@@ -105,7 +106,7 @@ public class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreator
     // ================================================================
     public static NohMaskMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
-        var window = GetWindow<NohMaskMeshCreatorWindow>(true, "Create Noh Mask UnityMesh", true);
+        var window = GetWindow<NohMaskMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(420, 800);
         window.maxSize = new Vector2(500, 950);
         window._onMeshObjectCreated = onMeshObjectCreated;
@@ -118,73 +119,73 @@ public class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreator
     // ================================================================
     protected override void DrawParametersUI()
     {
-        EditorGUILayout.LabelField("Noh Mask Parameters", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(T("Parameters"), EditorStyles.boldLabel);
 
         DrawUndoRedoButtons();
         EditorGUILayout.Space(5);
 
         BeginParamChange();
 
-        _params.MeshName = EditorGUILayout.TextField("Name", _params.MeshName);
+        _params.MeshName = EditorGUILayout.TextField(T("Name"), _params.MeshName);
         EditorGUILayout.Space(5);
 
-        EditorGUILayout.LabelField("Face Size", EditorStyles.miniBoldLabel);
+        EditorGUILayout.LabelField(T("FaceSize"), EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.WidthTop = EditorGUILayout.Slider("Width Top", _params.WidthTop, 0.05f, 0.3f);
-            _params.WidthBottom = EditorGUILayout.Slider("Width Bottom", _params.WidthBottom, 0.05f, 0.3f);
-            _params.Height = EditorGUILayout.Slider("Height", _params.Height, 0.1f, 0.5f);
-            _params.DepthTop = EditorGUILayout.Slider("Depth Top", _params.DepthTop, 0.01f, 0.15f);
-            _params.DepthBottom = EditorGUILayout.Slider("Depth Bottom", _params.DepthBottom, 0.01f, 0.15f);
+            _params.WidthTop = EditorGUILayout.Slider(T("WidthTop"), _params.WidthTop, 0.05f, 0.3f);
+            _params.WidthBottom = EditorGUILayout.Slider(T("WidthBottom"), _params.WidthBottom, 0.05f, 0.3f);
+            _params.Height = EditorGUILayout.Slider(T("Height"), _params.Height, 0.1f, 0.5f);
+            _params.DepthTop = EditorGUILayout.Slider(T("DepthTop"), _params.DepthTop, 0.01f, 0.15f);
+            _params.DepthBottom = EditorGUILayout.Slider(T("DepthBottom"), _params.DepthBottom, 0.01f, 0.15f);
         }
 
         EditorGUILayout.Space(5);
 
-        EditorGUILayout.LabelField("Nose", EditorStyles.miniBoldLabel);
+        EditorGUILayout.LabelField(T("Nose"), EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.NoseHeight = EditorGUILayout.Slider("Height", _params.NoseHeight, 0f, 0.1f);
-            _params.NoseWidth = EditorGUILayout.Slider("Width", _params.NoseWidth, 0.01f, 0.1f);
-            _params.NoseLength = EditorGUILayout.Slider("Length", _params.NoseLength, 0.02f, 0.15f);
-            _params.NosePosition = EditorGUILayout.Slider("Position", _params.NosePosition, 0f, 0.2f);
+            _params.NoseHeight = EditorGUILayout.Slider(T("NoseHeight"), _params.NoseHeight, 0f, 0.1f);
+            _params.NoseWidth = EditorGUILayout.Slider(T("NoseWidth"), _params.NoseWidth, 0.01f, 0.1f);
+            _params.NoseLength = EditorGUILayout.Slider(T("NoseLength"), _params.NoseLength, 0.02f, 0.15f);
+            _params.NosePosition = EditorGUILayout.Slider(T("NosePosition"), _params.NosePosition, 0f, 0.2f);
         }
 
         EditorGUILayout.Space(5);
 
-        EditorGUILayout.LabelField("Curve", EditorStyles.miniBoldLabel);
+        EditorGUILayout.LabelField(T("Curve"), EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.TopCurve = EditorGUILayout.Slider("Top", _params.TopCurve, 0f, 0.1f);
-            _params.BottomCurve = EditorGUILayout.Slider("Bottom", _params.BottomCurve, 0f, 0.1f);
+            _params.TopCurve = EditorGUILayout.Slider(T("Top"), _params.TopCurve, 0f, 0.1f);
+            _params.BottomCurve = EditorGUILayout.Slider(T("Bottom"), _params.BottomCurve, 0f, 0.1f);
         }
 
         EditorGUILayout.Space(5);
 
-        EditorGUILayout.LabelField("Segments", EditorStyles.miniBoldLabel);
+        EditorGUILayout.LabelField(T("Segments"), EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.HorizontalSegments = EditorGUILayout.IntSlider("Horizontal", _params.HorizontalSegments, 4, 32);
-            _params.VerticalSegments = EditorGUILayout.IntSlider("Vertical", _params.VerticalSegments, 4, 32);
+            _params.HorizontalSegments = EditorGUILayout.IntSlider(T("Horizontal"), _params.HorizontalSegments, 4, 32);
+            _params.VerticalSegments = EditorGUILayout.IntSlider(T("Vertical"), _params.VerticalSegments, 4, 32);
         }
 
         EditorGUILayout.Space(5);
 
-        EditorGUILayout.LabelField("Transform", EditorStyles.miniBoldLabel);
+        EditorGUILayout.LabelField(T("Transform"), EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.FlipY = EditorGUILayout.Toggle("Flip Y", _params.FlipY);
-            _params.FlipZ = EditorGUILayout.Toggle("Flip Z", _params.FlipZ);
+            _params.FlipY = EditorGUILayout.Toggle(T("FlipY"), _params.FlipY);
+            _params.FlipZ = EditorGUILayout.Toggle(T("FlipZ"), _params.FlipZ);
         }
 
         EditorGUILayout.Space(5);
 
-        EditorGUILayout.LabelField("Pivot Offset", EditorStyles.miniBoldLabel);
+        EditorGUILayout.LabelField(T("PivotOffset"), EditorStyles.miniBoldLabel);
         using (new EditorGUI.IndentLevelScope())
         {
-            _params.Pivot.z = EditorGUILayout.Slider("Z", _params.Pivot.z, -0.5f, 0.5f);
+            _params.Pivot.z = EditorGUILayout.Slider(T("PivotZ"), _params.Pivot.z, -0.5f, 0.5f);
 
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Center", GUILayout.Width(60)))
+            if (GUILayout.Button(T("Center"), GUILayout.Width(60)))
             {
                 _params.Pivot = Vector3.zero;
                 GUI.changed = true;
@@ -200,14 +201,14 @@ public class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreator
     // ================================================================
     protected override void DrawPreview()
     {
-        EditorGUILayout.LabelField("Preview", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(T("Preview"), EditorStyles.boldLabel);
 
         Rect rect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
         if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
+                T("VertsFaces", _previewMeshObject.VertexCount, _previewMeshObject.FaceCount),
                 EditorStyles.miniLabel);
         }
         else

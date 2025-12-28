@@ -1,6 +1,7 @@
 // Assets/Editor/MeshFactory/Tools/PrimitiveMeshTool.cs
 // プリミティブメッシュ生成ツール
 // 各種形状のCreatorウィンドウを一元管理
+// ローカライズ対応版
 
 using System;
 using System.Collections.Generic;
@@ -15,7 +16,7 @@ namespace MeshFactory.Tools
     /// <summary>
     /// プリミティブメッシュ生成ツール
     /// </summary>
-    public class PrimitiveMeshTool : IEditTool
+    public partial class PrimitiveMeshTool : IEditTool
     {
         // ================================================================
         // IEditTool 基本プロパティ
@@ -32,19 +33,38 @@ namespace MeshFactory.Tools
         // ================================================================
 
         /// <summary>
+        /// Creator情報（ローカライズキーとアクション）
+        /// </summary>
+        private class CreatorInfo
+        {
+            public string LabelKey { get; set; }
+            public Action<Action<MeshObject, string>> OpenAction { get; set; }
+            public string Category { get; set; }
+            public int Order { get; set; }
+
+            public CreatorInfo(string labelKey, Action<Action<MeshObject, string>> openAction, string category = null, int order = 0)
+            {
+                LabelKey = labelKey;
+                OpenAction = openAction;
+                Category = category;
+                Order = order;
+            }
+        }
+
+        /// <summary>
         /// 登録されているCreator一覧
         /// </summary>
-        private static readonly List<MeshCreatorEntry> _creators = new List<MeshCreatorEntry>
+        private static readonly List<CreatorInfo> _creators = new List<CreatorInfo>
         {
-            new MeshCreatorEntry("+ Cube...", (cb) => CubeMeshCreatorWindow.Open(cb), "Basic", 0),
-            new MeshCreatorEntry("+ Sphere...", (cb) => SphereMeshCreatorWindow.Open(cb), "Basic", 1),
-            new MeshCreatorEntry("+ Cylinder...", (cb) => CylinderMeshCreatorWindow.Open(cb), "Basic", 2),
-            new MeshCreatorEntry("+ Capsule...", (cb) => CapsuleMeshCreatorWindow.Open(cb), "Basic", 3),
-            new MeshCreatorEntry("+ Plane...", (cb) => PlaneMeshCreatorWindow.Open(cb), "Basic", 4),
-            new MeshCreatorEntry("+ Pyramid...", (cb) => PyramidMeshCreatorWindow.Open(cb), "Basic", 5),
-            new MeshCreatorEntry("+ Revolution...", (cb) => RevolutionMeshCreatorWindow.Open(cb), "Advanced", 10),
-            new MeshCreatorEntry("+ 2D Profile...", (cb) => Profile2DExtrudeWindow.Open(cb), "Advanced", 11),
-            new MeshCreatorEntry("+ NohMask...", (cb) => NohMaskMeshCreatorWindow.Open(cb), "Special", 20),
+            new CreatorInfo("BtnCube", (cb) => CubeMeshCreatorWindow.Open(cb), "Basic", 0),
+            new CreatorInfo("BtnSphere", (cb) => SphereMeshCreatorWindow.Open(cb), "Basic", 1),
+            new CreatorInfo("BtnCylinder", (cb) => CylinderMeshCreatorWindow.Open(cb), "Basic", 2),
+            new CreatorInfo("BtnCapsule", (cb) => CapsuleMeshCreatorWindow.Open(cb), "Basic", 3),
+            new CreatorInfo("BtnPlane", (cb) => PlaneMeshCreatorWindow.Open(cb), "Basic", 4),
+            new CreatorInfo("BtnPyramid", (cb) => PyramidMeshCreatorWindow.Open(cb), "Basic", 5),
+            new CreatorInfo("BtnRevolution", (cb) => RevolutionMeshCreatorWindow.Open(cb), "Advanced", 10),
+            new CreatorInfo("BtnProfile2D", (cb) => Profile2DExtrudeWindow.Open(cb), "Advanced", 11),
+            new CreatorInfo("BtnNohMask", (cb) => NohMaskMeshCreatorWindow.Open(cb), "Special", 20),
         };
 
         // ================================================================
@@ -87,7 +107,7 @@ namespace MeshFactory.Tools
 
         public void DrawSettingsUI()
         {
-            EditorGUILayout.LabelField("Primitive Mesh", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(T("PrimitiveMesh"), EditorStyles.boldLabel);
             EditorGUILayout.Space(5);
 
             // 追加モード設定
@@ -107,9 +127,9 @@ namespace MeshFactory.Tools
             EditorGUILayout.BeginHorizontal();
 
             bool newAddToCurrentMesh = EditorGUILayout.ToggleLeft(
-                L.Get("AddToCurrent"),
+                T("AddToCurrent"),
                 _settings.AddToCurrentMesh,
-                GUILayout.Width(110));
+                GUILayout.Width(130));
 
             if (newAddToCurrentMesh != _settings.AddToCurrentMesh)
             {
@@ -119,7 +139,7 @@ namespace MeshFactory.Tools
             // 追加先がない場合は警告
             if (_settings.AddToCurrentMesh && _context != null && _context.MeshObject == null)
             {
-                EditorGUILayout.LabelField(L.Get("NoMeshSelected"), EditorStyles.miniLabel);
+                EditorGUILayout.LabelField(T("NoMeshSelected"), EditorStyles.miniLabel);
             }
 
             EditorGUILayout.EndHorizontal();
@@ -130,7 +150,7 @@ namespace MeshFactory.Tools
         /// </summary>
         private void DrawCreatorButtons()
         {
-            EditorGUILayout.LabelField(L.Get("CreateMesh"), EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField(T("CreateMesh"), EditorStyles.miniBoldLabel);
             EditorGUILayout.Space(3);
 
             // 2列レイアウト
@@ -141,7 +161,7 @@ namespace MeshFactory.Tools
 
             foreach (var creator in _creators)
             {
-                if (GUILayout.Button(creator.ButtonLabel, GUILayout.MinWidth(100)))
+                if (GUILayout.Button(T(creator.LabelKey), GUILayout.MinWidth(100)))
                 {
                     OpenCreatorWindow(creator);
                 }
@@ -165,7 +185,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// Creatorウィンドウを開く
         /// </summary>
-        private void OpenCreatorWindow(MeshCreatorEntry creator)
+        private void OpenCreatorWindow(CreatorInfo creator)
         {
             // コールバックを設定してウィンドウを開く
             creator.OpenAction?.Invoke(OnMeshObjectCreated);
@@ -178,7 +198,7 @@ namespace MeshFactory.Tools
         {
             if (_context == null)
             {
-                Debug.LogWarning("[PrimitiveMeshTool] Context is null, cannot add mesh");
+                Debug.LogWarning($"[PrimitiveMeshTool] {T("ContextNull")}");
                 return;
             }
 
@@ -200,9 +220,10 @@ namespace MeshFactory.Tools
         /// <summary>
         /// Creatorを追加（拡張用）
         /// </summary>
-        public static void RegisterCreator(MeshCreatorEntry entry)
+        public static void RegisterCreator(string labelKey, Action<Action<MeshObject, string>> openAction, string category = null, int order = 0)
         {
-            if (entry != null && !_creators.Contains(entry))
+            var entry = new CreatorInfo(labelKey, openAction, category, order);
+            if (!_creators.Exists(c => c.LabelKey == labelKey))
             {
                 _creators.Add(entry);
                 // Order順でソート
@@ -213,9 +234,9 @@ namespace MeshFactory.Tools
         /// <summary>
         /// Creatorを削除（拡張用）
         /// </summary>
-        public static void UnregisterCreator(string buttonLabel)
+        public static void UnregisterCreator(string labelKey)
         {
-            _creators.RemoveAll(c => c.ButtonLabel == buttonLabel);
+            _creators.RemoveAll(c => c.LabelKey == labelKey);
         }
     }
 }

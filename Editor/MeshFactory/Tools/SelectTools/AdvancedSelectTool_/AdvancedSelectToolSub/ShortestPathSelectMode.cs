@@ -1,5 +1,6 @@
 // Assets/Editor/MeshFactory/Tools/Selection/Modes/ShortestPathSelectMode.cs
 // 最短ルート選択モード
+// ローカライズ対応版
 
 using System.Collections.Generic;
 using System.Linq;
@@ -7,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
+using static MeshFactory.Tools.SelectModeTexts;
 
 namespace MeshFactory.Tools
 {
@@ -89,17 +91,12 @@ namespace MeshFactory.Tools
 
         public void DrawModeSettingsUI()
         {
-            EditorGUILayout.HelpBox(
-                "Click two vertices for shortest path.\n" +
-                "• Vertex: path vertices\n" +
-                "• Edge: path edges\n" +
-                "• Face: adjacent faces",
-                MessageType.Info);
+            EditorGUILayout.HelpBox(T("ShortestPathHelp"), MessageType.Info);
 
             if (_firstVertex >= 0)
             {
-                EditorGUILayout.LabelField($"First vertex: {_firstVertex}");
-                if (GUILayout.Button("Clear First Point"))
+                EditorGUILayout.LabelField(T("FirstVertex", _firstVertex));
+                if (GUILayout.Button(T("ClearFirstPoint")))
                 {
                     _firstVertex = -1;
                 }

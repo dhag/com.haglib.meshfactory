@@ -562,6 +562,14 @@ namespace MeshFactory.Tools
                 screenDelta, ctx.CameraPosition, ctx.CameraTarget,
                 ctx.CameraDistance, ctx.PreviewRect);
 
+            // DisplayMatrixが非identityの場合、移動ベクトルを変換
+            // （表示座標系からメッシュ座標系へ）
+            if (ctx.DisplayMatrix != Matrix4x4.identity)
+            {
+                Matrix4x4 inverseMatrix = ctx.DisplayMatrix.inverse;
+                worldDelta = inverseMatrix.MultiplyVector(worldDelta);
+            }
+
             _currentTransform.Apply(worldDelta);
 
             var affectedIndices = _currentTransform.GetAffectedIndices();
@@ -679,6 +687,14 @@ namespace MeshFactory.Tools
             float worldScale = ctx.CameraDistance * 0.001f;
             Vector3 worldDelta = axisDir * axisScreenMovement * worldScale;
 
+            // DisplayMatrixが非identityの場合、移動ベクトルを変換
+            // （表示座標系からメッシュ座標系へ）
+            if (ctx.DisplayMatrix != Matrix4x4.identity)
+            {
+                Matrix4x4 inverseMatrix = ctx.DisplayMatrix.inverse;
+                worldDelta = inverseMatrix.MultiplyVector(worldDelta);
+            }
+
             _currentTransform.Apply(worldDelta);
 
             var affectedIndices = _currentTransform.GetAffectedIndices();
@@ -735,7 +751,7 @@ namespace MeshFactory.Tools
                 return;
             }
 
-            // 選択頂点の重心を計算
+            // 選択頂点の重心を計算（メッシュ座標系）
             _selectionCenter = Vector3.zero;
             foreach (int vi in _affectedVertices)
             {
@@ -745,23 +761,28 @@ namespace MeshFactory.Tools
                 }
             }
             _selectionCenter /= _affectedVertices.Count;
-            _gizmoCenter = _selectionCenter;
+
+            // ギズモ中心はDisplayMatrix適用後の位置（表示座標系）
+            _gizmoCenter = ctx.DisplayMatrix.MultiplyPoint3x4(_selectionCenter);
         }
 
         private Vector2 GetGizmoOriginScreen(ToolContext ctx)
         {
-            // 重心のスクリーン座標 + オフセット
+            // ギズモ中心（DisplayMatrix適用済み）のスクリーン座標 + オフセット
             Vector2 centerScreen = ctx.WorldToScreenPos(
-                _selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                _gizmoCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             return centerScreen + _gizmoScreenOffset;
         }
 
         private Vector3 GetAxisScreenDirection(ToolContext ctx, Vector3 worldAxis)
         {
-            // 重心からワールド軸方向に少し進んだ点のスクリーン座標を計算
-            Vector3 axisEnd = _selectionCenter + worldAxis;
+            // DisplayMatrixで軸方向を変換（回転のみ）
+            Vector3 transformedAxis = ctx.DisplayMatrix.MultiplyVector(worldAxis);
+
+            // ギズモ中心からワールド軸方向に少し進んだ点のスクリーン座標を計算
+            Vector3 axisEnd = _gizmoCenter + transformedAxis;
             Vector2 centerScreen = ctx.WorldToScreenPos(
-                _selectionCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                _gizmoCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             Vector2 axisEndScreen = ctx.WorldToScreenPos(
                 axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -926,6 +947,10 @@ namespace MeshFactory.Tools
                 Vector3 p1 = ctx.MeshObject.Vertices[edge.V1].Position;
                 Vector3 p2 = ctx.MeshObject.Vertices[edge.V2].Position;
 
+                // DisplayMatrixを適用（表示座標系に変換）
+                p1 = ctx.DisplayMatrix.MultiplyPoint3x4(p1);
+                p2 = ctx.DisplayMatrix.MultiplyPoint3x4(p2);
+
                 Vector2 sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 Vector2 sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -957,6 +982,8 @@ namespace MeshFactory.Tools
                     if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
                     {
                         Vector3 p = ctx.MeshObject.Vertices[vIdx].Position;
+                        // DisplayMatrixを適用（表示座標系に変換）
+                        p = ctx.DisplayMatrix.MultiplyPoint3x4(p);
                         Vector2 sp = ctx.WorldToScreenPos(p, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                         screenPoints.Add(sp);
                     }
@@ -994,6 +1021,10 @@ namespace MeshFactory.Tools
 
                 Vector3 p1 = ctx.MeshObject.Vertices[v1].Position;
                 Vector3 p2 = ctx.MeshObject.Vertices[v2].Position;
+
+                // DisplayMatrixを適用（表示座標系に変換）
+                p1 = ctx.DisplayMatrix.MultiplyPoint3x4(p1);
+                p2 = ctx.DisplayMatrix.MultiplyPoint3x4(p2);
 
                 Vector2 sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 Vector2 sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);

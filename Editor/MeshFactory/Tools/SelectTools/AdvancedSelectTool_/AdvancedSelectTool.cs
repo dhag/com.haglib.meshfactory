@@ -53,12 +53,16 @@ namespace MeshFactory.Tools
         private AdvancedSelectContext _ctx = new AdvancedSelectContext();
 
         // モード選択用
-        private static readonly string[] ModeNames = { "Connected", "Belt", "EdgeLoop", "Shortest" };
         private static readonly AdvancedSelectMode[] ModeValues = {
             AdvancedSelectMode.Connected,
             AdvancedSelectMode.Belt,
             AdvancedSelectMode.EdgeLoop,
             AdvancedSelectMode.ShortestPath
+        };
+
+        /// <summary>ローカライズされたモード名配列を取得</summary>
+        private string[] GetLocalizedModeNames() => new string[] {
+            T("Connected"), T("Belt"), T("EdgeLoop"), T("Shortest")
         };
 
         // ================================================================
@@ -228,7 +232,7 @@ namespace MeshFactory.Tools
             // モード選択
             int currentIndex = Array.IndexOf(ModeValues, Mode);
             EditorGUI.BeginChangeCheck();
-            int newIndex = GUILayout.Toolbar(currentIndex, ModeNames);
+            int newIndex = GUILayout.Toolbar(currentIndex, GetLocalizedModeNames());
             if (EditorGUI.EndChangeCheck() && newIndex != currentIndex)
             {
                 Mode = ModeValues[newIndex];

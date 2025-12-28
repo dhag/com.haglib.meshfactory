@@ -201,14 +201,18 @@ public partial class SimpleMeshFactory
         _meshTopology?.SetMeshObject(meshObject);
 
         // GPUホバー中の要素があれば優先（ホバーとクリックの整合性を保つ）
+        // ただし、選択モードが有効な場合のみ
         bool useGpuHover = false;
+        var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
+
         if (_gpuRenderer != null && _edgeCache != null)
         {
             int hoverVertex = _gpuRenderer.HoverVertexIndex;
             int hoverLine = _gpuRenderer.HoverLineIndex;
             int hoverFace = _gpuRenderer.HoverFaceIndex;
             
-            if (hoverVertex >= 0)
+            // Vertexモードが有効な場合のみ頂点ホバーを使用
+            if (hoverVertex >= 0 && currentMode.Has(MeshSelectMode.Vertex))
             {
                 _hitResultOnMouseDown = new HitResult
                 {
@@ -220,13 +224,14 @@ public partial class SimpleMeshFactory
                 };
                 useGpuHover = true;
             }
+            // Edge/Lineモードが有効な場合のみ線ホバーを使用
             else if (hoverLine >= 0 && hoverLine < _edgeCache.Lines.Count)
             {
                 // MeshEdgeCacheから線分情報を取得してEdge/Lineを判別
                 var lineData = _edgeCache.Lines[hoverLine];
-                if (lineData.LineType == 1)
+                if (lineData.LineType == 1 && currentMode.Has(MeshSelectMode.Line))
                 {
-                    // 補助線分
+                    // 補助線分（Lineモードが有効な場合のみ）
                     _hitResultOnMouseDown = new HitResult
                     {
                         HitType = MeshSelectMode.Line,
@@ -235,10 +240,11 @@ public partial class SimpleMeshFactory
                         FaceIndex = -1,
                         LineIndex = lineData.FaceIndex
                     };
+                    useGpuHover = true;
                 }
-                else
+                else if (lineData.LineType != 1 && currentMode.Has(MeshSelectMode.Edge))
                 {
-                    // エッジ（面の辺）
+                    // エッジ（面の辺）（Edgeモードが有効な場合のみ）
                     _hitResultOnMouseDown = new HitResult
                     {
                         HitType = MeshSelectMode.Edge,
@@ -247,10 +253,11 @@ public partial class SimpleMeshFactory
                         FaceIndex = -1,
                         LineIndex = -1
                     };
+                    useGpuHover = true;
                 }
-                useGpuHover = true;
             }
-            else if (hoverFace >= 0)
+            // Faceモードが有効な場合のみ面ホバーを使用
+            else if (hoverFace >= 0 && currentMode.Has(MeshSelectMode.Face))
             {
                 _hitResultOnMouseDown = new HitResult
                 {
@@ -336,7 +343,7 @@ public partial class SimpleMeshFactory
         {
             case VertexEditState.PendingAction:
                 // ドラッグなし = クリック
-                HandleClick(shiftHeld, meshObject, rect, camPos, lookAt, handleRadius);
+                HandleClick(shiftHeld, ctrlHeld, meshObject, rect, camPos, lookAt, handleRadius);
                 break;
 
             case VertexEditState.BoxSelecting:
@@ -376,7 +383,7 @@ public partial class SimpleMeshFactory
     // ================================================================
     // クリック処理
     // ================================================================
-    private void HandleClick(bool shiftHeld, MeshObject meshObject, Rect rect, Vector3 camPos, Vector3 lookAt, float handleRadius)
+    private void HandleClick(bool shiftHeld, bool ctrlHeld, MeshObject meshObject, Rect rect, Vector3 camPos, Vector3 lookAt, float handleRadius)
     {
         HashSet<int> oldLegacySelection = new HashSet<int>(_selectedVertices);
         SelectionSnapshot oldSnapshot = _selectionState?.CreateSnapshot();
@@ -385,7 +392,7 @@ public partial class SimpleMeshFactory
         // SelectionOperationsを使用（複数モード対応）
         if (_selectionState != null && _selectionOps != null)
         {
-            selectionChanged = _selectionOps.ApplyHitResult(_hitResultOnMouseDown, shiftHeld);
+            selectionChanged = _selectionOps.ApplyHitResult(_hitResultOnMouseDown, shiftHeld, ctrlHeld);
 
             // _selectedVertices と同期（レガシー互換）
             _selectedVertices.Clear();

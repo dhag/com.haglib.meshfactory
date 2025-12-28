@@ -44,6 +44,11 @@ namespace MeshFactory.Tools
         /// <summary>カメラ距離</summary>
         public float CameraDistance { get; set; }
 
+        // === 表示変換 ===
+
+        /// <summary>表示用変換行列（Local/Worldトランスフォーム表示モード用）</summary>
+        public Matrix4x4 DisplayMatrix { get; set; } = Matrix4x4.identity;
+
         // === 選択状態 ===
 
         /// <summary>選択中の頂点インデックス（後方互換）</summary>

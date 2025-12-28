@@ -1,5 +1,6 @@
 // Assets/Editor/MeshFactory/Tools/Selection/Modes/BeltSelectMode.cs
 // ベルト選択モード
+// ローカライズ対応版
 
 using System.Collections.Generic;
 using System.Linq;
@@ -7,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
+using static MeshFactory.Tools.SelectModeTexts;
 
 namespace MeshFactory.Tools
 {
@@ -76,12 +78,7 @@ namespace MeshFactory.Tools
 
         public void DrawModeSettingsUI()
         {
-            EditorGUILayout.HelpBox(
-                "Click edge to select quad belt.\n" +
-                "• Vertex: belt vertices\n" +
-                "• Edge: ladder rungs (横方向)\n" +
-                "• Face: belt faces",
-                MessageType.Info);
+            EditorGUILayout.HelpBox(T("BeltHelp"), MessageType.Info);
         }
 
         // ================================================================

@@ -286,6 +286,20 @@ namespace MeshFactory.Selection
         }
 
         /// <summary>
+        /// ヒット結果を適用（Shift/Ctrl選択対応）
+        /// </summary>
+        /// <param name="hit">ヒット結果</param>
+        /// <param name="shiftHeld">Shift押下: 追加選択（トグル）</param>
+        /// <param name="ctrlHeld">Ctrl押下: トグル選択（選択解除）</param>
+        /// <returns>選択が変更されたか</returns>
+        public bool ApplyHitResult(HitResult hit, bool shiftHeld, bool ctrlHeld)
+        {
+            // Shift または Ctrl で追加/トグルモード
+            bool additive = shiftHeld || ctrlHeld;
+            return ApplyHitResult(hit, additive);
+        }
+
+        /// <summary>
         /// ヒット結果を適用（混在選択対応）
         /// </summary>
         public bool ApplyHitResult(HitResult hit, bool additive = false)
@@ -295,8 +309,8 @@ namespace MeshFactory.Selection
             {
                 if (!additive)
                 {
-                    // 非加算モードで空クリック: 有効モードの選択をクリア
-                    _state.ClearEnabledModes();
+                    // 非加算モードで空クリック: 全選択をクリア（モードに関係なく）
+                    _state.ClearAll();
                     return true;
                 }
                 return false;
