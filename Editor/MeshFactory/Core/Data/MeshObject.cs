@@ -85,6 +85,16 @@ namespace MeshFactory.Data
         /// <summary>頂点フラグ</summary>
         public VertexFlags Flags = VertexFlags.None;
 
+        /// <summary>
+        /// ボーンウェイト（スキニング用）
+        /// boneIndex = _meshContextList のインデックス
+        /// null = スキニングなし
+        /// </summary>
+        public BoneWeight? BoneWeight = null;
+
+        /// <summary>スキニングデータを持つか</summary>
+        public bool HasBoneWeight => BoneWeight.HasValue;
+
         // === コンストラクタ ===
 
         public Vertex()
@@ -191,6 +201,7 @@ namespace MeshFactory.Data
             clone.UVs = new List<Vector2>(this.UVs);
             clone.Normals = new List<Vector3>(this.Normals);
             clone.Flags = this.Flags;
+            clone.BoneWeight = this.BoneWeight;
             return clone;
         }
     }
@@ -478,6 +489,9 @@ namespace MeshFactory.Data
                 return maxMatIndex + 1;
             }
         }
+
+        /// <summary>スキンドメッシュか（1つ以上の頂点がBoneWeightを持つ）</summary>
+        public bool IsSkinned => Vertices.Any(v => v.HasBoneWeight);
 
         // === コンストラクタ ===
 
@@ -1014,6 +1028,15 @@ namespace MeshFactory.Data
         {
             foreach (var f in Faces)
                 f.Flags = FaceFlags.None;
+        }
+
+        /// <summary>
+        /// 全頂点のボーンウェイトをクリア
+        /// </summary>
+        public void ClearAllBoneWeights()
+        {
+            foreach (var v in Vertices)
+                v.BoneWeight = null;
         }
 
         /// <summary>

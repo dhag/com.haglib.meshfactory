@@ -146,6 +146,12 @@ namespace MeshFactory.Serialization
         /// <summary>法線リスト [[x,y,z], [x,y,z], ...]</summary>
         public List<float[]> n;
 
+        /// <summary>
+        /// ボーンウェイト [i0, i1, i2, i3, w0, w1, w2, w3]
+        /// null = スキニングなし
+        /// </summary>
+        public float[] bw;
+
         // === 変換ヘルパー ===
 
         public Vector3 GetPosition()
@@ -203,6 +209,40 @@ namespace MeshFactory.Serialization
             {
                 n.Add(new float[] { normal.x, normal.y, normal.z });
             }
+        }
+
+        public BoneWeight? GetBoneWeight()
+        {
+            if (bw == null || bw.Length < 8)
+                return null;
+
+            return new BoneWeight
+            {
+                boneIndex0 = (int)bw[0],
+                boneIndex1 = (int)bw[1],
+                boneIndex2 = (int)bw[2],
+                boneIndex3 = (int)bw[3],
+                weight0 = bw[4],
+                weight1 = bw[5],
+                weight2 = bw[6],
+                weight3 = bw[7]
+            };
+        }
+
+        public void SetBoneWeight(BoneWeight? boneWeight)
+        {
+            if (!boneWeight.HasValue)
+            {
+                bw = null;
+                return;
+            }
+
+            var b = boneWeight.Value;
+            bw = new float[]
+            {
+                b.boneIndex0, b.boneIndex1, b.boneIndex2, b.boneIndex3,
+                b.weight0, b.weight1, b.weight2, b.weight3
+            };
         }
     }
 
