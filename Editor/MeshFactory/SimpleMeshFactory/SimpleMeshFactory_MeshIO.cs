@@ -112,7 +112,8 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// 選択中のオブジェクトから読み込み
+    /// 選択中のオブジェクトから階層構造を含めて読み込み
+    /// GameObjectの親子関係をHierarchyParentIndexに保持
     /// </summary>
     private void LoadMeshFromSelection()
     {
@@ -123,7 +124,7 @@ public partial class SimpleMeshFactory
             var selectedMesh = Selection.activeObject as Mesh;
             if (selectedMesh != null)
             {
-                AddLoadedMesh(selectedMesh, selectedMesh.name);// Transform渡せない
+                AddLoadedMesh(selectedMesh, selectedMesh.name);
                 return;
             }
 
@@ -131,30 +132,241 @@ public partial class SimpleMeshFactory
             return;
         }
 
-        var meshFilters = selected.GetComponentsInChildren<MeshFilter>(true);
-        if (meshFilters.Length == 0)
+        // 階層構造をインポート
+        LoadHierarchyFromGameObject(selected);
+    }
+
+    /// <summary>
+    /// GameObjectの階層構造をメッシュリストとしてインポート
+    /// </summary>
+    /// <param name="rootGameObject">ルートGameObject</param>
+    private void LoadHierarchyFromGameObject(GameObject rootGameObject)
+    {
+        if (rootGameObject == null) return;
+
+        // GameObjectを深さ優先で収集（Unity Hierarchyの表示順序に準拠）
+        var gameObjects = new List<GameObject>();
+        CollectGameObjectsDepthFirst(rootGameObject, gameObjects);
+
+        if (gameObjects.Count == 0)
         {
-            EditorUtility.DisplayDialog("Error", "選択オブジェクトにMeshFilterが見つかりませんでした", "OK");
+            EditorUtility.DisplayDialog("Error", "インポート対象のGameObjectがありません", "OK");
             return;
         }
 
-        foreach (var mf in meshFilters)
+        // Undo記録用：変更前の状態を保存
+        int oldSelectedIndex = _selectedIndex;
+        var oldMeshContextList = new List<MeshContext>(_meshContextList);
+
+        // 既存のメッシュリストをクリア
+        ClearMeshContextListInternal();
+
+        // GameObjectからインデックスへのマッピング
+        var goToIndex = new Dictionary<GameObject, int>();
+        for (int i = 0; i < gameObjects.Count; i++)
         {
-            if (mf.sharedMesh != null)
+            goToIndex[gameObjects[i]] = i;
+        }
+
+        // マテリアルを収集（重複排除）
+        var allMaterials = new List<Material>();
+        var materialToIndex = new Dictionary<Material, int>();
+
+        foreach (var go in gameObjects)
+        {
+            var renderer = go.GetComponent<MeshRenderer>();
+            if (renderer != null && renderer.sharedMaterials != null)
             {
-                string meshName = $"{selected.name}_{mf.sharedMesh.name}";
-
-                // マテリアル取得
-                Material[] mats = null;
-                var renderer = mf.GetComponent<MeshRenderer>();
-                if (renderer != null && renderer.sharedMaterials != null && renderer.sharedMaterials.Length > 0)
+                foreach (var mat in renderer.sharedMaterials)
                 {
-                    mats = renderer.sharedMaterials;
+                    if (mat != null && !materialToIndex.ContainsKey(mat))
+                    {
+                        materialToIndex[mat] = allMaterials.Count;
+                        allMaterials.Add(mat);
+                    }
                 }
-
-                AddLoadedMesh(mf.sharedMesh, meshName, mats, mf.transform);
             }
         }
+
+        // マテリアルリストが空の場合はデフォルトを追加
+        if (allMaterials.Count == 0)
+        {
+            allMaterials.Add(null);
+        }
+
+        // モデルのマテリアルを設定
+        _model.Materials.Clear();
+        _model.Materials.AddRange(allMaterials);
+        _model.CurrentMaterialIndex = 0;
+
+        // 各GameObjectからMeshContextを作成
+        for (int i = 0; i < gameObjects.Count; i++)
+        {
+            var go = gameObjects[i];
+            var meshContext = CreateMeshContextFromGameObject(go, goToIndex, materialToIndex);
+
+            _meshContextList.Add(meshContext);
+            meshContext.MaterialOwner = _model;
+        }
+
+        // 最初のメッシュを選択
+        _selectedIndex = _meshContextList.Count > 0 ? 0 : -1;
+
+        // UndoControllerを更新
+        if (_undoController != null && _meshContextList.Count > 0)
+        {
+            var firstContext = _meshContextList[0];
+            _undoController.MeshUndoContext.MeshObject = firstContext.MeshObject;
+            _undoController.MeshUndoContext.TargetMesh = firstContext.UnityMesh;
+            _undoController.MeshUndoContext.OriginalPositions = firstContext.OriginalPositions;
+            _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
+
+            // Undo記録（メッシュリスト置換）
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+
+            // 複数メッシュ追加をバッチ記録
+            var addedContexts = new List<(int Index, MeshContext MeshContext)>();
+            for (int i = 0; i < _meshContextList.Count; i++)
+            {
+                addedContexts.Add((i, _meshContextList[i]));
+            }
+            _undoController.RecordMeshContextsAdd(
+                addedContexts,
+                oldSelectedIndex,
+                _selectedIndex,
+                null, null,
+                _model.Materials,
+                _model.CurrentMaterialIndex);
+        }
+
+        InitVertexOffsets();
+        Repaint();
+
+        Debug.Log($"[LoadHierarchyFromGameObject] Imported {gameObjects.Count} objects from '{rootGameObject.name}'");
+    }
+
+    /// <summary>
+    /// GameObjectを深さ優先で収集（Unity Hierarchy表示順序に準拠）
+    /// </summary>
+    private void CollectGameObjectsDepthFirst(GameObject go, List<GameObject> result)
+    {
+        result.Add(go);
+
+        // 子を GetSiblingIndex 順序で走査（Unity Hierarchy の表示順序）
+        int childCount = go.transform.childCount;
+        for (int i = 0; i < childCount; i++)
+        {
+            var child = go.transform.GetChild(i).gameObject;
+            CollectGameObjectsDepthFirst(child, result);
+        }
+    }
+
+    /// <summary>
+    /// GameObjectからMeshContextを作成
+    /// </summary>
+    /// <param name="go">対象GameObject</param>
+    /// <param name="goToIndex">GameObjectからインデックスへのマッピング</param>
+    /// <param name="materialToIndex">マテリアルからインデックスへのマッピング</param>
+    /// <returns>作成されたMeshContext</returns>
+    private MeshContext CreateMeshContextFromGameObject(
+        GameObject go,
+        Dictionary<GameObject, int> goToIndex,
+        Dictionary<Material, int> materialToIndex)
+    {
+        var meshContext = new MeshContext
+        {
+            MeshObject = new MeshObject(go.name)
+        };
+
+        // 親インデックスを設定（HierarchyParentIndex）
+        var parentTransform = go.transform.parent;
+        if (parentTransform != null && goToIndex.TryGetValue(parentTransform.gameObject, out int parentIndex))
+        {
+            meshContext.HierarchyParentIndex = parentIndex;
+        }
+        else
+        {
+            meshContext.HierarchyParentIndex = -1; // ルート
+        }
+
+        // ローカルトランスフォームをExportSettingsに設定
+        meshContext.ExportSettings.Position = go.transform.localPosition;
+        meshContext.ExportSettings.Rotation = go.transform.localEulerAngles;
+        meshContext.ExportSettings.Scale = go.transform.localScale;
+
+        // デフォルト値でなければUseLocalTransformを有効化
+        bool isDefaultTransform =
+            go.transform.localPosition == Vector3.zero &&
+            go.transform.localEulerAngles == Vector3.zero &&
+            go.transform.localScale == Vector3.one;
+        meshContext.ExportSettings.UseLocalTransform = !isDefaultTransform;
+
+        // MeshFilterからメッシュを取得
+        var meshFilter = go.GetComponent<MeshFilter>();
+        if (meshFilter != null && meshFilter.sharedMesh != null)
+        {
+            meshContext.MeshObject.FromUnityMesh(meshFilter.sharedMesh, true);
+
+            // マテリアルインデックスをFaceに設定
+            var renderer = go.GetComponent<MeshRenderer>();
+            if (renderer != null && renderer.sharedMaterials != null)
+            {
+                // サブメッシュごとのマテリアルインデックスを設定
+                var sourceMesh = meshFilter.sharedMesh;
+                for (int subMeshIdx = 0; subMeshIdx < sourceMesh.subMeshCount; subMeshIdx++)
+                {
+                    Material mat = subMeshIdx < renderer.sharedMaterials.Length
+                        ? renderer.sharedMaterials[subMeshIdx]
+                        : null;
+
+                    int globalMatIndex = 0;
+                    if (mat != null && materialToIndex.TryGetValue(mat, out int idx))
+                    {
+                        globalMatIndex = idx;
+                    }
+
+                    // このサブメッシュに対応するFaceのMaterialIndexを設定
+                    // FromUnityMeshで作成されたFaceはsubMeshIndexがMaterialIndexに設定されている
+                    foreach (var face in meshContext.MeshObject.Faces)
+                    {
+                        if (face.MaterialIndex == subMeshIdx)
+                        {
+                            face.MaterialIndex = globalMatIndex;
+                        }
+                    }
+                }
+            }
+        }
+
+        // OriginalPositions設定
+        meshContext.OriginalPositions = meshContext.MeshObject.Vertices
+            .Select(v => v.Position)
+            .ToArray();
+
+        // 表示用Unity Meshを作成
+        Mesh displayMesh = meshContext.MeshObject.ToUnityMesh();
+        displayMesh.name = go.name;
+        displayMesh.hideFlags = HideFlags.HideAndDontSave;
+        meshContext.UnityMesh = displayMesh;
+
+        return meshContext;
+    }
+
+    /// <summary>
+    /// メッシュリストを内部的にクリア（Undo記録なし）
+    /// </summary>
+    private void ClearMeshContextListInternal()
+    {
+        foreach (var ctx in _meshContextList)
+        {
+            if (ctx.UnityMesh != null)
+            {
+                DestroyImmediate(ctx.UnityMesh);
+            }
+            ctx.ClearSymmetryCache();
+        }
+        _meshContextList.Clear();
+        _selectedIndex = -1;
     }
 
     /// <summary>
@@ -834,83 +1046,117 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// モデル全体をヒエラルキーに追加
-    /// 親GameObjectの下に各メッシュを子として配置
+    /// HierarchyParentIndexに基づいて親子関係を再現
     /// </summary>
     private void AddModelToHierarchy()
     {
         if (_meshContextList.Count == 0)
             return;
 
-        // 親GameObjectの名前を決定
-        string parentName = !string.IsNullOrEmpty(_model.Name) ? _model.Name : "ExportedModel";
-
-        // 選択中のオブジェクトがあればそれを親、なければ新規作成
-        GameObject parentGo;
+        // 選択中のオブジェクトを親として取得
         Transform existingParent = null;
         if (Selection.gameObjects.Length > 0)
         {
             existingParent = Selection.gameObjects[0].transform;
-            parentGo = new GameObject(parentName);
-            parentGo.transform.SetParent(existingParent, false);
         }
-        else
-        {
-            parentGo = new GameObject(parentName);
-        }
-
-        // Undo登録（親）
-        Undo.RegisterCreatedObjectUndo(parentGo, $"Create {parentName}");
 
         // 共有マテリアル配列を取得
         Material[] sharedMaterials = GetMaterialsForSave(null);
 
-        // 各メッシュを子GameObjectとして作成
-        foreach (var meshContext in _meshContextList)
+        // GameObjectをインデックス順に作成（親子関係設定のため）
+        var createdObjects = new GameObject[_meshContextList.Count];
+
+        // Pass 1: すべてのGameObjectを作成（親子関係は後で設定）
+        for (int i = 0; i < _meshContextList.Count; i++)
         {
-            if (meshContext?.MeshObject == null)
-                continue;
+            var meshContext = _meshContextList[i];
+            if (meshContext == null) continue;
 
-            // 子GameObjectを作成
-            GameObject childGo = new GameObject(meshContext.Name);
-            childGo.transform.SetParent(parentGo.transform, false);
+            // GameObjectを作成
+            GameObject go = new GameObject(meshContext.Name);
+            createdObjects[i] = go;
 
-            MeshFilter mf = childGo.AddComponent<MeshFilter>();
-            MeshRenderer mr = childGo.AddComponent<MeshRenderer>();
-
-            // MeshObjectからUnity Meshを生成（ベイクオプション対応）
-            Mesh meshCopy;
-            Material[] materialsToUse;
-            if (_bakeMirror && meshContext.IsMirrored)
+            // メッシュがある場合のみMeshFilter/MeshRendererを追加
+            if (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0)
             {
-                meshCopy = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out var usedMatIndices);
-                materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
+                MeshFilter mf = go.AddComponent<MeshFilter>();
+                MeshRenderer mr = go.AddComponent<MeshRenderer>();
+
+                // MeshObjectからUnity Meshを生成（ベイクオプション対応）
+                Mesh meshCopy;
+                Material[] materialsToUse;
+                if (_bakeMirror && meshContext.IsMirrored)
+                {
+                    meshCopy = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out var usedMatIndices);
+                    materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
+                }
+                else
+                {
+                    meshCopy = meshContext.MeshObject.ToUnityMesh();
+                    materialsToUse = sharedMaterials;
+                }
+                meshCopy.name = meshContext.Name;
+                mf.sharedMesh = meshCopy;
+
+                // マテリアル設定
+                mr.sharedMaterials = materialsToUse;
+            }
+        }
+
+        // Pass 2: 親子関係を設定
+        GameObject firstRootObject = null;
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var meshContext = _meshContextList[i];
+            var go = createdObjects[i];
+            if (go == null) continue;
+
+            int parentIndex = meshContext.HierarchyParentIndex;
+
+            if (parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
+            {
+                // 親がメッシュリスト内にある場合
+                go.transform.SetParent(createdObjects[parentIndex].transform, false);
             }
             else
             {
-                meshCopy = meshContext.MeshObject.ToUnityMesh();
-                materialsToUse = sharedMaterials;
-            }
-            meshCopy.name = meshContext.Name;
-            mf.sharedMesh = meshCopy;
+                // ルートオブジェクト（HierarchyParentIndex == -1 または無効な参照）
+                if (existingParent != null)
+                {
+                    go.transform.SetParent(existingParent, false);
+                }
+                // else: シーンルートに配置
 
-            // マテリアル設定
-            mr.sharedMaterials = materialsToUse;
+                if (firstRootObject == null)
+                {
+                    firstRootObject = go;
+                }
+            }
 
             // ExportSettings を適用（ローカルTransform）
             if (meshContext.ExportSettings != null)
             {
-                meshContext.ExportSettings.ApplyToGameObject(childGo, asLocal: true);
+                meshContext.ExportSettings.ApplyToGameObject(go, asLocal: true);
+            }
+            else
+            {
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                go.transform.localScale = Vector3.one;
             }
 
-            // Undo登録（子）
-            Undo.RegisterCreatedObjectUndo(childGo, $"Create {meshContext.Name}");
+            // Undo登録
+            Undo.RegisterCreatedObjectUndo(go, $"Create {meshContext.Name}");
         }
 
-        // 選択
-        Selection.activeGameObject = parentGo;
-        EditorGUIUtility.PingObject(parentGo);
+        // 最初のルートオブジェクトを選択
+        if (firstRootObject != null)
+        {
+            Selection.activeGameObject = firstRootObject;
+            EditorGUIUtility.PingObject(firstRootObject);
+        }
 
-        Debug.Log($"Added model to hierarchy: {parentName} ({_meshContextList.Count} meshes)");
+        Debug.Log($"Added model to hierarchy: {_meshContextList.Count} objects (with hierarchy structure)");
     }
 
     /// <summary>
@@ -937,71 +1183,139 @@ public partial class SimpleMeshFactory
         string directory = System.IO.Path.GetDirectoryName(path);
         string baseName = System.IO.Path.GetFileNameWithoutExtension(path);
 
-        // 親GameObjectを作成
-        GameObject parentGo = new GameObject(baseName);
-
         // 共有マテリアル配列を取得
         Material[] sharedMaterials = GetMaterialsForSave(null);
 
-        // 各メッシュを子GameObjectとして作成
-        int meshIndex = 0;
-        foreach (var meshContext in _meshContextList)
+        // GameObjectをインデックス順に作成（親子関係設定のため）
+        var createdObjects = new GameObject[_meshContextList.Count];
+
+        // Pass 1: すべてのGameObjectを作成してメッシュを設定
+        for (int i = 0; i < _meshContextList.Count; i++)
         {
-            if (meshContext?.MeshObject == null)
-                continue;
+            var meshContext = _meshContextList[i];
+            if (meshContext == null) continue;
 
-            // メッシュを生成（ベイクオプション対応）
-            Mesh meshCopy;
-            List<int> usedMatIndices = null;
-            if (_bakeMirror && meshContext.IsMirrored)
+            // GameObjectを作成
+            GameObject go = new GameObject(meshContext.Name);
+            createdObjects[i] = go;
+
+            // メッシュがある場合のみMeshFilter/MeshRendererを追加
+            if (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0)
             {
-                meshCopy = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out usedMatIndices);
+                // メッシュを生成（ベイクオプション対応）
+                Mesh meshCopy;
+                List<int> usedMatIndices = null;
+                if (_bakeMirror && meshContext.IsMirrored)
+                {
+                    meshCopy = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out usedMatIndices);
+                }
+                else
+                {
+                    meshCopy = meshContext.MeshObject.ToUnityMesh();
+                }
+                meshCopy.name = meshContext.Name;
+
+                // メッシュアセットを保存
+                string meshPath = System.IO.Path.Combine(directory, $"{baseName}_{i}_{meshContext.Name}.asset");
+                AssetDatabase.DeleteAsset(meshPath);
+                AssetDatabase.CreateAsset(meshCopy, meshPath);
+
+                MeshFilter mf = go.AddComponent<MeshFilter>();
+                MeshRenderer mr = go.AddComponent<MeshRenderer>();
+
+                // 保存したメッシュアセットを参照
+                mf.sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+
+                // マテリアル設定（ベイク時は使用マテリアルのみ）
+                if (_bakeMirror && meshContext.IsMirrored && usedMatIndices != null)
+                {
+                    mr.sharedMaterials = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
+                }
+                else
+                {
+                    mr.sharedMaterials = sharedMaterials;
+                }
+            }
+        }
+
+        // Pass 2: 親子関係を設定
+        // ルートオブジェクトを格納する親を作成（複数ルートがある場合に備えて）
+        GameObject rootContainer = null;
+        int rootCount = 0;
+
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var meshContext = _meshContextList[i];
+            var go = createdObjects[i];
+            if (go == null) continue;
+
+            int parentIndex = meshContext.HierarchyParentIndex;
+
+            if (parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
+            {
+                // 親がメッシュリスト内にある場合
+                go.transform.SetParent(createdObjects[parentIndex].transform, false);
             }
             else
             {
-                meshCopy = meshContext.MeshObject.ToUnityMesh();
-            }
-            meshCopy.name = meshContext.Name;
-
-            string meshPath = System.IO.Path.Combine(directory, $"{baseName}_{meshIndex}_{meshContext.Name}.asset");
-            AssetDatabase.DeleteAsset(meshPath);
-            AssetDatabase.CreateAsset(meshCopy, meshPath);
-
-            // 子GameObjectを作成
-            GameObject childGo = new GameObject(meshContext.Name);
-            childGo.transform.SetParent(parentGo.transform, false);
-
-            MeshFilter mf = childGo.AddComponent<MeshFilter>();
-            MeshRenderer mr = childGo.AddComponent<MeshRenderer>();
-
-            // 保存したメッシュアセットを参照
-            mf.sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
-
-            // マテリアル設定（ベイク時は使用マテリアルのみ）
-            if (_bakeMirror && meshContext.IsMirrored && usedMatIndices != null)
-            {
-                mr.sharedMaterials = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
-            }
-            else
-            {
-                mr.sharedMaterials = sharedMaterials;
+                // ルートオブジェクト
+                rootCount++;
             }
 
             // ExportSettings を適用（ローカルTransform）
             if (meshContext.ExportSettings != null)
             {
-                meshContext.ExportSettings.ApplyToGameObject(childGo, asLocal: true);
+                meshContext.ExportSettings.ApplyToGameObject(go, asLocal: true);
             }
+            else
+            {
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                go.transform.localScale = Vector3.one;
+            }
+        }
 
-            meshIndex++;
+        // 複数ルートがある場合、またはルートが1つでも親コンテナを作成
+        if (rootCount > 1 || (rootCount == 1 && _meshContextList.Count > 1))
+        {
+            rootContainer = new GameObject(baseName);
+            for (int i = 0; i < _meshContextList.Count; i++)
+            {
+                var go = createdObjects[i];
+                if (go == null) continue;
+
+                int parentIndex = _meshContextList[i].HierarchyParentIndex;
+                if (parentIndex < 0 || parentIndex >= createdObjects.Length || createdObjects[parentIndex] == null)
+                {
+                    // ルートオブジェクトをコンテナの子に
+                    go.transform.SetParent(rootContainer.transform, false);
+                }
+            }
+        }
+        else if (rootCount == 1)
+        {
+            // 単一ルートの場合はそれ自体をプレファブルートに
+            for (int i = 0; i < createdObjects.Length; i++)
+            {
+                if (createdObjects[i] != null &&
+                    (_meshContextList[i].HierarchyParentIndex < 0 ||
+                     _meshContextList[i].HierarchyParentIndex >= createdObjects.Length))
+                {
+                    rootContainer = createdObjects[i];
+                    break;
+                }
+            }
         }
 
         // プレファブとして保存
-        AssetDatabase.DeleteAsset(path);
-        PrefabUtility.SaveAsPrefabAsset(parentGo, path);
+        if (rootContainer != null)
+        {
+            AssetDatabase.DeleteAsset(path);
+            PrefabUtility.SaveAsPrefabAsset(rootContainer, path);
 
-        // 一時オブジェクト削除
-        DestroyImmediate(parentGo);
+            // 一時オブジェクト削除
+            DestroyImmediate(rootContainer);
+        }
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -1013,7 +1327,7 @@ public partial class SimpleMeshFactory
             Selection.activeObject = savedPrefab;
         }
 
-        Debug.Log($"Model prefab saved: {path} ({meshIndex} meshes)");
+        Debug.Log($"Model prefab saved: {path} ({_meshContextList.Count} objects with hierarchy)");
     }
 
     /// <summary>
