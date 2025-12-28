@@ -1,4 +1,4 @@
-// Assets/Editor/MeshCreators/ExportSettings.cs
+// Assets/Editor/MeshCreators/BoneTransform.cs
 // エクスポート時のローカルトランスフォーム設定
 // ヒエラルキー/プレファブへのエクスポート時に適用されるPosition, Rotation, Scale
 // 全操作がUndo対応
@@ -16,10 +16,10 @@ namespace MeshFactory.Tools
     // ================================================================
 
     /// <summary>
-    /// ExportSettingsの状態スナップショット（Undo用）
+    /// BoneTransformの状態スナップショット（Undo用）
     /// </summary>
     [Serializable]
-    public struct ExportSettingsSnapshot
+    public struct BoneTransformSnapshot
     {
         public Vector3 Position;
         public Vector3 Rotation;
@@ -30,7 +30,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 他のスナップショットと異なるかどうか
         /// </summary>
-        public bool IsDifferentFrom(ExportSettingsSnapshot other)
+        public bool IsDifferentFrom(BoneTransformSnapshot other)
         {
             return Vector3.Distance(Position, other.Position) > 0.0001f ||
                    Vector3.Distance(Rotation, other.Rotation) > 0.0001f ||
@@ -42,7 +42,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 変更内容の説明を取得
         /// </summary>
-        public string GetChangeDescription(ExportSettingsSnapshot before)
+        public string GetChangeDescription(BoneTransformSnapshot before)
         {
             if (UseLocalTransform != before.UseLocalTransform)
                 return UseLocalTransform ? "Enable Local Transform" : "Disable Local Transform";
@@ -67,7 +67,7 @@ namespace MeshFactory.Tools
     /// ヒエラルキー/プレファブへのエクスポート時のローカルトランスフォームを定義
     /// </summary>
     [Serializable]
-    public class ExportSettings
+    public class BoneTransform
     {
         // === フィールド ===
         [SerializeField] private Vector3 _position = Vector3.zero;
@@ -127,12 +127,12 @@ namespace MeshFactory.Tools
 
         // === コンストラクタ ===
 
-        public ExportSettings()
+        public BoneTransform()
         {
             ResetInternal();
         }
 
-        public ExportSettings(ExportSettings other)
+        public BoneTransform(BoneTransform other)
         {
             CopyFrom(other);
         }
@@ -161,9 +161,9 @@ namespace MeshFactory.Tools
         }
 
         /// <summary>
-        /// 他のExportSettingsからコピー
+        /// 他のBoneTransformからコピー
         /// </summary>
-        public void CopyFrom(ExportSettings other)
+        public void CopyFrom(BoneTransform other)
         {
             if (other == null) return;
             _position = other._position;
@@ -176,9 +176,9 @@ namespace MeshFactory.Tools
         /// <summary>
         /// スナップショットを作成
         /// </summary>
-        public ExportSettingsSnapshot CreateSnapshot()
+        public BoneTransformSnapshot CreateSnapshot()
         {
-            return new ExportSettingsSnapshot
+            return new BoneTransformSnapshot
             {
                 Position = _position,
                 Rotation = _rotation,
@@ -191,7 +191,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// スナップショットから復元
         /// </summary>
-        public void ApplySnapshot(ExportSettingsSnapshot snapshot)
+        public void ApplySnapshot(BoneTransformSnapshot snapshot)
         {
             _position = snapshot.Position;
             _rotation = snapshot.Rotation;
@@ -244,13 +244,13 @@ namespace MeshFactory.Tools
         // ================================================================
 
         /// <summary>
-        /// ExportSettingsDTO から変換
+        /// BoneTransformDTO から変換
         /// </summary>
-        public static ExportSettings FromSerializable(ExportSettingsDTO data)
+        public static BoneTransform FromSerializable(BoneTransformDTO data)
         {
-            if (data == null) return new ExportSettings();
+            if (data == null) return new BoneTransform();
 
-            var settings = new ExportSettings();
+            var settings = new BoneTransform();
             settings._useLocalTransform = data.useLocalTransform;
             settings._exportAsSkinned = data.exportAsSkinned;
             settings._position = data.GetPosition();
@@ -260,11 +260,11 @@ namespace MeshFactory.Tools
         }
 
         /// <summary>
-        /// ExportSettingsDTO に変換
+        /// BoneTransformDTO に変換
         /// </summary>
-        public ExportSettingsDTO ToSerializable()
+        public BoneTransformDTO ToSerializable()
         {
-            var data = new ExportSettingsDTO
+            var data = new BoneTransformDTO
             {
                 useLocalTransform = _useLocalTransform,
                 exportAsSkinned = _exportAsSkinned
@@ -292,7 +292,7 @@ namespace MeshFactory.Tools
 
         public override string ToString()
         {
-            return $"ExportSettings(Use:{_useLocalTransform}, P:{_position}, R:{_rotation}, S:{_scale})";
+            return $"BoneTransform(Use:{_useLocalTransform}, P:{_position}, R:{_rotation}, S:{_scale})";
         }
     }
 
@@ -301,15 +301,15 @@ namespace MeshFactory.Tools
     // ================================================================
 
     /// <summary>
-    /// ExportSettings用UI描画
+    /// BoneTransform用UI描画
     /// WorkPlaneUIと同様の設計
     /// </summary>
-    public static partial class ExportSettingsUI
+    public static partial class BoneTransformUI
     {
         // === イベント ===
 
         /// <summary>設定変更時（Undo記録用）</summary>
-        public static event Action<ExportSettingsSnapshot, ExportSettingsSnapshot, string> OnChanged;
+        public static event Action<BoneTransformSnapshot, BoneTransformSnapshot, string> OnChanged;
 
         /// <summary>リセットボタンクリック時</summary>
         public static event Action OnResetClicked;
@@ -325,7 +325,7 @@ namespace MeshFactory.Tools
         /// UIを描画
         /// </summary>
         /// <returns>変更があったか</returns>
-        public static bool DrawUI(ExportSettings settings)
+        public static bool DrawUI(BoneTransform settings)
         {
             if (settings == null) return false;
 
@@ -333,7 +333,7 @@ namespace MeshFactory.Tools
 
             bool changed = false;
             string changeDescription = null;
-            ExportSettingsSnapshot before = settings.CreateSnapshot();
+            BoneTransformSnapshot before = settings.CreateSnapshot();
 
             // === ヘッダー + 折りたたみ ===
             EditorGUILayout.BeginHorizontal();
@@ -459,7 +459,7 @@ namespace MeshFactory.Tools
             // 変更があればコールバック
             if (changed)
             {
-                ExportSettingsSnapshot after = settings.CreateSnapshot();
+                BoneTransformSnapshot after = settings.CreateSnapshot();
                 if (before.IsDifferentFrom(after))
                 {
                     OnChanged?.Invoke(before, after, changeDescription);
@@ -472,12 +472,12 @@ namespace MeshFactory.Tools
         /// <summary>
         /// コンパクトUI（折りたたみなし、1行版）
         /// </summary>
-        public static bool DrawCompactUI(ExportSettings settings)
+        public static bool DrawCompactUI(BoneTransform settings)
         {
             if (settings == null) return false;
 
             bool changed = false;
-            ExportSettingsSnapshot before = settings.CreateSnapshot();
+            BoneTransformSnapshot before = settings.CreateSnapshot();
 
             EditorGUILayout.BeginHorizontal();
             {
@@ -506,7 +506,7 @@ namespace MeshFactory.Tools
 
             if (changed)
             {
-                ExportSettingsSnapshot after = settings.CreateSnapshot();
+                BoneTransformSnapshot after = settings.CreateSnapshot();
                 if (before.IsDifferentFrom(after))
                 {
                     OnChanged?.Invoke(before, after, T("ChangeSettings"));
@@ -529,7 +529,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 変更を通知（外部からイベント発火用）
         /// </summary>
-        public static void NotifyChanged(ExportSettingsSnapshot before, ExportSettingsSnapshot after, string description)
+        public static void NotifyChanged(BoneTransformSnapshot before, BoneTransformSnapshot after, string description)
         {
             if (before.IsDifferentFrom(after))
             {
@@ -548,19 +548,19 @@ namespace MeshFactory.UndoSystem
     using MeshFactory.Tools;
 
     /// <summary>
-    /// ExportSettings変更記録
+    /// BoneTransform変更記録
     /// </summary>
-    public class ExportSettingsChangeRecord : IUndoRecord<ExportSettings>
+    public class BoneTransformChangeRecord : IUndoRecord<BoneTransform>
     {
         public UndoOperationInfo Info { get; set; }
 
-        public ExportSettingsSnapshot Before;
-        public ExportSettingsSnapshot After;
+        public BoneTransformSnapshot Before;
+        public BoneTransformSnapshot After;
         public string Description;
 
-        public ExportSettingsChangeRecord(
-            ExportSettingsSnapshot before,
-            ExportSettingsSnapshot after,
+        public BoneTransformChangeRecord(
+            BoneTransformSnapshot before,
+            BoneTransformSnapshot after,
             string description = null)
         {
             Before = before;
@@ -568,12 +568,12 @@ namespace MeshFactory.UndoSystem
             Description = description ?? after.GetChangeDescription(before);
         }
 
-        public void Undo(ExportSettings context)
+        public void Undo(BoneTransform context)
         {
             context?.ApplySnapshot(Before);
         }
 
-        public void Redo(ExportSettings context)
+        public void Redo(BoneTransform context)
         {
             context?.ApplySnapshot(After);
         }

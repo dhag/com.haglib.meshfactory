@@ -65,63 +65,63 @@ public partial class SimpleMeshFactory
 
     //移動予定------------------------
     /// <summary>
-    /// ExportSettings UIイベントハンドラ設定
+    /// BoneTransform UIイベントハンドラ設定
     /// </summary>
-    private void SetupExportSettingsEventHandlers()
+    private void SetupBoneTransformEventHandlers()
     {
-        ExportSettingsUI.OnFromSelectionClicked += OnExportSettingsFromSelectionClicked;
-        ExportSettingsUI.OnResetClicked += OnExportSettingsResetClicked;
+        BoneTransformUI.OnFromSelectionClicked += OnBoneTransformFromSelectionClicked;
+        BoneTransformUI.OnResetClicked += OnBoneTransformResetClicked;
     }
 
     /// <summary>
-    /// ExportSettings UIイベントハンドラ解除
+    /// BoneTransform UIイベントハンドラ解除
     /// </summary>
-    private void CleanupExportSettingsEventHandlers()
+    private void CleanupBoneTransformEventHandlers()
     {
-        ExportSettingsUI.OnFromSelectionClicked -= OnExportSettingsFromSelectionClicked;
-        ExportSettingsUI.OnResetClicked -= OnExportSettingsResetClicked;
+        BoneTransformUI.OnFromSelectionClicked -= OnBoneTransformFromSelectionClicked;
+        BoneTransformUI.OnResetClicked -= OnBoneTransformResetClicked;
     }
 
     /// <summary>
-    /// ExportSettings "From Selection"ボタンクリック
+    /// BoneTransform "From Selection"ボタンクリック
     /// </summary>
-    private void OnExportSettingsFromSelectionClicked()
+    private void OnBoneTransformFromSelectionClicked()
     {
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.ExportSettings == null) return;
+        if (meshContext?.BoneTransform == null) return;
 
         // 選択がなければ何もしない
         if (UnityEditor.Selection.activeTransform == null) return;
 
-        ExportSettingsSnapshot before = meshContext.ExportSettings.CreateSnapshot();
+        BoneTransformSnapshot before = meshContext.BoneTransform.CreateSnapshot();
 
-        meshContext.ExportSettings.CopyFromSelection();
-        meshContext.ExportSettings.UseLocalTransform = true;
+        meshContext.BoneTransform.CopyFromSelection();
+        meshContext.BoneTransform.UseLocalTransform = true;
 
-        ExportSettingsSnapshot after = meshContext.ExportSettings.CreateSnapshot();
+        BoneTransformSnapshot after = meshContext.BoneTransform.CreateSnapshot();
 
         // Undo記録
-        ExportSettingsUI.NotifyChanged(before, after, "Copy Transform From Selection");
+        BoneTransformUI.NotifyChanged(before, after, "Copy Transform From Selection");
 
         Repaint();
     }
 
     /// <summary>
-    /// ExportSettings リセットボタンクリック
+    /// BoneTransform リセットボタンクリック
     /// </summary>
-    private void OnExportSettingsResetClicked()
+    private void OnBoneTransformResetClicked()
     {
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.ExportSettings == null) return;
+        if (meshContext?.BoneTransform == null) return;
 
-        var before = meshContext.ExportSettings.CreateSnapshot();
+        var before = meshContext.BoneTransform.CreateSnapshot();
 
-        meshContext.ExportSettings.Reset();
+        meshContext.BoneTransform.Reset();
 
-        var after = meshContext.ExportSettings.CreateSnapshot();
+        var after = meshContext.BoneTransform.CreateSnapshot();
 
         // Undo記録
-        ExportSettingsUI.NotifyChanged(before, after, "Reset Export Settings");
+        BoneTransformUI.NotifyChanged(before, after, "Reset Export Settings");
 
         Repaint();
     }

@@ -347,8 +347,8 @@ public partial class SimpleMeshFactory : EditorWindow
         // WorkPlaneContext UIイベントハンドラ設定
         SetupWorkPlaneEventHandlers();
 
-        // ExportSettings UIイベントハンドラ設定
-        SetupExportSettingsEventHandlers();
+        // BoneTransform UIイベントハンドラ設定
+        SetupBoneTransformEventHandlers();
 
         // ★GPU描画初期化
         InitializeDrawCache();
@@ -462,8 +462,8 @@ public partial class SimpleMeshFactory : EditorWindow
         // WorkPlaneContext UIイベントハンドラ解除
         CleanupWorkPlaneEventHandlers();
 
-        // ExportSettings UIイベントハンドラ解除
-        CleanupExportSettingsEventHandlers();
+        // BoneTransform UIイベントハンドラ解除
+        CleanupBoneTransformEventHandlers();
 
         // Selection System クリーンアップ
         if (_selectionState != null)

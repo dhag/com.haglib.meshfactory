@@ -49,8 +49,8 @@ namespace MeshFactory.UndoSystem
         public bool MirrorFlipU = true;
 
         // トランスフォーム表示モード
-        public bool ShowLocalTransform = false;   // 自身のExportSettingsを反映
-        public bool ShowWorldTransform = false;   // 親を遡ったExportSettingsを累積適用
+        public bool ShowLocalTransform = false;   // 自身のBoneTransformを反映
+        public bool ShowWorldTransform = false;   // 親を遡ったBoneTransformを累積適用
 
         // 汎用ツール設定ストレージ
         public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();

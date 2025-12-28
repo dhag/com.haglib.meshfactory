@@ -42,7 +42,7 @@ namespace MeshFactory.UndoSystem
         public List<string> MaterialPaths;      // マテリアルはアセットパスで保持
         public List<Material> RuntimeMaterials; // ランタイム専用（アセット化されていないマテリアル）
         public int CurrentMaterialIndex;
-        public ExportSettings ExportSettings;
+        public BoneTransform BoneTransform;
         public Vector3[] OriginalPositions;
 
         // オブジェクト属性
@@ -71,7 +71,7 @@ namespace MeshFactory.UndoSystem
                 MaterialPaths = new List<string>(),
                 RuntimeMaterials = new List<Material>(),
                 CurrentMaterialIndex = meshContext.CurrentMaterialIndex,
-                ExportSettings = meshContext.ExportSettings != null ? new ExportSettings(meshContext.ExportSettings) : null,
+                BoneTransform = meshContext.BoneTransform != null ? new BoneTransform(meshContext.BoneTransform) : null,
                 OriginalPositions = meshContext.OriginalPositions != null 
                     ? (Vector3[])meshContext.OriginalPositions.Clone() 
                     : null,
@@ -130,7 +130,7 @@ namespace MeshFactory.UndoSystem
                 MeshObject = Data?.Clone(),
                 Materials = new List<Material>(),
                 CurrentMaterialIndex = CurrentMaterialIndex,
-                ExportSettings = ExportSettings != null ? new ExportSettings(ExportSettings) : null,
+                BoneTransform = BoneTransform != null ? new BoneTransform(BoneTransform) : null,
                 OriginalPositions = OriginalPositions != null 
                     ? (Vector3[])OriginalPositions.Clone() 
                     : null,

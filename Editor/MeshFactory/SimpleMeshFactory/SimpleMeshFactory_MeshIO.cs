@@ -289,17 +289,17 @@ public partial class SimpleMeshFactory
             meshContext.HierarchyParentIndex = -1; // ルート
         }
 
-        // ローカルトランスフォームをExportSettingsに設定
-        meshContext.ExportSettings.Position = go.transform.localPosition;
-        meshContext.ExportSettings.Rotation = go.transform.localEulerAngles;
-        meshContext.ExportSettings.Scale = go.transform.localScale;
+        // ローカルトランスフォームをBoneTransformに設定
+        meshContext.BoneTransform.Position = go.transform.localPosition;
+        meshContext.BoneTransform.Rotation = go.transform.localEulerAngles;
+        meshContext.BoneTransform.Scale = go.transform.localScale;
 
         // デフォルト値でなければUseLocalTransformを有効化
         bool isDefaultTransform =
             go.transform.localPosition == Vector3.zero &&
             go.transform.localEulerAngles == Vector3.zero &&
             go.transform.localScale == Vector3.one;
-        meshContext.ExportSettings.UseLocalTransform = !isDefaultTransform;
+        meshContext.BoneTransform.UseLocalTransform = !isDefaultTransform;
 
         // MeshFilterからメッシュを取得
         var meshFilter = go.GetComponent<MeshFilter>();
@@ -389,12 +389,12 @@ public partial class SimpleMeshFactory
             OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray()
         };
 
-        // ExportSettings: 元オブジェクトのTransformを設定
+        // BoneTransform: 元オブジェクトのTransformを設定
         if (sourceTransform != null)
         {
-            meshContext.ExportSettings.Position = sourceTransform.localPosition;
-            meshContext.ExportSettings.Rotation = sourceTransform.localEulerAngles;
-            meshContext.ExportSettings.Scale = sourceTransform.localScale;
+            meshContext.BoneTransform.Position = sourceTransform.localPosition;
+            meshContext.BoneTransform.Rotation = sourceTransform.localEulerAngles;
+            meshContext.BoneTransform.Scale = sourceTransform.localScale;
 
             // デフォルト値でなければ UseLocalTransform を有効化
             bool isDefault =
@@ -402,7 +402,7 @@ public partial class SimpleMeshFactory
                 sourceTransform.localEulerAngles == Vector3.zero &&
                 sourceTransform.localScale == Vector3.one;
 
-            meshContext.ExportSettings.UseLocalTransform = !isDefault;
+            meshContext.BoneTransform.UseLocalTransform = !isDefault;
         }
 
 
@@ -945,8 +945,8 @@ public partial class SimpleMeshFactory
             mr.sharedMaterials = baseMaterials;
         }
 
-        // ExportSettings を適用
-        meshContext.ExportSettings?.ApplyToGameObject(go, asLocal: false);
+        // BoneTransform を適用
+        meshContext.BoneTransform?.ApplyToGameObject(go, asLocal: false);
 
         // プレファブとして保存
         AssetDatabase.DeleteAsset(path);
@@ -1018,10 +1018,10 @@ public partial class SimpleMeshFactory
             go.transform.SetParent(parent, false);
         }
 
-        // ExportSettings を適用
-        if (meshContext.ExportSettings != null)
+        // BoneTransform を適用
+        if (meshContext.BoneTransform != null)
         {
-            meshContext.ExportSettings.ApplyToGameObject(go, asLocal: parent != null);
+            meshContext.BoneTransform.ApplyToGameObject(go, asLocal: parent != null);
         }
         else
         {
@@ -1056,10 +1056,10 @@ public partial class SimpleMeshFactory
 
         // ExportAsSkinned フラグをチェック（最初のメッシュの設定を使用）
         bool exportAsSkinned = false;
-        var firstMeshContext = _meshContextList.FirstOrDefault(m => m?.ExportSettings != null);
-        if (firstMeshContext?.ExportSettings != null)
+        var firstMeshContext = _meshContextList.FirstOrDefault(m => m?.BoneTransform != null);
+        if (firstMeshContext?.BoneTransform != null)
         {
-            exportAsSkinned = firstMeshContext.ExportSettings.ExportAsSkinned;
+            exportAsSkinned = firstMeshContext.BoneTransform.ExportAsSkinned;
         }
 
         if (exportAsSkinned)
@@ -1150,10 +1150,10 @@ public partial class SimpleMeshFactory
                 }
             }
 
-            // ExportSettings を適用（ローカルTransform）
-            if (meshContext.ExportSettings != null)
+            // BoneTransform を適用（ローカルTransform）
+            if (meshContext.BoneTransform != null)
             {
-                meshContext.ExportSettings.ApplyToGameObject(go, asLocal: true);
+                meshContext.BoneTransform.ApplyToGameObject(go, asLocal: true);
             }
             else
             {
@@ -1208,7 +1208,7 @@ public partial class SimpleMeshFactory
             createdObjects[i] = go;
         }
 
-        // === Pass 2: 親子関係を設定し、ExportSettings を適用 ===
+        // === Pass 2: 親子関係を設定し、BoneTransform を適用 ===
         GameObject firstRootObject = null;
         for (int i = 0; i < _meshContextList.Count; i++)
         {
@@ -1235,10 +1235,10 @@ public partial class SimpleMeshFactory
                 }
             }
 
-            // ExportSettings を適用
-            if (meshContext.ExportSettings != null)
+            // BoneTransform を適用
+            if (meshContext.BoneTransform != null)
             {
-                meshContext.ExportSettings.ApplyToGameObject(go, asLocal: true);
+                meshContext.BoneTransform.ApplyToGameObject(go, asLocal: true);
             }
             else
             {
@@ -1408,10 +1408,10 @@ public partial class SimpleMeshFactory
                 rootCount++;
             }
 
-            // ExportSettings を適用（ローカルTransform）
-            if (meshContext.ExportSettings != null)
+            // BoneTransform を適用（ローカルTransform）
+            if (meshContext.BoneTransform != null)
             {
-                meshContext.ExportSettings.ApplyToGameObject(go, asLocal: true);
+                meshContext.BoneTransform.ApplyToGameObject(go, asLocal: true);
             }
             else
             {

@@ -79,9 +79,9 @@ public partial class SimpleMeshFactory
             EditorGUILayout.LabelField(L.Get("Save"), EditorStyles.miniBoldLabel);
 
             // Export Transform設定（メッシュコンテキストごと）
-            if (meshContext.ExportSettings != null)
+            if (meshContext.BoneTransform != null)
             {
-                ExportSettingsUI.DrawUI(meshContext.ExportSettings);
+                BoneTransformUI.DrawUI(meshContext.BoneTransform);
                 EditorGUILayout.Space(4);
             }
 

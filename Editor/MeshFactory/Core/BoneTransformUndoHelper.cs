@@ -1,5 +1,5 @@
-// Assets/Editor/UndoSystem/MeshEditor/MeshFactoryUndoController_ExportSettings.cs
-// MeshFactoryUndoControllerにExportSettingsスタックを追加する拡張
+// Assets/Editor/UndoSystem/MeshEditor/MeshFactoryUndoController_BoneTransform.cs
+// MeshFactoryUndoControllerにBoneTransformスタックを追加する拡張
 // partial classとして既存のMeshFactoryUndoControllerを拡張
 
 using System;
@@ -9,39 +9,39 @@ using MeshFactory.Tools;
 namespace MeshFactory.UndoSystem
 {
     /// <summary>
-    /// MeshFactoryUndoControllerのExportSettings拡張
-    /// 既存のコントローラーにExportSettingsスタックを追加
+    /// MeshFactoryUndoControllerのBoneTransform拡張
+    /// 既存のコントローラーにBoneTransformスタックを追加
     /// </summary>
 
 
     /// <summary>
-    /// ExportSettings統合ヘルパー
+    /// BoneTransform統合ヘルパー
     /// 既存のMeshFactoryUndoControllerと組み合わせて使用
     /// </summary>
-    public class ExportSettingsUndoHelper : IDisposable
+    public class BoneTransformUndoHelper : IDisposable
     {
-        private readonly UndoStack<ExportSettings> _stack;
-        private readonly ExportSettings _settings;
+        private readonly UndoStack<BoneTransform> _stack;
+        private readonly BoneTransform _settings;
         private readonly Action _onUndoRedo;
 
         // イベントハンドラ保持（解除用）
-        private Action<ExportSettingsSnapshot, ExportSettingsSnapshot, string> _changeHandler;
+        private Action<BoneTransformSnapshot, BoneTransformSnapshot, string> _changeHandler;
         private Action<UndoOperationInfo> _undoHandler;
         private Action<UndoOperationInfo> _redoHandler;
 
         // ドラッグ用
         private bool _isDragging;
-        private ExportSettingsSnapshot _dragStartSnapshot;
+        private BoneTransformSnapshot _dragStartSnapshot;
 
         /// <summary>
-        /// ExportSettings
+        /// BoneTransform
         /// </summary>
-        public ExportSettings Settings => _settings;
+        public BoneTransform Settings => _settings;
 
         /// <summary>
         /// Undoスタック
         /// </summary>
-        public UndoStack<ExportSettings> Stack => _stack;
+        public UndoStack<BoneTransform> Stack => _stack;
 
         /// <summary>
         /// コンストラクタ
@@ -49,17 +49,17 @@ namespace MeshFactory.UndoSystem
         /// <param name="parentGroup">親となるUndoGroup（通常はMeshFactoryUndoController.MainGroup）</param>
         /// <param name="windowId">ウィンドウID</param>
         /// <param name="onUndoRedo">Undo/Redo実行後のコールバック</param>
-        public ExportSettingsUndoHelper(
+        public BoneTransformUndoHelper(
             UndoGroup parentGroup,
             string windowId,
             Action onUndoRedo = null)
         {
             _onUndoRedo = onUndoRedo;
-            _settings = new ExportSettings();
+            _settings = new BoneTransform();
 
             // スタック作成
-            _stack = new UndoStack<ExportSettings>(
-                $"{windowId}/ExportSettings",
+            _stack = new UndoStack<BoneTransform>(
+                $"{windowId}/BoneTransform",
                 "Export Settings",
                 _settings
             );
@@ -72,13 +72,13 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// 既存のUndoManagerに直接追加する場合
         /// </summary>
-        public ExportSettingsUndoHelper(string stackId, Action onUndoRedo = null)
+        public BoneTransformUndoHelper(string stackId, Action onUndoRedo = null)
         {
             _onUndoRedo = onUndoRedo;
-            _settings = new ExportSettings();
+            _settings = new BoneTransform();
 
             // スタック作成（ルートに追加）
-            _stack = new UndoStack<ExportSettings>(
+            _stack = new UndoStack<BoneTransform>(
                 stackId,
                 "Export Settings",
                 _settings
@@ -93,7 +93,7 @@ namespace MeshFactory.UndoSystem
         {
             // UI変更時（OnChangedのみ自動処理、Reset/FromSelectionは呼び出し側で処理）
             _changeHandler = OnSettingsChanged;
-            ExportSettingsUI.OnChanged += _changeHandler;
+            BoneTransformUI.OnChanged += _changeHandler;
 
             // Undo/Redo実行時
             _undoHandler = _ => OnUndoRedoPerformed();
@@ -103,13 +103,13 @@ namespace MeshFactory.UndoSystem
         }
 
         private void OnSettingsChanged(
-            ExportSettingsSnapshot before,
-            ExportSettingsSnapshot after,
+            BoneTransformSnapshot before,
+            BoneTransformSnapshot after,
             string description)
         {
             if (!before.IsDifferentFrom(after)) return;
 
-            var record = new ExportSettingsChangeRecord(before, after, description);
+            var record = new BoneTransformChangeRecord(before, after, description);
             _stack.Record(record, description);
         }
 
@@ -136,10 +136,10 @@ namespace MeshFactory.UndoSystem
             if (!_isDragging) return;
             _isDragging = false;
 
-            ExportSettingsSnapshot currentSnapshot = _settings.CreateSnapshot();
+            BoneTransformSnapshot currentSnapshot = _settings.CreateSnapshot();
             if (_dragStartSnapshot.IsDifferentFrom(currentSnapshot))
             {
-                var record = new ExportSettingsChangeRecord(
+                var record = new BoneTransformChangeRecord(
                     _dragStartSnapshot, currentSnapshot, description);
                 _stack.Record(record, description);
             }
@@ -149,13 +149,13 @@ namespace MeshFactory.UndoSystem
         /// 即座に記録
         /// </summary>
         public void RecordChange(
-            ExportSettingsSnapshot before,
-            ExportSettingsSnapshot after,
+            BoneTransformSnapshot before,
+            BoneTransformSnapshot after,
             string description = null)
         {
             if (!before.IsDifferentFrom(after)) return;
 
-            var record = new ExportSettingsChangeRecord(before, after, description);
+            var record = new BoneTransformChangeRecord(before, after, description);
             _stack.Record(record, description ?? "Change Export Settings");
         }
 
@@ -166,7 +166,7 @@ namespace MeshFactory.UndoSystem
         {
             // イベントハンドラ解除
             if (_changeHandler != null)
-                ExportSettingsUI.OnChanged -= _changeHandler;
+                BoneTransformUI.OnChanged -= _changeHandler;
 
             if (_stack != null)
             {

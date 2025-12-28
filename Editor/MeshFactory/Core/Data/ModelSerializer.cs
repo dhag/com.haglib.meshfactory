@@ -39,7 +39,7 @@ namespace MeshFactory.Serialization
         public static MeshDTO ToMeshDTO(
             MeshObject meshObject,
             string name,
-            ExportSettings exportSettings,
+            BoneTransform exportSettings,
             HashSet<int> selectedVertices,
             List<Material> materials = null,
             int currentMaterialIndex = 0)
@@ -52,8 +52,8 @@ namespace MeshFactory.Serialization
                 name = name ?? meshObject.Name ?? "Untitled"
             };
 
-            // ExportSettings
-            meshDTO.exportSettingsDTO = ToExportSettingsDTO(exportSettings);
+            // BoneTransform
+            meshDTO.exportSettingsDTO = ToBoneTransformDTO(exportSettings);
 
             // Vertices
             foreach (var vertex in meshObject.Vertices)
@@ -108,14 +108,14 @@ namespace MeshFactory.Serialization
         }
 
         /// <summary>
-        /// ExportSettingsをExportSettingsDataに変換
+        /// BoneTransformをBoneTransformDTOに変換
         /// </summary>
-        public static ExportSettingsDTO ToExportSettingsDTO(ExportSettings settings)
+        public static BoneTransformDTO ToBoneTransformDTO(BoneTransform settings)
         {
             if (settings == null)
-                return ExportSettingsDTO.CreateDefault();
+                return BoneTransformDTO.CreateDefault();
 
-            var data = new ExportSettingsDTO
+            var data = new BoneTransformDTO
             {
                 useLocalTransform = settings.UseLocalTransform
             };
@@ -227,14 +227,14 @@ namespace MeshFactory.Serialization
         }
 
         /// <summary>
-        /// ExportSettingsDataをExportSettingsに変換
+        /// BoneTransformDTOをBoneTransformに変換
         /// </summary>
-        public static ExportSettings ToExportSettings(ExportSettingsDTO data)
+        public static BoneTransform ToBoneTransform(BoneTransformDTO data)
         {
             if (data == null)
-                return new ExportSettings();
+                return new BoneTransform();
 
-            return new ExportSettings
+            return new BoneTransform
             {
                 UseLocalTransform = data.useLocalTransform,
                 Position = data.GetPosition(),
@@ -424,7 +424,7 @@ namespace MeshFactory.Serialization
                     MeshObject = meshObject,
                     UnityMesh = meshObject.ToUnityMesh(),
                     OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
-                    ExportSettings = ToExportSettings(meshContextData.exportSettingsDTO),
+                    BoneTransform = ToBoneTransform(meshContextData.exportSettingsDTO),
                     // Materials は ModelData から復元するため、ここでは設定しない
                     // オブジェクト属性
                     Type = meshType,
@@ -503,7 +503,7 @@ namespace MeshFactory.Serialization
             var contextData = ToMeshDTO(
                 meshContext.MeshObject,
                 meshContext.Name,
-                meshContext.ExportSettings,
+                meshContext.BoneTransform,
                 selectedVertices,
                 null,  // Phase 1: Materials は ModelContext に集約
                 0
@@ -553,7 +553,7 @@ namespace MeshFactory.Serialization
                 MeshObject = meshObject,
                 UnityMesh = meshObject.ToUnityMesh(),
                 OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
-                ExportSettings = ToExportSettings(meshDTO.exportSettingsDTO),
+                BoneTransform = ToBoneTransform(meshDTO.exportSettingsDTO),
                 // Phase 1: Materials は ModelContext に集約
                 // オブジェクト属性
                 Type = meshType,

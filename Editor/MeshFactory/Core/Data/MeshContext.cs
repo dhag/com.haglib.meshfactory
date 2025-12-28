@@ -78,10 +78,10 @@ namespace MeshFactory.Data
         }
 
         /// <summary>エクスポート設定</summary>
-        public ExportSettings ExportSettings
+        public BoneTransform BoneTransform
         {
-            get => MeshObject?.ExportSettings;
-            set { if (MeshObject != null) MeshObject.ExportSettings = value ?? new ExportSettings(); }
+            get => MeshObject?.BoneTransform;
+            set { if (MeshObject != null) MeshObject.BoneTransform = value ?? new BoneTransform(); }
         }
 
         // ================================================================
@@ -186,7 +186,7 @@ namespace MeshFactory.Data
 
         public MeshContext()
         {
-            ExportSettings = new ExportSettings();
+            BoneTransform = new BoneTransform();
         }
 
         // ================================================================

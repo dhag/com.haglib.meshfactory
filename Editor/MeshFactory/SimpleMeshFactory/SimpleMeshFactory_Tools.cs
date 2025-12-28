@@ -786,12 +786,12 @@ public partial class SimpleMeshFactory : EditorWindow
             MeshObject = original.MeshObject?.Clone(),
             UnityMesh = original.MeshObject?.ToUnityMesh(),
             OriginalPositions = original.OriginalPositions?.ToArray(),
-            ExportSettings = new ExportSettings
+            BoneTransform = new BoneTransform
             {
-                UseLocalTransform = original.ExportSettings?.UseLocalTransform ?? false,
-                Position = original.ExportSettings?.Position ?? Vector3.zero,
-                Rotation = original.ExportSettings?.Rotation ?? Vector3.zero,
-                Scale = original.ExportSettings?.Scale ?? Vector3.one
+                UseLocalTransform = original.BoneTransform?.UseLocalTransform ?? false,
+                Position = original.BoneTransform?.Position ?? Vector3.zero,
+                Rotation = original.BoneTransform?.Rotation ?? Vector3.zero,
+                Scale = original.BoneTransform?.Scale ?? Vector3.one
             },
             Materials = new List<Material>(original.Materials ?? new List<Material> { null }),
             CurrentMaterialIndex = original.CurrentMaterialIndex,

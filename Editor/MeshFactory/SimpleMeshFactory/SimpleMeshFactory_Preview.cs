@@ -1123,14 +1123,14 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// メッシュのローカルトランスフォーム行列を取得
-    /// ExportSettings の Position/Rotation/Scale から生成
+    /// BoneTransform の Position/Rotation/Scale から生成
     /// </summary>
     private Matrix4x4 GetLocalTransformMatrix(MeshContext ctx)
     {
-        if (ctx?.ExportSettings == null || !ctx.ExportSettings.UseLocalTransform)
+        if (ctx?.BoneTransform == null || !ctx.BoneTransform.UseLocalTransform)
             return Matrix4x4.identity;
 
-        return ctx.ExportSettings.TransformMatrix;
+        return ctx.BoneTransform.TransformMatrix;
     }
 
     /// <summary>
@@ -1167,9 +1167,9 @@ public partial class SimpleMeshFactory
         {
             int idx = chain.Pop();
             var ctx = _meshContextList[idx];
-            if (ctx?.ExportSettings != null && ctx.ExportSettings.UseLocalTransform)
+            if (ctx?.BoneTransform != null && ctx.BoneTransform.UseLocalTransform)
             {
-                worldMatrix *= ctx.ExportSettings.TransformMatrix;
+                worldMatrix *= ctx.BoneTransform.TransformMatrix;
             }
         }
 

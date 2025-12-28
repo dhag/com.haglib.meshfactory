@@ -74,7 +74,7 @@ namespace MeshFactory.Serialization
         public string name;
 
         /// <summary>エクスポート時のトランスフォーム設定</summary>
-        public ExportSettingsDTO exportSettingsDTO;
+        public BoneTransformDTO exportSettingsDTO;
 
         /// <summary>頂点データ</summary>
         public List<VertexDTO> vertices = new List<VertexDTO>();
@@ -277,7 +277,7 @@ namespace MeshFactory.Serialization
     /// エクスポート時のトランスフォーム設定
     /// </summary>
     [Serializable]
-    public class ExportSettingsDTO
+    public class BoneTransformDTO
     {
         /// <summary>ローカルトランスフォームを使用するか</summary>
         public bool useLocalTransform;
@@ -329,9 +329,9 @@ namespace MeshFactory.Serialization
             scale = new float[] { s.x, s.y, s.z };
         }
 
-        public static ExportSettingsDTO CreateDefault()
+        public static BoneTransformDTO CreateDefault()
         {
-            return new ExportSettingsDTO
+            return new BoneTransformDTO
             {
                 useLocalTransform = false,
                 exportAsSkinned = false,

@@ -468,7 +468,7 @@ namespace MeshFactory.Data
         /// <summary>
         /// エクスポート時のローカルトランスフォーム
         /// </summary>
-        public ExportSettings ExportSettings { get; set; } = new ExportSettings();
+        public BoneTransform BoneTransform { get; set; } = new BoneTransform();
         // === プロパティ ===
 
         /// <summary>頂点数</summary>
@@ -1042,10 +1042,10 @@ namespace MeshFactory.Data
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
 
-            if(this.ExportSettings != null)
+            if(this.BoneTransform != null)
             {
-                copy.ExportSettings = new ExportSettings();
-                copy.ExportSettings.CopyFrom(this.ExportSettings);
+                copy.BoneTransform = new BoneTransform();
+                copy.BoneTransform.CopyFrom(this.BoneTransform);
             }
 
             return copy;

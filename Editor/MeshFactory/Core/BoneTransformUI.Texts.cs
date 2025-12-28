@@ -1,12 +1,12 @@
-﻿// Assets/Editor/MeshCreators/ExportSettingsUI.Texts.cs
-// ExportSettingsUI - ローカライズ辞書
+﻿// Assets/Editor/MeshCreators/BoneTransformUI.Texts.cs
+// BoneTransformUI - ローカライズ辞書
 
 using System.Collections.Generic;
 using MeshFactory.Localization;
 
 namespace MeshFactory.Tools
 {
-    public static partial class ExportSettingsUI
+    public static partial class BoneTransformUI
     {
         // ================================================================
         // ローカライズ辞書
