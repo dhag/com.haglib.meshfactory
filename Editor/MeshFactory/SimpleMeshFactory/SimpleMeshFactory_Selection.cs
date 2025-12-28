@@ -9,7 +9,6 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
 using MeshFactory.Utilities;
-
 public partial class SimpleMeshFactory
 {
     // ================================================================
