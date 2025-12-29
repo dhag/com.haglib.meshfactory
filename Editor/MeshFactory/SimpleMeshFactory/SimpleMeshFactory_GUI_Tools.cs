@@ -214,6 +214,11 @@ public partial class SimpleMeshFactory
             MeshFactory.MQO.MQOImportPanel.Open(_toolManager?.toolContext);
         }
 
+        if (GUILayout.Button("PMX Import..."))
+        {
+            MeshFactory.PMX.PMXImportPanel.Open(_toolManager?.toolContext);
+        }
+
         EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);
         if (GUILayout.Button("Export"))
         {

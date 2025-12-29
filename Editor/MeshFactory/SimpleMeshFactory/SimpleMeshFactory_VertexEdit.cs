@@ -15,6 +15,11 @@ using static MeshFactory.Gizmo.GLGizmoDrawer;
 public partial class SimpleMeshFactory
 {
     // ================================================================
+    // 右ペイン：スクロール位置
+    // ================================================================
+    private Vector2 _rightPaneScroll;
+
+    // ================================================================
     // 右ペイン：頂点エディタ（MeshObjectベース）
     // ================================================================
     private void DrawVertexEditor()
@@ -23,10 +28,14 @@ public partial class SimpleMeshFactory
         {
             EditorGUILayout.LabelField(L.Get("VertexEditor"), EditorStyles.boldLabel);
 
+            // スクロール開始
+            _rightPaneScroll = EditorGUILayout.BeginScrollView(_rightPaneScroll);
+
             var meshContext = _model.CurrentMeshContext;
             if (meshContext == null)
             {
                 EditorGUILayout.HelpBox(L.Get("SelectMesh"), MessageType.Info);
+                EditorGUILayout.EndScrollView();
                 return;
             }
 
@@ -35,6 +44,7 @@ public partial class SimpleMeshFactory
             if (meshObject == null)
             {
                 EditorGUILayout.HelpBox(L.Get("InvalidMeshData"), MessageType.Warning);
+                EditorGUILayout.EndScrollView();
                 return;
             }
 
@@ -215,6 +225,8 @@ public partial class SimpleMeshFactory
                 ImportModel();
             }
             EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.EndScrollView();
         }
     }
 

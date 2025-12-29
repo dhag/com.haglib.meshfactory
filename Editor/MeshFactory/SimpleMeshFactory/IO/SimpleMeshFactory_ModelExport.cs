@@ -88,6 +88,32 @@ public partial class SimpleMeshFactory
                 meshCopy.name = meshContext.Name;
                 mf.sharedMesh = meshCopy;
 
+                // デバッグ: マテリアルとサブメッシュの対応を確認
+                if (i < 10) // 最初の10メッシュのみ
+                {
+                    var matIndices = meshContext.MeshObject.Faces
+                        .Where(f => !f.IsHidden && f.VertexCount >= 3)
+                        .Select(f => f.MaterialIndex)
+                        .Distinct()
+                        .OrderBy(x => x)
+                        .ToList();
+                    Debug.Log($"[Export] Mesh '{meshContext.Name}': " +
+                              $"SubMeshCount={meshCopy.subMeshCount}, " +
+                              $"FaceMatIndices=[{string.Join(",", matIndices)}], " +
+                              $"SharedMatsCount={sharedMaterials.Length}, " +
+                              $"ToUseCount={materialsToUse.Length}");
+
+                    // 各サブメッシュの三角形数を確認
+                    for (int sm = 0; sm < meshCopy.subMeshCount && sm < 5; sm++)
+                    {
+                        int triCount = meshCopy.GetTriangles(sm).Length / 3;
+                        string matName = sm < materialsToUse.Length && materialsToUse[sm] != null
+                            ? materialsToUse[sm].name : "null";
+                        if (triCount > 0)
+                            Debug.Log($"[Export]   SubMesh[{sm}]: {triCount} tris, Mat='{matName}'");
+                    }
+                }
+
                 // マテリアル設定
                 mr.sharedMaterials = materialsToUse;
             }
@@ -263,6 +289,32 @@ public partial class SimpleMeshFactory
                 materialsToUse = sharedMaterials;
             }
             meshCopy.name = meshContext.Name;
+
+            // デバッグ: マテリアルとサブメッシュの対応を確認（最初の10メッシュのみ）
+            if (i < 10)
+            {
+                var matIndices = meshContext.MeshObject.Faces
+                    .Where(f => !f.IsHidden && f.VertexCount >= 3)
+                    .Select(f => f.MaterialIndex)
+                    .Distinct()
+                    .OrderBy(x => x)
+                    .ToList();
+                Debug.Log($"[ExportSkinned] Mesh[{i}] '{meshContext.Name}': " +
+                          $"SubMeshCount={meshCopy.subMeshCount}, " +
+                          $"FaceMatIndices=[{string.Join(",", matIndices)}], " +
+                          $"SharedMatsCount={sharedMaterials.Length}, " +
+                          $"ToUseCount={materialsToUse.Length}");
+
+                // 各サブメッシュの三角形数を確認
+                for (int sm = 0; sm < meshCopy.subMeshCount && sm < 5; sm++)
+                {
+                    int triCount = meshCopy.GetTriangles(sm).Length / 3;
+                    string matName = sm < materialsToUse.Length && materialsToUse[sm] != null
+                        ? materialsToUse[sm].name : "null";
+                    if (triCount > 0)
+                        Debug.Log($"[ExportSkinned]   SubMesh[{sm}]: {triCount} tris, Mat='{matName}'");
+                }
+            }
 
             // SkinnedMeshRenderer をセットアップ
             SetupSkinnedMeshRenderer(go, meshCopy, bones, bindPoses, materialsToUse);

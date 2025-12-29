@@ -1036,9 +1036,9 @@ namespace MeshFactory.Rendering
             if (nearestIndex >= 0 && minDist < threshold)
             {
                 var nearestLine = edgeCache.Lines[nearestIndex];
-                Debug.Log($"[HoverDebug] CPU found nearest line:\n" +
-                    $"  Index: {nearestIndex} (v1={nearestLine.V1}, v2={nearestLine.V2})\n" +
-                    $"  Distance: {minDist:F2}");
+            //    Debug.Log($"[HoverDebug] CPU found nearest line:\n" +
+            //        $"  Index: {nearestIndex} (v1={nearestLine.V1}, v2={nearestLine.V2})\n" +
+            //        $"  Distance: {minDist:F2}");
             }
         }
         

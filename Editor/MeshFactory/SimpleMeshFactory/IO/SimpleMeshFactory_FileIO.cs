@@ -250,6 +250,14 @@ public partial class SimpleMeshFactory
                     result[i] = GetOrCreateDefaultMaterial();
                 }
             }
+
+            // デバッグ: マテリアル配列の内容を確認（最初の10個）
+            Debug.Log($"[GetMaterialsForSave] Total materials: {result.Length}");
+            for (int i = 0; i < Mathf.Min(10, result.Length); i++)
+            {
+                Debug.Log($"[GetMaterialsForSave] Mat[{i}] = '{result[i]?.name ?? "null"}'");
+            }
+
             return result;
         }
         return new Material[] { GetOrCreateDefaultMaterial() };
