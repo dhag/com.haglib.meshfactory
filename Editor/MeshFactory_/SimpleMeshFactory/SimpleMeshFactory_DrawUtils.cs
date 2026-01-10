@@ -154,11 +154,20 @@ public partial class SimpleMeshFactory
             GL.Begin(GL.TRIANGLES);
             GL.Color(color);
 
+            // 表面
             for (int i = 1; i < points.Length - 1; i++)
             {
                 GL.Vertex3(points[0].x, points[0].y, 0);
                 GL.Vertex3(points[i].x, points[i].y, 0);
                 GL.Vertex3(points[i + 1].x, points[i + 1].y, 0);
+            }
+
+            // 裏面（逆順）
+            for (int i = 1; i < points.Length - 1; i++)
+            {
+                GL.Vertex3(points[0].x, points[0].y, 0);
+                GL.Vertex3(points[i + 1].x, points[i + 1].y, 0);
+                GL.Vertex3(points[i].x, points[i].y, 0);
             }
 
             GL.End();

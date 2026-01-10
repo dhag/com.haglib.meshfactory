@@ -137,9 +137,9 @@ namespace MeshFactory.Core
                 _bufferManager.ComputeScreenPositionsGPU(viewProjection, _viewport);
                 _bufferManager.DispatchFaceVisibilityGPU();
                 _bufferManager.DispatchLineVisibilityGPU();
-                _bufferManager.DispatchVertexHitTestGPU(_mousePosition, _hitRadius);
-                _bufferManager.DispatchLineHitTestGPU(_mousePosition, _hitRadius);
-                _bufferManager.DispatchFaceHitTestGPU(_mousePosition);
+                _bufferManager.DispatchVertexHitTestGPU(_mousePosition, _hitRadius, _backfaceCullingEnabled);
+                _bufferManager.DispatchLineHitTestGPU(_mousePosition, _hitRadius, _backfaceCullingEnabled);
+                _bufferManager.DispatchFaceHitTestGPU(_mousePosition, _backfaceCullingEnabled);
 
                 newHoveredVertex = _bufferManager.FindNearestVertexFromGPU(_hitRadius);
                 newHoveredLine = _bufferManager.FindNearestLineFromGPU(_hitRadius);
@@ -148,9 +148,23 @@ namespace MeshFactory.Core
             else
             {
                 // CPU版ヒットテスト
-                newHoveredVertex = _bufferManager.FindNearestVertex(_mousePosition, _hitRadius);
-                newHoveredLine = _bufferManager.FindNearestLine(_mousePosition, _hitRadius);
-                newHoveredFace = _bufferManager.FindNearestFace(_mousePosition);
+                newHoveredVertex = _bufferManager.FindNearestVertex(_mousePosition, _hitRadius, _backfaceCullingEnabled);
+                newHoveredLine = _bufferManager.FindNearestLine(_mousePosition, _hitRadius, _backfaceCullingEnabled);
+                newHoveredFace = _bufferManager.FindNearestFace(_mousePosition, _backfaceCullingEnabled);
+            }
+
+            // ホバー優先度: 頂点 > 線分 > 面
+            // 上位がヒットしている場合、下位はクリア
+            if (newHoveredVertex >= 0)
+            {
+                // 頂点がヒット → 線分・面はクリア
+                newHoveredLine = -1;
+                newHoveredFace = -1;
+            }
+            else if (newHoveredLine >= 0)
+            {
+                // 線分がヒット → 面はクリア
+                newHoveredFace = -1;
             }
 
             // ホバー状態更新

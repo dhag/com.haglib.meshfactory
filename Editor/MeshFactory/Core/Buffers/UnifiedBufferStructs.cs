@@ -126,8 +126,14 @@ namespace MeshFactory.Core
         /// <summary>面法線</summary>
         public Vector3 Normal;
 
+        /// <summary>線分開始インデックス（LineBuffer内）</summary>
+        public uint LineStart;
+
+        /// <summary>線分数（面のエッジ数）</summary>
+        public uint LineCount;
+
         /// <summary>構造体サイズ（バイト）</summary>
-        public const int Stride = 4 * 6 + 12; // 36 bytes
+        public const int Stride = 4 * 8 + 12; // 44 bytes
     }
 
     // ============================================================

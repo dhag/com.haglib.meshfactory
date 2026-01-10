@@ -80,17 +80,17 @@ Shader "MeshFactory/Point3D_Overlay"
                 
                 float selectState = v.color.a;
                 if (selectState > 0.9)
-                {
+                {//選択色
                     o.fillColor = float4(1, 0.8, 0, 0.95);
                     o.borderColor = float4(1, 0, 0, 1);
                 }
                 else if (selectState < 0.1)
-                {
+                {//ホバー色
                     o.fillColor = float4(0, 1, 1, 0.95);
-                    o.borderColor = float4(0, 0.8, 0.8, 1);
+                    o.borderColor = float4(1, 0.0, 0.0, 1);
                 }
                 else
-                {
+                {//普通色
                     o.fillColor = float4(1, 1, 1, 0.8);
                     o.borderColor = float4(0.7, 0.7, 0.7, 1);
                 }

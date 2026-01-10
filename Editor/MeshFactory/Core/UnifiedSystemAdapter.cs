@@ -64,7 +64,11 @@ namespace MeshFactory.Core
         public bool BackfaceCullingEnabled
         {
             get => _renderer?.BackfaceCullingEnabled ?? true;
-            set { if (_renderer != null) _renderer.BackfaceCullingEnabled = value; }
+            set 
+            { 
+                if (_renderer != null) _renderer.BackfaceCullingEnabled = value;
+                if (_unifiedSystem != null) _unifiedSystem.BackfaceCullingEnabled = value;
+            }
         }
 
         public UnifiedMeshSystem UnifiedSystem => _unifiedSystem;
@@ -287,8 +291,7 @@ namespace MeshFactory.Core
             float pointSize ,
             float alpha = 1f)
         {
-
-            //Debug.Log($"[UnifiedSystemAdapter] PrepareDrawing: isInitialized={_isInitialized}, showWireframe={showWireframe}, showVertices={showVertices}, selectedMeshIndex={selectedMeshIndex}");
+            Debug.Log($"[UnifiedSystemAdapter] PrepareDrawing: isInitialized={_isInitialized}, showWireframe={showWireframe}, showVertices={showVertices}, selectedMeshIndex={selectedMeshIndex}");
             
             if (!_isInitialized)
             {

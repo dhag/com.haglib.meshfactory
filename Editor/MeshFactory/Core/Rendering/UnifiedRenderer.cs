@@ -276,7 +276,7 @@ namespace MeshFactory.Core.Rendering
                 Color auxColor = isSelected
                     ? new Color(1f, 0.3f, 1f, 0.9f * alpha)
                     : new Color(0.7f, 0.3f, 0.7f, 0.5f * alpha);
-                Color hoverColor = new Color(1f, 1f, 0f, 1f * alpha);
+                Color hoverColor = _colorSettings.LineHovered;// new Color(1f, 1f, 0f, 1f * alpha);
 
                 Color lineColor;
                 if (isHovered)

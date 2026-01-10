@@ -175,6 +175,11 @@ public partial class SimpleMeshFactory
         Matrix4x4 selectedDisplayMatrix = GetDisplayMatrix(_selectedIndex);
 
         // ================================================================
+        // 面ホバー描画（2Dオーバーレイ）
+        // ================================================================
+        DrawHoveredFace(rect, meshContext, selectedDisplayMatrix);
+
+        // ================================================================
         // 頂点インデックス表示（2Dオーバーレイ）
         // ================================================================
         if (_showVertexIndices && meshContext != null && meshContext.IsVisible)
@@ -213,6 +218,67 @@ public partial class SimpleMeshFactory
     // ================================================================
     // 3D描画ヘルパーメソッド
     // ================================================================
+
+    /// <summary>
+    /// ホバー中の面をハイライト描画
+    /// </summary>
+    private void DrawHoveredFace(Rect previewRect, MeshContext meshContext, Matrix4x4 displayMatrix)
+    {
+        if (_unifiedAdapter == null || meshContext?.MeshObject == null)
+            return;
+
+        var unifiedSys = _unifiedAdapter.UnifiedSystem;
+        if (unifiedSys == null)
+            return;
+
+        // ローカル面インデックスを取得
+        if (!unifiedSys.GetHoveredFaceLocal(out int hoveredMeshIndex, out int localFaceIndex))
+            return;
+
+        // 選択メッシュのみ描画
+        if (hoveredMeshIndex != _selectedIndex)
+            return;
+
+        var meshObject = meshContext.MeshObject;
+        if (localFaceIndex < 0 || localFaceIndex >= meshObject.FaceCount)
+            return;
+
+        var face = meshObject.Faces[localFaceIndex];
+        if (face.VertexCount < 3)
+            return;
+
+        // カメラ情報を取得
+        Vector3 camPos = _preview.camera.transform.position;
+        Vector3 lookAt = _cameraTarget;
+
+        // 面の頂点をスクリーン座標に変換
+        var screenPoints = new Vector2[face.VertexCount];
+        for (int i = 0; i < face.VertexCount; i++)
+        {
+            int vi = face.VertexIndices[i];
+            if (vi < 0 || vi >= meshObject.VertexCount)
+                return;
+
+            Vector3 worldPos = displayMatrix.MultiplyPoint3x4(meshObject.Vertices[vi].Position);
+            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+            screenPoints[i] = screenPos;
+        }
+
+        // 半透明で塗りつぶし
+        Color fillColor = new Color(0f, 1f, 1f, 0.2f);
+        DrawFilledPolygon(screenPoints, fillColor);
+
+        // 輪郭線
+        Color edgeColor = new Color(0f, 1f, 1f, 0.8f);
+        UnityEditor_Handles.BeginGUI();
+        UnityEditor_Handles.color = edgeColor;
+        for (int i = 0; i < face.VertexCount; i++)
+        {
+            int next = (i + 1) % face.VertexCount;
+            UnityEditor_Handles.DrawAAPolyLine(2f, screenPoints[i], screenPoints[next]);
+        }
+        UnityEditor_Handles.EndGUI();
+    }
 
     /// <summary>
     /// カメラ距離に基づいて頂点の3Dサイズを計算

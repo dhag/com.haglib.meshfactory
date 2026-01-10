@@ -280,15 +280,20 @@ namespace MeshFactory.Core
         /// 頂点ヒットテスト（CPU実行）
         /// 一定距離内の頂点群のうち、Zが最も小さい（手前の）ものを返す
         /// </summary>
-        public int FindNearestVertex(Vector2 mousePosition, float hitRadius)
+        public int FindNearestVertex(Vector2 mousePosition, float hitRadius, bool backfaceCullingEnabled = true)
         {
             int nearestIdx = -1;
             float nearestDepth = float.MaxValue;
 
             for (int i = 0; i < _totalVertexCount; i++)
             {
-                // カリング・非表示チェック
-                if ((_vertexFlags[i] & ((uint)SelectionFlags.Culled | (uint)SelectionFlags.Hidden)) != 0)
+                // 非表示チェック
+                uint flags = _vertexFlags[i];
+                if ((flags & (uint)SelectionFlags.Hidden) != 0)
+                    continue;
+                
+                // カリングチェック（バックフェースカリング有効時のみ）
+                if (backfaceCullingEnabled && (flags & (uint)SelectionFlags.Culled) != 0)
                     continue;
 
                 float dist = Vector2.Distance(mousePosition, _screenPositions[i]);
@@ -311,15 +316,20 @@ namespace MeshFactory.Core
         /// ラインヒットテスト（CPU実行）
         /// 一定距離内の線分群のうち、Zが最も小さい（手前の）ものを返す
         /// </summary>
-        public int FindNearestLine(Vector2 mousePosition, float hitRadius)
+        public int FindNearestLine(Vector2 mousePosition, float hitRadius, bool backfaceCullingEnabled = true)
         {
             int nearestIdx = -1;
             float nearestDepth = float.MaxValue;
 
             for (int i = 0; i < _totalLineCount; i++)
             {
-                // カリング・非表示チェック
-                if ((_lineFlags[i] & ((uint)SelectionFlags.Culled | (uint)SelectionFlags.Hidden)) != 0)
+                // 非表示チェック
+                uint flags = _lineFlags[i];
+                if ((flags & (uint)SelectionFlags.Hidden) != 0)
+                    continue;
+                
+                // カリングチェック（バックフェースカリング有効時のみ）
+                if (backfaceCullingEnabled && (flags & (uint)SelectionFlags.Culled) != 0)
                     continue;
 
                 var line = _lines[i];
@@ -349,15 +359,20 @@ namespace MeshFactory.Core
         /// <summary>
         /// 面ヒットテスト（CPU実行、レイキャスト法）
         /// </summary>
-        public int FindNearestFace(Vector2 mousePosition)
+        public int FindNearestFace(Vector2 mousePosition, bool backfaceCullingEnabled = true)
         {
             int nearestIdx = -1;
             float nearestDepth = float.MaxValue;
 
             for (int faceIdx = 0; faceIdx < _totalFaceCount; faceIdx++)
             {
-                // カリング・非表示チェック
-                if ((_faceFlags[faceIdx] & ((uint)SelectionFlags.Culled | (uint)SelectionFlags.Hidden)) != 0)
+                // 非表示チェック
+                uint flags = _faceFlags[faceIdx];
+                if ((flags & (uint)SelectionFlags.Hidden) != 0)
+                    continue;
+                
+                // カリングチェック（バックフェースカリング有効時のみ）
+                if (backfaceCullingEnabled && (flags & (uint)SelectionFlags.Culled) != 0)
                     continue;
 
                 var face = _faces[faceIdx];
@@ -508,6 +523,7 @@ namespace MeshFactory.Core
 
         /// <summary>
         /// 線分ホバーフラグを設定
+        /// 同じV1-V2を持つ全エントリにホバーフラグを設定（共有エッジ対応）
         /// </summary>
         public void SetHoverLine(int globalLineIndex)
         {
@@ -517,7 +533,20 @@ namespace MeshFactory.Core
             // 新しいホバーを設定
             if (globalLineIndex >= 0 && globalLineIndex < _totalLineCount)
             {
-                _flagManager.SetHoverFlag(_lineFlags, globalLineIndex, true);
+                // 指定された線分のV1-V2を取得
+                var targetLine = _lines[globalLineIndex];
+                uint v1 = targetLine.V1;
+                uint v2 = targetLine.V2;
+
+                // 同じV1-V2を持つ全エントリにホバーフラグを設定
+                for (int i = 0; i < _totalLineCount; i++)
+                {
+                    var line = _lines[i];
+                    if ((line.V1 == v1 && line.V2 == v2) || (line.V1 == v2 && line.V2 == v1))
+                    {
+                        _flagManager.SetHoverFlag(_lineFlags, i, true);
+                    }
+                }
             }
 
             // アップロード
@@ -754,7 +783,7 @@ namespace MeshFactory.Core
         /// <summary>
         /// GPUで頂点ヒットテストを実行
         /// </summary>
-        public void DispatchVertexHitTestGPU(Vector2 mousePosition, float hitRadius)
+        public void DispatchVertexHitTestGPU(Vector2 mousePosition, float hitRadius, bool backfaceCullingEnabled = true)
         {
             if (!_gpuComputeAvailable || _computeShader == null || _totalVertexCount <= 0)
                 return;
@@ -762,6 +791,7 @@ namespace MeshFactory.Core
             _computeShader.SetVector("_MousePosition", mousePosition);
             _computeShader.SetFloat("_HitRadius", hitRadius);
             _computeShader.SetInt("_VertexCount", _totalVertexCount);
+            _computeShader.SetInt("_EnableBackfaceCulling", backfaceCullingEnabled ? 1 : 0);
 
             _computeShader.SetBuffer(_kernelVertexHit, "_ScreenPositionBuffer", _screenPosBuffer4);
             _computeShader.SetBuffer(_kernelVertexHit, "_VertexFlagsBuffer", _vertexFlagsBuffer);
@@ -776,7 +806,7 @@ namespace MeshFactory.Core
         /// <summary>
         /// GPUで線分ヒットテストを実行
         /// </summary>
-        public void DispatchLineHitTestGPU(Vector2 mousePosition, float hitRadius)
+        public void DispatchLineHitTestGPU(Vector2 mousePosition, float hitRadius, bool backfaceCullingEnabled = true)
         {
             if (!_gpuComputeAvailable || _computeShader == null || _totalLineCount <= 0)
                 return;
@@ -784,6 +814,7 @@ namespace MeshFactory.Core
             _computeShader.SetVector("_MousePosition", mousePosition);
             _computeShader.SetFloat("_HitRadius", hitRadius);
             _computeShader.SetInt("_LineCount", _totalLineCount);
+            _computeShader.SetInt("_EnableBackfaceCulling", backfaceCullingEnabled ? 1 : 0);
 
             _computeShader.SetBuffer(_kernelLineHit, "_ScreenPositionBuffer", _screenPosBuffer4);
             _computeShader.SetBuffer(_kernelLineHit, "_LineBuffer", _lineBuffer);
@@ -818,22 +849,24 @@ namespace MeshFactory.Core
         }
 
         /// <summary>
-        /// GPUで線分可視性を計算
+        /// GPUで線分可視性を計算（面ベース）
         /// 注意: DispatchFaceVisibilityGPUの後に実行すること
+        /// 入力：面、出力：線分フラグ
         /// </summary>
         public void DispatchLineVisibilityGPU()
         {
-            if (!_gpuComputeAvailable || _computeShader == null || _totalLineCount <= 0)
+            if (!_gpuComputeAvailable || _computeShader == null || _totalFaceCount <= 0)
                 return;
 
             _computeShader.SetInt("_LineCount", _totalLineCount);
             _computeShader.SetInt("_FaceCount", _totalFaceCount);
 
-            _computeShader.SetBuffer(_kernelLineVisibility, "_LineBuffer", _lineBuffer);
-            _computeShader.SetBuffer(_kernelLineVisibility, "_LineFlagsBuffer", _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelLineVisibility, "_FaceBuffer", _faceBuffer);
             _computeShader.SetBuffer(_kernelLineVisibility, "_FaceFlagsBuffer", _faceFlagsBuffer);
+            _computeShader.SetBuffer(_kernelLineVisibility, "_LineFlagsBuffer", _lineFlagsBuffer);
 
-            _computeShader.Dispatch(_kernelLineVisibility, ThreadGroups(_totalLineCount), 1, 1);
+            // 面数でディスパッチ（面ベースのアルゴリズム）
+            _computeShader.Dispatch(_kernelLineVisibility, ThreadGroups(_totalFaceCount), 1, 1);
         }
 
         /// <summary>
@@ -886,13 +919,14 @@ namespace MeshFactory.Core
         /// <summary>
         /// GPUで面ヒットテストを実行
         /// </summary>
-        public void DispatchFaceHitTestGPU(Vector2 mousePosition)
+        public void DispatchFaceHitTestGPU(Vector2 mousePosition, bool backfaceCullingEnabled = true)
         {
             if (!_gpuComputeAvailable || _computeShader == null || _totalFaceCount <= 0)
                 return;
 
             _computeShader.SetVector("_MousePosition", mousePosition);
             _computeShader.SetInt("_FaceCount", _totalFaceCount);
+            _computeShader.SetInt("_EnableBackfaceCulling", backfaceCullingEnabled ? 1 : 0);
 
             _computeShader.SetBuffer(_kernelFaceHit, "_ScreenPositionBuffer", _screenPosBuffer4);
             _computeShader.SetBuffer(_kernelFaceHit, "_FaceBuffer", _faceBuffer);

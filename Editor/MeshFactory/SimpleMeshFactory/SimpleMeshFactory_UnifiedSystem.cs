@@ -407,7 +407,7 @@ public partial class SimpleMeshFactory
                     if (count++ >= 5) { sb.Append("..."); break; }
                     sb.Append($"[{kvp.Key}]={kvp.Value} ");
                 }
-                //Debug.Log(sb.ToString());
+                Debug.Log(sb.ToString());
             }
         }
         

@@ -103,6 +103,8 @@ struct UnifiedFace
     uint meshIndex;
     uint modelIndex;
     float3 normal;
+    uint lineStart;
+    uint lineCount;
 };
 
 // ============================================================
@@ -150,6 +152,7 @@ int _IsMirrored;            // 現在ミラーパスかどうか
 
 float2 _MousePosition;
 float _HitRadius;
+int _EnableBackfaceCulling;  // バックフェースカリング有効時は1
 
 // ============================================================
 // クリアカーネル（D3D11.0のUAV制限8個のため2つに分割）
@@ -352,8 +355,15 @@ void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
     
     uint flags = _VertexFlagsBuffer[index];
     
-    // 非表示・カリング済みはスキップ
-    if (HAS_FLAG(flags, FLAG_HIDDEN | FLAG_CULLED))
+    // 非表示はスキップ
+    if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _VertexHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    // カリングチェック（バックフェースカリング有効時のみ）
+    if (_EnableBackfaceCulling != 0 && HAS_FLAG(flags, FLAG_CULLED))
     {
         _VertexHitDistanceBuffer[index] = 1e10;
         return;
@@ -408,8 +418,15 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     
     uint flags = _LineFlagsBuffer[index];
     
-    // 非表示・カリング済みはスキップ
-    if (HAS_FLAG(flags, FLAG_HIDDEN | FLAG_CULLED))
+    // 非表示はスキップ
+    if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _LineHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    // カリングチェック（バックフェースカリング有効時のみ）
+    if (_EnableBackfaceCulling != 0 && HAS_FLAG(flags, FLAG_CULLED))
     {
         _LineHitDistanceBuffer[index] = 1e10;
         return;
@@ -591,8 +608,16 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     UnifiedFace face = _FaceBuffer[faceIndex];
     uint flags = _FaceFlagsBuffer[faceIndex];
     
-    // 非表示・カリング済みはヒットなし
-    if (HAS_FLAG(flags, FLAG_HIDDEN | FLAG_CULLED))
+    // 非表示はヒットなし
+    if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _FaceHitBuffer[faceIndex] = 0.0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        return;
+    }
+    
+    // カリングチェック（バックフェースカリング有効時のみ）
+    if (_EnableBackfaceCulling != 0 && HAS_FLAG(flags, FLAG_CULLED))
     {
         _FaceHitBuffer[faceIndex] = 0.0;
         _FaceHitDepthBuffer[faceIndex] = 1e10;
@@ -691,53 +716,37 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
 }
 
 // ============================================================
-// 線分の可視性計算（面のカリングから継承）
+// 線分の可視性計算（面ベース）
 // ComputeFaceVisibilityの後に実行すること
+// 入力：面、出力：線分フラグ
 // ============================================================
 
 [numthreads(64, 1, 1)]
 void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
 {
-    uint lineIndex = id.x;
-    if (lineIndex >= _LineCount) return;
+    uint faceIndex = id.x;
+    if (faceIndex >= _FaceCount) return;
     
-    UnifiedLine lineSeg = _LineBuffer[lineIndex];
-    uint lineFlags = _LineFlagsBuffer[lineIndex];
+    UnifiedFace face = _FaceBuffer[faceIndex];
+    uint faceFlags = _FaceFlagsBuffer[faceIndex];
     
-    // 既に非表示の場合はスキップ
-    if (HAS_FLAG(lineFlags, FLAG_HIDDEN))
-    {
-        _LineFlagsBuffer[lineIndex] = lineFlags | FLAG_CULLED;
+    // 面が非表示またはカリングされている場合は何もしない
+    // （線分はClearBuffersでデフォルトでカリング済み）
+    if (HAS_FLAG(faceFlags, FLAG_HIDDEN | FLAG_CULLED))
         return;
-    }
     
-    // 補助線（IsAuxLine）は常に可視
-    if (HAS_FLAG(lineFlags, FLAG_IS_AUXLINE))
+    // 面が表なら、その面の全線分のカリングフラグをクリア
+    for (uint i = 0; i < face.lineCount; i++)
     {
-        _LineFlagsBuffer[lineIndex] = lineFlags & ~FLAG_CULLED;
-        return;
-    }
-    
-    // 通常のエッジ: 関連する面のカリング状態を継承
-    uint faceIndex = lineSeg.faceIndex;
-    if (faceIndex < _FaceCount)
-    {
-        uint faceFlags = _FaceFlagsBuffer[faceIndex];
+        uint lineIdx = face.lineStart + i;
+        if (lineIdx >= _LineCount) break;
         
-        if (HAS_FLAG(faceFlags, FLAG_CULLED))
+        uint lineFlags = _LineFlagsBuffer[lineIdx];
+        
+        // 非表示フラグは維持、カリングフラグのみクリア
+        if (!HAS_FLAG(lineFlags, FLAG_HIDDEN))
         {
-            // 面がカリングされていたら線分もカリング
-            _LineFlagsBuffer[lineIndex] = lineFlags | FLAG_CULLED;
+            _LineFlagsBuffer[lineIdx] = lineFlags & ~FLAG_CULLED;
         }
-        else
-        {
-            // 面が可視なら線分も可視
-            _LineFlagsBuffer[lineIndex] = lineFlags & ~FLAG_CULLED;
-        }
-    }
-    else
-    {
-        // 無効な面インデックスの場合は可視とする
-        _LineFlagsBuffer[lineIndex] = lineFlags & ~FLAG_CULLED;
     }
 }

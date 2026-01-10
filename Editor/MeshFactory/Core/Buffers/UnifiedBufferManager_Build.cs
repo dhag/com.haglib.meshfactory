@@ -180,6 +180,14 @@ namespace MeshFactory.Core
         /// <summary>
         /// ライン/エッジデータを構築
         /// </summary>
+        // 面ごとの線分情報（BuildLineDataからBuildFaceDataに渡す）
+        private struct FaceLineInfo
+        {
+            public uint LineStart;
+            public uint LineCount;
+        }
+        private FaceLineInfo[] _faceLineInfos;
+
         private uint BuildLineData(
             MeshObject meshObject,
             MeshContext meshContext,
@@ -193,13 +201,15 @@ namespace MeshFactory.Core
             bool isVisible = meshContext?.IsVisible ?? true;
             bool isLocked = meshContext?.IsLocked ?? false;
 
-            // エッジの重複を避けるためのセット
-            var processedEdges = new HashSet<VertexPair>();
+            // 面ごとの線分情報を一時保存
+            if (_faceLineInfos == null || _faceLineInfos.Length < meshObject.FaceCount)
+                _faceLineInfos = new FaceLineInfo[meshObject.FaceCount];
 
             for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
             {
                 var face = meshObject.Faces[faceIdx];
                 uint globalFaceIndex = faceBase + (uint)faceIdx;
+                uint faceLineStart = lineOffset;
 
                 if (face.VertexCount == 2)
                 {
@@ -223,23 +233,16 @@ namespace MeshFactory.Core
                 }
                 else if (face.VertexCount >= 3)
                 {
-                    // 面のエッジ
+                    // 面のエッジ（各面ごとに登録）
                     for (int i = 0; i < face.VertexCount; i++)
                     {
                         int v1 = face.VertexIndices[i];
                         int v2 = face.VertexIndices[(i + 1) % face.VertexCount];
-                        var pair = new VertexPair(v1, v2);
-
-                        // 重複チェック（両面エッジを1回だけ追加）
-                        if (processedEdges.Contains(pair))
-                            continue;
-
-                        processedEdges.Add(pair);
 
                         _lines[lineOffset] = new UnifiedLine
                         {
-                            V1 = vertexBase + (uint)pair.V1,
-                            V2 = vertexBase + (uint)pair.V2,
+                            V1 = vertexBase + (uint)v1,
+                            V2 = vertexBase + (uint)v2,
                             Flags = (uint)_flagManager.ComputeLineFlags(
                                 modelIndex, meshIndex, v1, v2, faceIdx,
                                 false, isVisible, isLocked, false, false),
@@ -251,6 +254,10 @@ namespace MeshFactory.Core
                         lineOffset++;
                     }
                 }
+
+                // 面ごとの線分情報を一時保存（BuildFaceDataで使用）
+                _faceLineInfos[faceIdx].LineStart = faceLineStart;
+                _faceLineInfos[faceIdx].LineCount = lineOffset - faceLineStart;
             }
 
             return lineOffset - startLineOffset;
@@ -276,10 +283,29 @@ namespace MeshFactory.Core
             {
                 var face = meshObject.Faces[faceIdx];
 
+                // 線分情報を取得（BuildLineDataで設定済み）
+                var lineInfo = _faceLineInfos[faceIdx];
+
                 if (face.VertexCount < 3)
                 {
+                    // 補助線も面情報として登録（線分情報のため）
+                    _faces[faceOffset] = new UnifiedFace
+                    {
+                        IndexStart = 0,
+                        VertexCount = (uint)face.VertexCount,
+                        Flags = (uint)_flagManager.ComputeFaceFlags(
+                            modelIndex, meshIndex, faceIdx,
+                            isVisible, isLocked, false),
+                        MaterialIndex = 0,
+                        MeshIndex = (uint)meshIndex,
+                        ModelIndex = (uint)modelIndex,
+                        Normal = Vector3.zero,
+                        LineStart = lineInfo.LineStart,
+                        LineCount = lineInfo.LineCount
+                    };
+                    _faceFlags[faceOffset] = _faces[faceOffset].Flags;
                     faceOffset++;
-                    continue; // 補助線はスキップ
+                    continue;
                 }
 
                 // 面情報
@@ -293,7 +319,9 @@ namespace MeshFactory.Core
                     MaterialIndex = (uint)face.MaterialIndex,
                     MeshIndex = (uint)meshIndex,
                     ModelIndex = (uint)modelIndex,
-                    Normal = ComputeFaceNormal(meshObject, face)
+                    Normal = ComputeFaceNormal(meshObject, face),
+                    LineStart = lineInfo.LineStart,
+                    LineCount = lineInfo.LineCount
                 };
                 _faceFlags[faceOffset] = _faces[faceOffset].Flags;
 

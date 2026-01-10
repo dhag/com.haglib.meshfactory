@@ -64,7 +64,7 @@ namespace MeshFactory.Core.Rendering
 
         [Header("Line - State")]
         [Tooltip("ホバー中")]
-        public Color LineHovered = new Color(0f, 1f, 1f, 1f);
+        public Color LineHovered = new Color(1f, 0f, 0f, 1f);
 
         [Tooltip("選択エッジ")]
         public Color EdgeSelected = new Color(1f, 0.5f, 0f, 1f);

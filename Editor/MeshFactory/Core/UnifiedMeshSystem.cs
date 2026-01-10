@@ -63,6 +63,9 @@ namespace MeshFactory.Core
 
         // GPU計算フラグ
         private bool _useGpuHitTest = true; // GPU版を使用
+        
+        // バックフェースカリング設定
+        private bool _backfaceCullingEnabled = true;
 
         // ============================================================
         // プロパティ
@@ -83,6 +86,13 @@ namespace MeshFactory.Core
         public int HoveredVertexIndex => _hoveredVertexIndex;
         public int HoveredLineIndex => _hoveredLineIndex;
         public int HoveredFaceIndex => _hoveredFaceIndex;
+        
+        /// <summary>バックフェースカリング有効/無効</summary>
+        public bool BackfaceCullingEnabled
+        {
+            get => _backfaceCullingEnabled;
+            set => _backfaceCullingEnabled = value;
+        }
 
         public bool UseGpuHitTest
         {
