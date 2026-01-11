@@ -399,8 +399,8 @@ public partial class SimpleMeshFactory
         _vertexOffsets = new Vector3[vertexCount];
         _groupOffsets = new Vector3[vertexCount];  // Vertexと1:1
 
-        // カメラ設定（オプション）
-        if (updateCamera)
+        // カメラ設定（オプション、頂点がある場合のみ）
+        if (updateCamera && vertexCount > 0)
         {
             var bounds = meshObject.CalculateBounds();
             float radius = Mathf.Max(bounds.extents.magnitude, 0.5f);

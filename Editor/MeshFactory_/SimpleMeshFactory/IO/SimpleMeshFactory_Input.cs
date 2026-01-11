@@ -38,6 +38,16 @@ public partial class SimpleMeshFactory
         // ツールコンテキストを更新
         UpdateToolContext(meshContext, rect, camPos, camDist);
 
+        // プレビュー領域内でのホイールズーム
+        if (e.type == EventType.ScrollWheel && rect.Contains(mousePos))
+        {
+            _cameraDistance *= (1f + e.delta.y * 0.05f);
+            _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 10f);
+            e.Use();
+            Repaint();
+            return;
+        }
+
         // プレビュー外でのMouseUp処理
         if (!rect.Contains(mousePos))
         {

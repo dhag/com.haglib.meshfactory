@@ -1443,11 +1443,13 @@ namespace MeshFactory.Data
                     Vector3 pos = srcVerts[i];
 
                     // スキンドメッシュの場合、BoneWeightも考慮して統合判定
-                    bool shouldMerge = !includeBoneWeights;
+                    bool shouldMerge = false;
                     int existingIdx = -1;
                     
-                    if (positionToIndex.TryGetValue(pos, out existingIdx))
+                    if (positionToIndex.TryGetValue(pos, out int foundIdx))
                     {
+                        existingIdx = foundIdx;
+                        
                         if (includeBoneWeights && srcBoneWeights != null && i < srcBoneWeights.Length)
                         {
                             // BoneWeightが異なる場合は統合しない
@@ -1468,6 +1470,7 @@ namespace MeshFactory.Data
                         }
                         else
                         {
+                            // 通常メッシュ: 位置が同じなら統合
                             shouldMerge = true;
                         }
                     }

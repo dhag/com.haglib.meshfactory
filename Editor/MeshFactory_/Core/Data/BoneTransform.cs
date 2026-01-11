@@ -78,6 +78,7 @@ namespace MeshFactory.Tools
 
         // UI状態（シリアライズ不要）
         private bool _isExpanded = true;
+        private int _selectedRotationAxis = 0;  // 0=X, 1=Y, 2=Z
 
         // === プロパティ ===
 
@@ -123,6 +124,13 @@ namespace MeshFactory.Tools
         {
             get => _isExpanded;
             set => _isExpanded = value;
+        }
+
+        /// <summary>選択中の回転軸（UI用、0=X, 1=Y, 2=Z）</summary>
+        public int SelectedRotationAxis
+        {
+            get => _selectedRotationAxis;
+            set => _selectedRotationAxis = Mathf.Clamp(value, 0, 2);
         }
 
         // === コンストラクタ ===
@@ -410,6 +418,53 @@ namespace MeshFactory.Tools
                         if (newRot != settings.Rotation)
                         {
                             settings.Rotation = newRot;
+                            changed = true;
+                            changeDescription = T("ChangeRotation");
+                        }
+                    }
+                    EditorGUILayout.EndHorizontal();
+
+                    // 回転軸選択 + スライダー
+                    EditorGUILayout.BeginHorizontal();
+                    {
+                        GUILayout.Label("Axis:", GUILayout.Width(35));
+                        
+                        // ラジオボタン風のトグル
+                        bool selX = (settings.SelectedRotationAxis == 0);
+                        bool selY = (settings.SelectedRotationAxis == 1);
+                        bool selZ = (settings.SelectedRotationAxis == 2);
+                        
+                        bool newSelX = GUILayout.Toggle(selX, "X", EditorStyles.miniButton, GUILayout.Width(28));
+                        bool newSelY = GUILayout.Toggle(selY, "Y", EditorStyles.miniButton, GUILayout.Width(28));
+                        bool newSelZ = GUILayout.Toggle(selZ, "Z", EditorStyles.miniButton, GUILayout.Width(28));
+                        
+                        if (newSelX && !selX) settings.SelectedRotationAxis = 0;
+                        else if (newSelY && !selY) settings.SelectedRotationAxis = 1;
+                        else if (newSelZ && !selZ) settings.SelectedRotationAxis = 2;
+                        
+                        GUILayout.FlexibleSpace();
+                    }
+                    EditorGUILayout.EndHorizontal();
+                    
+                    // 回転スライダー
+                    EditorGUILayout.BeginHorizontal();
+                    {
+                        string axisLabel = settings.SelectedRotationAxis == 0 ? "X" : 
+                                          (settings.SelectedRotationAxis == 1 ? "Y" : "Z");
+                        float currentValue = settings.SelectedRotationAxis == 0 ? settings.Rotation.x :
+                                            (settings.SelectedRotationAxis == 1 ? settings.Rotation.y : settings.Rotation.z);
+                        
+                        GUILayout.Label(axisLabel + ":", GUILayout.Width(20));
+                        float newValue = GUILayout.HorizontalSlider(currentValue, -180f, 180f);
+                        GUILayout.Label(newValue.ToString("F1") + "°", GUILayout.Width(50));
+                        
+                        if (Mathf.Abs(newValue - currentValue) > 0.01f)
+                        {
+                            Vector3 rot = settings.Rotation;
+                            if (settings.SelectedRotationAxis == 0) rot.x = newValue;
+                            else if (settings.SelectedRotationAxis == 1) rot.y = newValue;
+                            else rot.z = newValue;
+                            settings.Rotation = rot;
                             changed = true;
                             changeDescription = T("ChangeRotation");
                         }

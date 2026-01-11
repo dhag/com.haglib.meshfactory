@@ -950,22 +950,7 @@ public partial class SimpleMeshFactory : EditorWindow
             return;
         }
 
-        // ホイールでズーム
-        if (e.type == EventType.ScrollWheel)
-        {
-            if (!_isCameraDragging)
-            {
-                BeginCameraDrag();
-            }
-
-            _cameraDistance *= (1f + e.delta.y * 0.05f);
-            _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 10f);
-
-            EndCameraDrag();
-
-            e.Use();
-            Repaint();
-        }
+        // ホイールズームはHandleInput（プレビュー領域内）で処理するため、ここでは何もしない
     }
 
     // ================================================================
