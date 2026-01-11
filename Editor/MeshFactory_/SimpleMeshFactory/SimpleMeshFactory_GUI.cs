@@ -273,9 +273,9 @@ public partial class SimpleMeshFactory
                 {
                     LoadMeshFromPrefab();
                 }
-                if (GUILayout.Button(L.Get("FromSelection")))
+                if (GUILayout.Button(L.Get("FromHierarchy")))
                 {
-                    LoadMeshFromSelection();
+                    LoadMeshFromHierarchy();
                 }
 
                 // ================================================================

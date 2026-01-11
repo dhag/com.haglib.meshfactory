@@ -44,6 +44,16 @@ namespace MeshFactory.Core
             int activeModel = _flagManager.ActiveModelIndex;
             bool hasSelectionState = _flagManager.SelectionState != null;
 
+            // デバッグログ
+            if (hasSelectionState)
+            {
+                var ss = _flagManager.SelectionState;
+                if (ss.Edges.Count > 0 || ss.Faces.Count > 0 || ss.Lines.Count > 0)
+                {
+                    Debug.Log($"[UpdateAllSelectionFlags] V={ss.Vertices.Count}, E={ss.Edges.Count}, F={ss.Faces.Count}, L={ss.Lines.Count}, activeMesh={activeMesh}, meshCount={_meshCount}");
+                }
+            }
+
             for (int meshIdx = 0; meshIdx < _meshCount; meshIdx++)
             {
                 var meshInfo = _meshInfos[meshIdx];
@@ -93,6 +103,9 @@ namespace MeshFactory.Core
             int activeModel = _flagManager.ActiveModelIndex;
             bool hasSelectionState = _flagManager.SelectionState != null;
 
+            int edgeSelectedCount = 0;
+            int lineSelectedCount = 0;
+            
             for (int lineIdx = 0; lineIdx < _totalLineCount; lineIdx++)
             {
                 var line = _lines[lineIdx];
@@ -115,6 +128,7 @@ namespace MeshFactory.Core
                         if (_flagManager.SelectionState.Lines.Contains((int)line.FaceIndex))
                         {
                             flags |= (uint)SelectionFlags.LineSelected;
+                            lineSelectedCount++;
                         }
                     }
                     else
@@ -130,11 +144,18 @@ namespace MeshFactory.Core
                         if (_flagManager.SelectionState.Edges.Contains(pair))
                         {
                             flags |= (uint)SelectionFlags.EdgeSelected;
+                            edgeSelectedCount++;
                         }
                     }
                 }
 
                 _lineFlags[lineIdx] = flags;
+            }
+
+            // デバッグ: 選択フラグ設定数
+            if (hasSelectionState && (_flagManager.SelectionState.Edges.Count > 0 || _flagManager.SelectionState.Lines.Count > 0))
+            {
+                Debug.Log($"[UpdateAllSelectionFlags] EdgeSelected flags set: {edgeSelectedCount}, LineSelected flags set: {lineSelectedCount}");
             }
 
             // GPUにアップロード
@@ -223,12 +244,15 @@ namespace MeshFactory.Core
         /// </summary>
         public void ComputeScreenPositions(Matrix4x4 viewProjection, Rect viewport)
         {
+            // ワールド変換が有効な場合はワールド座標を使用
+            var positions = UseWorldPositions && _worldPositions != null ? _worldPositions : _positions;
+            
             for (int i = 0; i < _totalVertexCount; i++)
             {
                 Vector4 clipPos = viewProjection * new Vector4(
-                    _positions[i].x,
-                    _positions[i].y,
-                    _positions[i].z,
+                    positions[i].x,
+                    positions[i].y,
+                    positions[i].z,
                     1f);
 
                 if (clipPos.w <= 0)
@@ -735,6 +759,41 @@ namespace MeshFactory.Core
             return true;
         }
 
+        /// <summary>
+        /// 線分が補助線かどうかを取得
+        /// </summary>
+        public bool GetLineType(int globalLineIndex, out bool isAuxLine)
+        {
+            isAuxLine = false;
+            
+            if (globalLineIndex < 0 || globalLineIndex >= _totalLineCount)
+                return false;
+
+            uint flags = _lineFlags[globalLineIndex];
+            isAuxLine = (flags & (uint)SelectionFlags.IsAuxLine) != 0;
+            return true;
+        }
+
+        /// <summary>
+        /// 線分の所属面インデックス（ローカル）を取得
+        /// </summary>
+        public bool GetLineFaceIndex(int globalLineIndex, out int localFaceIndex)
+        {
+            localFaceIndex = -1;
+            
+            if (globalLineIndex < 0 || globalLineIndex >= _totalLineCount)
+                return false;
+
+            var line = _lines[globalLineIndex];
+            
+            // グローバル面インデックスをローカルに変換
+            if (!GlobalToLocalFaceIndex((int)line.FaceIndex, out int meshIdx, out int localIdx))
+                return false;
+                
+            localFaceIndex = localIdx;
+            return true;
+        }
+
         // ============================================================
         // GPU計算
         // ============================================================
@@ -760,8 +819,9 @@ namespace MeshFactory.Core
             _computeShader.SetInt("_FaceCount", _totalFaceCount);
             _computeShader.SetInt("_UseMirror", _mirrorEnabled ? 1 : 0);
 
-            // バッファバインド
-            _computeShader.SetBuffer(_kernelScreenPos, "_PositionBuffer", _positionBuffer);
+            // バッファバインド（ワールド変換が有効な場合はWorldPositionBufferを使用）
+            var posBuffer = UseWorldPositions ? _worldPositionBuffer : _positionBuffer;
+            _computeShader.SetBuffer(_kernelScreenPos, "_PositionBuffer", posBuffer);
             _computeShader.SetBuffer(_kernelScreenPos, "_ScreenPositionBuffer", _screenPosBuffer4);
             _computeShader.SetBuffer(_kernelScreenPos, "_VertexFlagsBuffer", _vertexFlagsBuffer);
             _computeShader.SetBuffer(_kernelScreenPos, "_MirrorPositionBuffer", _mirrorPositionBuffer);
@@ -1077,6 +1137,159 @@ namespace MeshFactory.Core
             {
                 _computeShader.Dispatch(_kernelClearFace, ThreadGroups(_totalFaceCount), 1, 1);
             }
+        }
+
+        // ============================================================
+        // Level 4: Transform Matrix 更新
+        // ============================================================
+
+        /// <summary>
+        /// 変換行列をGPUバッファにアップロード
+        /// ModelContext.ComputeWorldMatrices() 呼び出し後に使用
+        /// ボーンを含む全MeshContextの行列をアップロード
+        /// </summary>
+        public void UpdateTransformMatrices(List<MeshContext> meshContexts, bool useWorldTransform)
+        {
+            if (meshContexts == null || _transformMatrixBuffer == null)
+                return;
+
+            int contextCount = meshContexts.Count;
+            
+            // 配列サイズを確保（全MeshContext分）
+            if (_transformMatrices == null || _transformMatrices.Length < contextCount)
+            {
+                _transformMatrices = new Matrix4x4[Mathf.Max(contextCount, 256)];
+            }
+
+            // バッファサイズが足りない場合は再作成
+            if (_transformMatrixBuffer.count < contextCount)
+            {
+                _transformMatrixBuffer?.Release();
+                _transformMatrixBuffer = new ComputeBuffer(Mathf.Max(contextCount, 256), sizeof(float) * 16);
+            }
+
+            // 全MeshContext（ボーン含む）の変換行列を設定
+            for (int i = 0; i < contextCount; i++)
+            {
+                var ctx = meshContexts[i];
+                if (ctx == null)
+                {
+                    _transformMatrices[i] = Matrix4x4.identity;
+                    continue;
+                }
+
+                if (useWorldTransform)
+                {
+                    // スキニング用: WorldMatrix × BindPose
+                    _transformMatrices[i] = ctx.SkinningMatrix;
+                }
+                else
+                {
+                    _transformMatrices[i] = ctx.LocalMatrix;
+                }
+            }
+
+            // GPUにアップロード
+            if (contextCount > 0)
+            {
+                _transformMatrixBuffer.SetData(_transformMatrices, 0, 0, contextCount);
+            }
+        }
+
+        /// <summary>
+        /// 単一メッシュの変換行列を更新
+        /// </summary>
+        public void UpdateTransformMatrix(int meshIndex, Matrix4x4 matrix)
+        {
+            if (meshIndex < 0 || meshIndex >= _meshCount)
+                return;
+
+            if (_transformMatrices == null || _transformMatrices.Length <= meshIndex)
+                return;
+
+            _transformMatrices[meshIndex] = matrix;
+            
+            // GPUにアップロード（部分更新）
+            _transformMatrixBuffer?.SetData(_transformMatrices, meshIndex, meshIndex, 1);
+        }
+
+        // ============================================================
+        // TransformVertices カーネル実行
+        // ============================================================
+
+        private int _kernelTransformVertices = -1;
+
+        /// <summary>
+        /// TransformVerticesカーネルを実行
+        /// ローカル座標をワールド座標に変換
+        /// </summary>
+        /// <param name="useWorldTransform">true: ワールド変換適用, false: ローカル座標コピー</param>
+        /// <param name="transformNormals">true: 法線も変換</param>
+        /// <param name="readbackToCPU">true: 結果をCPU側に読み戻す</param>
+        public void DispatchTransformVertices(bool useWorldTransform, bool transformNormals = false, bool readbackToCPU = true)
+        {
+            if (!_gpuComputeAvailable || _computeShader == null)
+                return;
+
+            if (_totalVertexCount == 0)
+                return;
+
+            // UseWorldPositionsフラグを設定
+            UseWorldPositions = useWorldTransform;
+
+            // カーネルを取得（初回のみ）
+            if (_kernelTransformVertices < 0)
+            {
+                _kernelTransformVertices = _computeShader.FindKernel("TransformVertices");
+                if (_kernelTransformVertices < 0)
+                {
+                    Debug.LogWarning("[UnifiedBufferManager] TransformVertices kernel not found");
+                    return;
+                }
+            }
+
+            // バッファをバインド
+            _computeShader.SetBuffer(_kernelTransformVertices, "_PositionBuffer", _positionBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_WorldPositionBuffer", _worldPositionBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_TransformMatrixBuffer", _transformMatrixBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_BoneWeightsBuffer", _boneWeightsBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_BoneIndicesBuffer", _boneIndicesBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_NormalBuffer", _normalBuffer);
+            // WorldNormalBufferは未実装のため、ダミーとしてNormalBufferをバインド
+            _computeShader.SetBuffer(_kernelTransformVertices, "_WorldNormalBuffer", _normalBuffer);
+
+            // パラメータを設定
+            _computeShader.SetInt("_VertexCount", _totalVertexCount);
+            _computeShader.SetInt("_UseWorldTransform", useWorldTransform ? 1 : 0);
+            _computeShader.SetInt("_TransformNormals", transformNormals ? 1 : 0);
+
+            // ディスパッチ
+            int threadGroups = Mathf.CeilToInt(_totalVertexCount / 256.0f);
+            _computeShader.Dispatch(_kernelTransformVertices, threadGroups, 1, 1);
+
+            // CPU側に読み戻し（描画用）
+            if (readbackToCPU && useWorldTransform)
+            {
+                if (_worldPositions == null || _worldPositions.Length < _totalVertexCount)
+                    _worldPositions = new Vector3[_totalVertexCount];
+                
+                _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
+            }
+        }
+
+        /// <summary>
+        /// ワールド座標バッファの内容を取得（デバッグ用）
+        /// </summary>
+        public Vector3[] GetWorldPositions()
+        {
+            if (_worldPositionBuffer == null || _totalVertexCount == 0)
+                return null;
+
+            if (_worldPositions == null || _worldPositions.Length < _totalVertexCount)
+                _worldPositions = new Vector3[_totalVertexCount];
+
+            _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
+            return _worldPositions;
         }
     }
 }

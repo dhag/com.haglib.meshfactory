@@ -8,6 +8,7 @@ using MeshFactory.Rendering;
 
 namespace MeshFactory.Core.Rendering
 {
+
     /// <summary>
     /// 統合システム用可視性プロバイダー
     /// IVisibilityProvider互換

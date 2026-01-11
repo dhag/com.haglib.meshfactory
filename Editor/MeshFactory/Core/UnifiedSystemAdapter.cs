@@ -75,10 +75,60 @@ namespace MeshFactory.Core
         public UnifiedRenderer Renderer => _renderer;
         public UnifiedBufferManager BufferManager => _unifiedSystem?.BufferManager;
 
-        // 既存システムとの互換用
+        // 既存システムとの互換用（グローバルインデックス）
         public int HoverVertexIndex => _unifiedSystem?.HoveredVertexIndex ?? -1;
         public int HoverLineIndex => _unifiedSystem?.HoveredLineIndex ?? -1;
         public int HoverFaceIndex => _unifiedSystem?.HoveredFaceIndex ?? -1;
+
+        /// <summary>
+        /// 指定メッシュのローカル頂点ホバーインデックスを取得
+        /// </summary>
+        public int GetLocalHoverVertexIndex(int meshIndex)
+        {
+            int globalIndex = HoverVertexIndex;
+            if (globalIndex < 0) return -1;
+            
+            if (BufferManager?.GlobalToLocalVertexIndex(globalIndex, out int meshIdx, out int localIdx) == true)
+            {
+                if (meshIdx == meshIndex)
+                    return localIdx;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 指定メッシュのローカル線分ホバーインデックスを取得
+        /// グローバルLineIndexを返す（EdgeCacheはグローバルリスト）
+        /// ただし指定メッシュの線分でない場合は-1
+        /// </summary>
+        public int GetLocalHoverLineIndex(int meshIndex)
+        {
+            int globalIndex = HoverLineIndex;
+            if (globalIndex < 0) return -1;
+            
+            if (BufferManager?.GlobalToLocalLineIndex(globalIndex, out int meshIdx, out int localIdx) == true)
+            {
+                if (meshIdx == meshIndex)
+                    return globalIndex;  // EdgeCacheはグローバルリストなのでグローバルインデックスを返す
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 指定メッシュのローカル面ホバーインデックスを取得
+        /// </summary>
+        public int GetLocalHoverFaceIndex(int meshIndex)
+        {
+            int globalIndex = HoverFaceIndex;
+            if (globalIndex < 0) return -1;
+            
+            if (BufferManager?.GlobalToLocalFaceIndex(globalIndex, out int meshIdx, out int localIdx) == true)
+            {
+                if (meshIdx == meshIndex)
+                    return localIdx;
+            }
+            return -1;
+        }
 
         // ============================================================
         // コンストラクタ
@@ -156,16 +206,11 @@ namespace MeshFactory.Core
         public void SetModelContext(ModelContext modelContext)
         {
             _modelContext = modelContext;
-            Debug.Log($"[UnifiedSystemAdapter] SetModelContext: modelContext={(modelContext != null ? "valid" : "null")}, meshCount={(modelContext?.MeshContextList?.Count ?? 0)}");
             
             _unifiedSystem.SetModel(modelContext);
             
             // 即座にトポロジー更新を実行（遅延せずにバッファを構築）
             _unifiedSystem.ExecuteUpdates(DirtyLevel.Topology);
-            
-            // 構築後の状態を確認
-            var bm = _unifiedSystem.BufferManager;
-            Debug.Log($"[UnifiedSystemAdapter] After ExecuteUpdates: MeshCount={bm?.MeshCount ?? -1}, TotalVertexCount={bm?.TotalVertexCount ?? -1}, TotalLineCount={bm?.TotalLineCount ?? -1}");
         }
 
         /// <summary>
@@ -188,10 +233,22 @@ namespace MeshFactory.Core
 
         /// <summary>
         /// アクティブメッシュを設定
+        /// meshIndexはMeshContexts配列のインデックス（ボーン含む）
+        /// 内部でUnifiedMeshインデックスに変換される
         /// </summary>
-        public void SetActiveMesh(int modelIndex, int meshIndex)
+        public void SetActiveMesh(int modelIndex, int contextIndex)
         {
-            _unifiedSystem.SetActiveMesh(modelIndex, meshIndex);
+            // MeshContextインデックス → UnifiedMeshインデックスに変換
+            int unifiedMeshIndex = BufferManager?.ContextToUnifiedMeshIndex(contextIndex) ?? contextIndex;
+            _unifiedSystem.SetActiveMesh(modelIndex, unifiedMeshIndex);
+        }
+
+        /// <summary>
+        /// MeshContextインデックスをUnifiedMeshインデックスに変換
+        /// </summary>
+        public int ContextToUnifiedMeshIndex(int contextIndex)
+        {
+            return BufferManager?.ContextToUnifiedMeshIndex(contextIndex) ?? -1;
         }
 
         // ============================================================
@@ -257,6 +314,93 @@ namespace MeshFactory.Core
             _unifiedSystem.EndFrame();
         }
 
+        /// <summary>
+        /// 変換行列を更新してGPUで頂点変換を実行
+        /// </summary>
+        /// <param name="useWorldTransform">ワールド変換を使用するか</param>
+        public void UpdateTransform(bool useWorldTransform)
+        {
+            if (!_isInitialized || _modelContext == null)
+                return;
+
+            var bufferManager = _unifiedSystem?.BufferManager;
+            if (bufferManager == null)
+                return;
+
+            // 変換行列をGPUにアップロード
+            bufferManager.UpdateTransformMatrices(_modelContext.MeshContextList, useWorldTransform);
+
+            // TransformVerticesカーネルを実行
+            bufferManager.DispatchTransformVertices(useWorldTransform, false);
+        }
+
+        /// <summary>
+        /// GPU変換後の頂点をMeshObjectに書き戻し、UnityMeshを再生成（面描画用）
+        /// </summary>
+        public void WritebackTransformedVertices()
+        {
+            if (!_isInitialized || _modelContext == null)
+                return;
+
+            var bufferManager = _unifiedSystem?.BufferManager;
+            if (bufferManager == null)
+                return;
+
+            var meshContextList = _modelContext.MeshContextList;
+            if (meshContextList == null)
+                return;
+
+            // GPU変換後の頂点座標を取得
+            var worldPositions = bufferManager.GetWorldPositions();
+            if (worldPositions == null || worldPositions.Length == 0)
+                return;
+
+            var meshInfos = bufferManager.MeshInfos;
+            if (meshInfos == null)
+                return;
+
+            // 各MeshContextの頂点を書き戻す
+            for (int ctxIdx = 0; ctxIdx < meshContextList.Count; ctxIdx++)
+            {
+                var ctx = meshContextList[ctxIdx];
+                if (ctx?.MeshObject == null)
+                    continue;
+
+                // ボーンはスキップ（頂点を持たない）
+                if (ctx.Type == MeshType.Bone)
+                    continue;
+
+                // MeshContextインデックス → UnifiedMeshインデックスの変換
+                int unifiedMeshIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);
+                if (unifiedMeshIdx < 0)
+                    continue;
+
+                var meshInfo = meshInfos[unifiedMeshIdx];
+                int vertexStart = (int)meshInfo.VertexStart;
+                int vertexCount = (int)meshInfo.VertexCount;
+
+                if (vertexCount == 0)
+                    continue;
+
+                var meshObject = ctx.MeshObject;
+                if (meshObject.VertexCount != vertexCount)
+                    continue;  // 頂点数が一致しない場合はスキップ
+
+                // MeshObject.Verticesに書き戻し
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    int globalIdx = vertexStart + i;
+                    if (globalIdx < worldPositions.Length)
+                    {
+                        meshObject.Vertices[i].Position = worldPositions[globalIdx];
+                    }
+                }
+
+                // UnityMeshを再生成（UV/法線のサブインデックスに合わせて展開）
+                ctx.UnityMesh = meshObject.ToUnityMesh();
+            }
+        }
+
         // ============================================================
         // 描画
         // ============================================================
@@ -291,11 +435,8 @@ namespace MeshFactory.Core
             float pointSize ,
             float alpha = 1f)
         {
-            Debug.Log($"[UnifiedSystemAdapter] PrepareDrawing: isInitialized={_isInitialized}, showWireframe={showWireframe}, showVertices={showVertices}, selectedMeshIndex={selectedMeshIndex}");
-            
             if (!_isInitialized)
             {
-                Debug.LogWarning("[UnifiedSystemAdapter] PrepareDrawing: not initialized!");
                 return;
             }
 
@@ -420,6 +561,11 @@ namespace MeshFactory.Core
         // ============================================================
         // 色設定
         // ============================================================
+
+        /// <summary>
+        /// 色設定を取得
+        /// </summary>
+        public ShaderColorSettings ColorSettings => _renderer?.ColorSettings;
 
         /// <summary>
         /// 色設定を変更

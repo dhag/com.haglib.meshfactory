@@ -1403,6 +1403,17 @@ namespace MeshFactory.Data
         /// <param name="mergeVertices">同一位置の頂点を統合するか</param>
         public void FromUnityMesh(Mesh mesh, bool mergeVertices = true)
         {
+            FromUnityMesh(mesh, mergeVertices, false);
+        }
+
+        /// <summary>
+        /// Unity MeshからMeshObjectを構築
+        /// </summary>
+        /// <param name="mesh">ソースメッシュ</param>
+        /// <param name="mergeVertices">同一位置の頂点を統合するか</param>
+        /// <param name="includeBoneWeights">BoneWeight情報を読み込むか（スキンドメッシュ用）</param>
+        public void FromUnityMesh(Mesh mesh, bool mergeVertices, bool includeBoneWeights)
+        {
             Clear();
             if (mesh == null) return;
 
@@ -1411,10 +1422,19 @@ namespace MeshFactory.Data
             var srcVerts = mesh.vertices;
             var srcUVs = mesh.uv;
             var srcNormals = mesh.normals;
+            
+            // BoneWeight読み込み（スキンドメッシュの場合）
+            BoneWeight[] srcBoneWeights = null;
+            if (includeBoneWeights)
+            {
+                srcBoneWeights = mesh.boneWeights;
+            }
 
             if (mergeVertices)
             {
                 // 同一位置の頂点を統合
+                // 注意: スキンドメッシュでは同一位置でもBoneWeightが異なる可能性があるため、
+                //       includeBoneWeights=trueの場合は統合を無効にすることを推奨
                 var positionToIndex = new Dictionary<Vector3, int>(new Vector3Comparer());
                 var oldToNewIndex = new int[srcVerts.Length];
 
@@ -1422,7 +1442,37 @@ namespace MeshFactory.Data
                 {
                     Vector3 pos = srcVerts[i];
 
-                    if (positionToIndex.TryGetValue(pos, out int existingIdx))
+                    // スキンドメッシュの場合、BoneWeightも考慮して統合判定
+                    bool shouldMerge = !includeBoneWeights;
+                    int existingIdx = -1;
+                    
+                    if (positionToIndex.TryGetValue(pos, out existingIdx))
+                    {
+                        if (includeBoneWeights && srcBoneWeights != null && i < srcBoneWeights.Length)
+                        {
+                            // BoneWeightが異なる場合は統合しない
+                            var existingBw = Vertices[existingIdx].BoneWeight;
+                            var newBw = srcBoneWeights[i];
+                            if (existingBw.HasValue &&
+                                existingBw.Value.boneIndex0 == newBw.boneIndex0 &&
+                                existingBw.Value.boneIndex1 == newBw.boneIndex1 &&
+                                existingBw.Value.boneIndex2 == newBw.boneIndex2 &&
+                                existingBw.Value.boneIndex3 == newBw.boneIndex3 &&
+                                Mathf.Approximately(existingBw.Value.weight0, newBw.weight0) &&
+                                Mathf.Approximately(existingBw.Value.weight1, newBw.weight1) &&
+                                Mathf.Approximately(existingBw.Value.weight2, newBw.weight2) &&
+                                Mathf.Approximately(existingBw.Value.weight3, newBw.weight3))
+                            {
+                                shouldMerge = true;
+                            }
+                        }
+                        else
+                        {
+                            shouldMerge = true;
+                        }
+                    }
+
+                    if (shouldMerge && existingIdx >= 0)
                     {
                         // 既存の頂点を参照
                         oldToNewIndex[i] = existingIdx;
@@ -1442,6 +1492,12 @@ namespace MeshFactory.Data
                             vertex.UVs.Add(srcUVs[i]);
                         if (srcNormals != null && i < srcNormals.Length)
                             vertex.Normals.Add(srcNormals[i]);
+                        
+                        // BoneWeight設定
+                        if (includeBoneWeights && srcBoneWeights != null && i < srcBoneWeights.Length)
+                        {
+                            vertex.BoneWeight = srcBoneWeights[i];
+                        }
 
                         int newIdx = Vertices.Count;
                         Vertices.Add(vertex);
@@ -1492,6 +1548,12 @@ namespace MeshFactory.Data
 
                     if (srcNormals != null && i < srcNormals.Length)
                         vertex.Normals.Add(srcNormals[i]);
+                    
+                    // BoneWeight設定
+                    if (includeBoneWeights && srcBoneWeights != null && i < srcBoneWeights.Length)
+                    {
+                        vertex.BoneWeight = srcBoneWeights[i];
+                    }
 
                     Vertices.Add(vertex);
                 }

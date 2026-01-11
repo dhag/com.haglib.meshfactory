@@ -32,66 +32,83 @@ namespace MeshFactory.Core.Rendering
 
         [Header("Vertex - State")]
         [Tooltip("ホバー中")]
-        public Color VertexHovered = new Color(0f, 1f, 1f, 1f);
+        public Color VertexHovered = new Color(1f, 0f, 0f, 1f);  // 赤
 
         [Tooltip("選択された頂点")]
-        public Color VertexSelected = new Color(1f, 0.8f, 0f, 1f);
+        public Color VertexSelected = new Color(1f, 0.6f, 0f, 1f);  // オレンジ
 
         [Tooltip("ドラッグ中")]
         public Color VertexDragging = new Color(1f, 0.5f, 0f, 1f);
 
         [Header("Vertex - Border")]
         public Color VertexBorderDefault = new Color(0.5f, 0.5f, 0.5f, 1f);
-        public Color VertexBorderSelected = new Color(1f, 0f, 0f, 1f);
-        public Color VertexBorderHovered = new Color(0f, 0.8f, 0.8f, 1f);
+        public Color VertexBorderSelected = new Color(1f, 0.6f, 0f, 1f);  // オレンジ
+        public Color VertexBorderHovered = new Color(1f, 0f, 0f, 1f);  // 赤
 
         // ============================================================
         // ライン/エッジ色
         // ============================================================
 
         [Header("Line - Hierarchy")]
-        [Tooltip("非選択モデルのエッジ")]
-        public Color LineInactiveModel = new Color(0.3f, 0.3f, 0.3f, 0.3f);
+        [Tooltip("非選択モデル/メッシュのエッジ")]
+        public Color LineUnselectedMesh = new Color(0.5f, 0.5f, 0.5f, 0.7f);  // グレー
 
-        [Tooltip("デフォルトエッジ")]
-        public Color LineDefault = new Color(0f, 0.5f, 0.3f, 0.6f);
-
-        [Tooltip("アクティブメッシュのエッジ")]
-        public Color LineActive = new Color(0f, 0.7f, 0.4f, 0.8f);
-
-        [Tooltip("選択メッシュのエッジ")]
-        public Color LineMeshSelected = new Color(0f, 0.8f, 0.5f, 0.9f);
+        [Tooltip("選択メッシュの通常エッジ")]
+        public Color LineSelectedMesh = new Color(0f, 1f, 0.5f, 0.9f);  // 緑
 
         [Header("Line - State")]
         [Tooltip("ホバー中")]
-        public Color LineHovered = new Color(1f, 0f, 0f, 1f);
+        public Color LineHovered = new Color(1f, 0f, 0f, 1f);  // 赤
 
         [Tooltip("選択エッジ")]
-        public Color EdgeSelected = new Color(1f, 0.5f, 0f, 1f);
-
-        [Tooltip("ドラッグ中")]
-        public Color LineDragging = new Color(1f, 0.3f, 0f, 1f);
+        public Color EdgeSelected = new Color(1f, 0.6f, 0f, 1f);  // オレンジ
 
         [Header("Line - Special")]
-        [Tooltip("補助線")]
-        public Color AuxLine = new Color(0.8f, 0.6f, 0f, 0.5f);
+        [Tooltip("補助線（選択メッシュ）")]
+        public Color AuxLineSelectedMesh = new Color(1f, 0.3f, 1f, 0.9f);  // マゼンタ
 
-        [Tooltip("補助線（選択）")]
-        public Color AuxLineSelected = new Color(1f, 0.8f, 0f, 1f);
-
-        [Tooltip("境界エッジ")]
-        public Color BoundaryEdge = new Color(0f, 1f, 0.5f, 1f);
+        [Tooltip("補助線（非選択メッシュ）")]
+        public Color AuxLineUnselectedMesh = new Color(0.7f, 0.3f, 0.7f, 0.5f);  // 薄いマゼンタ
 
         // ============================================================
         // 面色
         // ============================================================
 
-        [Header("Face")]
-        [Tooltip("選択面")]
-        public Color FaceSelected = new Color(1f, 0.5f, 0f, 0.3f);
+        [Header("Face - State")]
+        [Tooltip("ホバー面（塗りつぶし）")]
+        public Color FaceHoveredFill = new Color(1f, 0f, 0f, 0.2f);  // 赤（薄い）
 
-        [Tooltip("ホバー面")]
-        public Color FaceHovered = new Color(0f, 1f, 1f, 0.2f);
+        [Tooltip("ホバー面（輪郭）")]
+        public Color FaceHoveredEdge = new Color(1f, 0f, 0f, 0.8f);  // 赤
+
+        [Tooltip("選択面（塗りつぶし）")]
+        public Color FaceSelectedFill = new Color(1f, 0.5f, 0f, 0.15f);  // オレンジ（薄い）
+
+        [Tooltip("選択面（輪郭）")]
+        public Color FaceSelectedEdge = new Color(1f, 0.6f, 0f, 0.6f);  // オレンジ
+
+        // ============================================================
+        // UI色
+        // ============================================================
+
+        [Header("UI")]
+        [Tooltip("背景色")]
+        public Color Background = new Color(0.15f, 0.15f, 0.18f, 1f);
+
+        [Tooltip("矩形選択（塗りつぶし）")]
+        public Color BoxSelectFill = new Color(0.3f, 0.6f, 1f, 0.2f);
+
+        [Tooltip("矩形選択（枠線）")]
+        public Color BoxSelectBorder = new Color(0.3f, 0.6f, 1f, 0.8f);
+
+        // ============================================================
+        // 軸色
+        // ============================================================
+
+        [Header("Axis")]
+        public Color AxisX = new Color(1f, 0.3f, 0.3f, 0.7f);
+        public Color AxisY = new Color(0.3f, 1f, 0.3f, 0.7f);
+        public Color AxisZ = new Color(0.3f, 0.3f, 1f, 0.7f);
 
         // ============================================================
         // ミラー
@@ -137,8 +154,8 @@ namespace MeshFactory.Core.Rendering
                 var settings = new ShaderColorSettings();
                 settings.VertexInactiveModel = new Color(0.4f, 0.4f, 0.4f, 0.3f);
                 settings.VertexDefault = new Color(0.6f, 0.6f, 0.6f, 0.5f);
-                settings.LineInactiveModel = new Color(0.2f, 0.2f, 0.2f, 0.3f);
-                settings.LineDefault = new Color(0.3f, 0.5f, 0.4f, 0.6f);
+                settings.LineUnselectedMesh = new Color(0.4f, 0.4f, 0.4f, 0.5f);
+                settings.Background = new Color(0.1f, 0.1f, 0.12f, 1f);
                 return settings;
             }
         }
@@ -153,10 +170,22 @@ namespace MeshFactory.Core.Rendering
                 var settings = new ShaderColorSettings();
                 settings.VertexInactiveModel = new Color(0.6f, 0.6f, 0.6f, 0.4f);
                 settings.VertexDefault = new Color(0.9f, 0.9f, 0.9f, 0.6f);
-                settings.LineInactiveModel = new Color(0.4f, 0.4f, 0.4f, 0.4f);
-                settings.LineDefault = new Color(0.2f, 0.6f, 0.4f, 0.7f);
+                settings.LineUnselectedMesh = new Color(0.6f, 0.6f, 0.6f, 0.6f);
+                settings.Background = new Color(0.8f, 0.8f, 0.82f, 1f);
                 return settings;
             }
+        }
+
+        // ============================================================
+        // ヘルパーメソッド
+        // ============================================================
+
+        /// <summary>
+        /// アルファ値を適用した色を取得
+        /// </summary>
+        public Color WithAlpha(Color baseColor, float alpha)
+        {
+            return new Color(baseColor.r, baseColor.g, baseColor.b, baseColor.a * alpha);
         }
 
         // ============================================================
@@ -204,20 +233,16 @@ namespace MeshFactory.Core.Rendering
             if (mat == null) return;
 
             // 階層色
-            mat.SetColor("_ColorInactiveModel", LineInactiveModel);
-            mat.SetColor("_ColorDefault", LineDefault);
-            mat.SetColor("_ColorActive", LineActive);
-            mat.SetColor("_ColorMeshSelected", LineMeshSelected);
+            mat.SetColor("_ColorUnselectedMesh", LineUnselectedMesh);
+            mat.SetColor("_ColorSelectedMesh", LineSelectedMesh);
 
             // 状態色
             mat.SetColor("_ColorHovered", LineHovered);
             mat.SetColor("_ColorEdgeSelected", EdgeSelected);
-            mat.SetColor("_ColorDragging", LineDragging);
 
             // 特殊色
-            mat.SetColor("_ColorAuxLine", AuxLine);
-            mat.SetColor("_ColorAuxLineSelected", AuxLineSelected);
-            mat.SetColor("_ColorBoundary", BoundaryEdge);
+            mat.SetColor("_ColorAuxLineSelected", AuxLineSelectedMesh);
+            mat.SetColor("_ColorAuxLineUnselected", AuxLineUnselectedMesh);
 
             mat.SetFloat("_MirrorAlpha", MirrorAlpha);
         }

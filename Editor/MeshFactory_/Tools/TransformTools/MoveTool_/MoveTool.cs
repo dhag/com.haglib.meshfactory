@@ -400,6 +400,12 @@ namespace MeshFactory.Tools
                 {
                     _affectedVertices.Add(v);
                 }
+                
+                // デバッグログ
+                if (ctx.SelectionState.Edges.Count > 0 || ctx.SelectionState.Faces.Count > 0 || ctx.SelectionState.Lines.Count > 0)
+                {
+                    Debug.Log($"[MoveTool] SelectionState: V={ctx.SelectionState.Vertices.Count}, E={ctx.SelectionState.Edges.Count}, F={ctx.SelectionState.Faces.Count}, L={ctx.SelectionState.Lines.Count} → AffectedVertices={_affectedVertices.Count}");
+                }
             }
             else if (ctx.SelectedVertices != null)
             {

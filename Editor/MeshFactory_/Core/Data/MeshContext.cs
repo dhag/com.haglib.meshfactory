@@ -294,6 +294,79 @@ namespace MeshFactory.Data
         }
 
         // ================================================================
+        // 変換行列（ワールド座標変換用）
+        // ================================================================
+
+        /// <summary>
+        /// ローカル変換行列（BoneTransformから生成）
+        /// UseLocalTransformがfalseの場合は単位行列
+        /// </summary>
+        public Matrix4x4 LocalMatrix
+        {
+            get
+            {
+                if (BoneTransform == null || !BoneTransform.UseLocalTransform)
+                    return Matrix4x4.identity;
+                return BoneTransform.TransformMatrix;
+            }
+        }
+
+        /// <summary>
+        /// ワールド変換行列（親子関係を考慮した累積行列）
+        /// ComputeWorldMatrices()で計算される
+        /// </summary>
+        public Matrix4x4 WorldMatrix { get; set; } = Matrix4x4.identity;
+
+        /// <summary>
+        /// ワールド変換行列の逆行列（キャッシュ）
+        /// </summary>
+        public Matrix4x4 WorldMatrixInverse { get; set; } = Matrix4x4.identity;
+
+        /// <summary>
+        /// バインドポーズ行列（スキンドメッシュ用）
+        /// インポート時のボーンのワールド位置の逆行列
+        /// SkinningMatrix = WorldMatrix × BindPose
+        /// </summary>
+        public Matrix4x4 BindPose { get; set; } = Matrix4x4.identity;
+
+        /// <summary>
+        /// スキニング行列を取得（WorldMatrix × BindPose）
+        /// </summary>
+        public Matrix4x4 SkinningMatrix => WorldMatrix * BindPose;
+
+        /// <summary>
+        /// ローカル座標をワールド座標に変換
+        /// </summary>
+        public Vector3 LocalToWorld(Vector3 localPos)
+        {
+            return WorldMatrix.MultiplyPoint3x4(localPos);
+        }
+
+        /// <summary>
+        /// ワールド座標をローカル座標に変換
+        /// </summary>
+        public Vector3 WorldToLocal(Vector3 worldPos)
+        {
+            return WorldMatrixInverse.MultiplyPoint3x4(worldPos);
+        }
+
+        /// <summary>
+        /// ローカル方向をワールド方向に変換（法線等）
+        /// </summary>
+        public Vector3 LocalToWorldDirection(Vector3 localDir)
+        {
+            return WorldMatrix.MultiplyVector(localDir).normalized;
+        }
+
+        /// <summary>
+        /// ワールド方向をローカル方向に変換
+        /// </summary>
+        public Vector3 WorldToLocalDirection(Vector3 worldDir)
+        {
+            return WorldMatrixInverse.MultiplyVector(worldDir).normalized;
+        }
+
+        // ================================================================
         // オブジェクト属性（MQOからインポート）
         // ================================================================
 

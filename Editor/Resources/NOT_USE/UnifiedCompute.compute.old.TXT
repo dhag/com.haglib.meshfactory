@@ -12,7 +12,6 @@
 #pragma kernel ComputeFaceVisibility
 #pragma kernel ComputeLineVisibility
 #pragma kernel UpdateHoverFlags
-#pragma kernel TransformVertices
 
 // ============================================================
 // SelectionFlags定義（C#側と同期）
@@ -219,10 +218,20 @@ void ClearFaceBuffers(uint3 id : SV_DispatchThreadID)
 // ============================================================
 // スクリーン座標計算
 // 
-// 【座標系の設計】
-// GUI.BeginClip()使用により、ローカル座標系（0,0起点）で動作。
-// _ViewportParams には (0, 0, width, height) が設定される。
-// タブオフセット計算は不要。
+// 【座標系の設計 - 重要】
+// 既存システム（MeshGPURenderer.cs + Compute2D_GPU.compute）との互換性のため、
+// スクリーン座標は _ViewportParams.x/y 付きの「グローバル座標」を使用する。
+// 
+// 呼び出し側では:
+// - _ViewportParams に adjustedRect（タブオフセット付き）を設定すること
+//   adjustedRect.y = rect.y + tabHeight
+//   tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y
+// 
+// - マウス座標も adjustedRect 座標系に変換してから比較すること
+//   float rY = mousePos.y / rect.height;
+//   float adjMouseY = tabHeight + rY * (rect.height - tabHeight);
+// 
+// CPU版（UnifiedBufferManager_Update.cs）も同じ計算式を使用。
 // ============================================================
 
 [numthreads(64, 1, 1)]
@@ -739,91 +748,5 @@ void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
         {
             _LineFlagsBuffer[lineIdx] = lineFlags & ~FLAG_CULLED;
         }
-    }
-}
-
-// ============================================================
-// ワールド座標変換（統合版）
-// 通常メッシュとスキンドメッシュを統一的に処理
-// 
-// 通常メッシュ: weights=(1,0,0,0), boneIds=(meshIndex,0,0,0)
-// スキンドメッシュ: weights=(w0,w1,w2,w3), boneIds=(b0,b1,b2,b3)
-// ============================================================
-
-// 変換行列バッファ（メッシュ/ボーンごと）
-// 通常メッシュ: WorldMatrix（親子関係考慮済み）
-// スキンドメッシュ: BoneMatrix（バインドポーズ逆行列 × 現在のボーン行列）
-StructuredBuffer<float4x4> _TransformMatrixBuffer;
-
-// ボーンウェイトバッファ（頂点ごと）
-// x,y,z,w = 各ボーンの影響度（合計1.0）
-// 通常メッシュ: (1,0,0,0)
-StructuredBuffer<float4> _BoneWeightsBuffer;
-
-// ボーンインデックスバッファ（頂点ごと）
-// x,y,z,w = 参照するボーン/メッシュのインデックス
-// 通常メッシュ: (meshIndex,0,0,0)
-StructuredBuffer<uint4> _BoneIndicesBuffer;
-
-// ワールド座標出力バッファ
-RWStructuredBuffer<float3> _WorldPositionBuffer;
-
-// ワールド法線出力バッファ（オプション）
-RWStructuredBuffer<float3> _WorldNormalBuffer;
-
-// 法線入力バッファ（オプション）
-StructuredBuffer<float3> _NormalBuffer;
-
-// 変換モードフラグ
-int _UseWorldTransform;  // 0: ローカル座標コピー, 1: ワールド変換適用
-int _TransformNormals;   // 0: 法線変換しない, 1: 法線も変換
-
-[numthreads(256, 1, 1)]
-void TransformVertices(uint3 id : SV_DispatchThreadID)
-{
-    uint vertexIndex = id.x;
-    if (vertexIndex >= _VertexCount) return;
-    
-    // ローカル座標を取得
-    float3 localPos = _PositionBuffer[vertexIndex];
-    
-    // ワールド変換が無効の場合はそのままコピー
-    if (_UseWorldTransform == 0)
-    {
-        _WorldPositionBuffer[vertexIndex] = localPos;
-        
-        if (_TransformNormals != 0)
-        {
-            _WorldNormalBuffer[vertexIndex] = _NormalBuffer[vertexIndex];
-        }
-        return;
-    }
-    
-    // ボーンウェイトとインデックスを取得
-    float4 weights = _BoneWeightsBuffer[vertexIndex];
-    uint4 boneIds = _BoneIndicesBuffer[vertexIndex];
-    
-    // スキニング行列を計算
-    // 通常メッシュ: weights=(1,0,0,0)なので実質1つの行列のみ
-    // スキンドメッシュ: 最大4つのボーン行列をブレンド
-    float4x4 skinMatrix = 
-        _TransformMatrixBuffer[boneIds.x] * weights.x +
-        _TransformMatrixBuffer[boneIds.y] * weights.y +
-        _TransformMatrixBuffer[boneIds.z] * weights.z +
-        _TransformMatrixBuffer[boneIds.w] * weights.w;
-    
-    // 位置を変換
-    float3 worldPos = mul(skinMatrix, float4(localPos, 1.0)).xyz;
-    _WorldPositionBuffer[vertexIndex] = worldPos;
-    
-    // 法線も変換（オプション）
-    if (_TransformNormals != 0)
-    {
-        float3 localNormal = _NormalBuffer[vertexIndex];
-        
-        // 法線は逆転置行列で変換（スケールがある場合に必要）
-        // 簡易版: 回転成分のみ使用（均一スケール前提）
-        float3 worldNormal = mul((float3x3)skinMatrix, localNormal);
-        _WorldNormalBuffer[vertexIndex] = normalize(worldNormal);
     }
 }

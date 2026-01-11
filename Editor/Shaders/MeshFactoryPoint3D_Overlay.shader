@@ -1,5 +1,15 @@
 Shader "MeshFactory/Point3D_Overlay"
 {
+    Properties
+    {
+        // 頂点色（ShaderColorSettingsから設定）
+        _ColorSelected ("Selected Fill", Color) = (1, 0.6, 0, 0.95)
+        _BorderColorSelected ("Selected Border", Color) = (1, 0.6, 0, 1)
+        _ColorHovered ("Hovered Fill", Color) = (1, 0, 0, 0.95)
+        _BorderColorHovered ("Hovered Border", Color) = (1, 0, 0, 1)
+        _ColorDefault ("Default Fill", Color) = (1, 1, 1, 0.8)
+        _BorderColorDefault ("Default Border", Color) = (0.7, 0.7, 0.7, 1)
+    }
     SubShader
     {
         Tags { "RenderType"="Transparent" "Queue"="Overlay" }
@@ -38,6 +48,14 @@ Shader "MeshFactory/Point3D_Overlay"
                 float4 borderColor : COLOR1;
                 float2 uv : TEXCOORD0;
             };
+            
+            // 色プロパティ
+            float4 _ColorSelected;
+            float4 _BorderColorSelected;
+            float4 _ColorHovered;
+            float4 _BorderColorHovered;
+            float4 _ColorDefault;
+            float4 _BorderColorDefault;
             
             StructuredBuffer<uint> _VertexFlagsBuffer;
             int _UseVertexFlagsBuffer;
@@ -78,21 +96,25 @@ Shader "MeshFactory/Point3D_Overlay"
                 
                 o.pos = UnityObjectToClipPos(v.vertex);
                 
+                // ShaderColorSettingsからの色を使用
                 float selectState = v.color.a;
                 if (selectState > 0.9)
-                {//選択色
-                    o.fillColor = float4(1, 0.8, 0, 0.95);
-                    o.borderColor = float4(1, 0, 0, 1);
+                {
+                    // 選択状態
+                    o.fillColor = _ColorSelected;
+                    o.borderColor = _BorderColorSelected;
                 }
                 else if (selectState < 0.1)
-                {//ホバー色
-                    o.fillColor = float4(0, 1, 1, 0.95);
-                    o.borderColor = float4(1, 0.0, 0.0, 1);
+                {
+                    // ホバー状態
+                    o.fillColor = _ColorHovered;
+                    o.borderColor = _BorderColorHovered;
                 }
                 else
-                {//普通色
-                    o.fillColor = float4(1, 1, 1, 0.8);
-                    o.borderColor = float4(0.7, 0.7, 0.7, 1);
+                {
+                    // 通常状態
+                    o.fillColor = _ColorDefault;
+                    o.borderColor = _BorderColorDefault;
                 }
                 
                 o.uv = v.uv;

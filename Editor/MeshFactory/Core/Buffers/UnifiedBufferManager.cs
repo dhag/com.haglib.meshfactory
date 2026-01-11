@@ -4,12 +4,32 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Model;
 
 namespace MeshFactory.Core
 {
+    /// <summary>
+    /// uint4構造体（GPUバッファ転送用）
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct UInt4
+    {
+        public uint x, y, z, w;
+
+        public UInt4(uint x, uint y, uint z, uint w)
+        {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.w = w;
+        }
+
+        public static readonly int Stride = sizeof(uint) * 4;
+    }
+
     /// <summary>
     /// 統合バッファ管理クラス
     /// 複数モデル・複数メッシュを1つのバッファセットで管理
@@ -24,6 +44,23 @@ namespace MeshFactory.Core
         private const int DEFAULT_LINE_CAPACITY = 131072;
         private const int DEFAULT_FACE_CAPACITY = 65536;
         private const int DEFAULT_INDEX_CAPACITY = 262144;
+
+        // ============================================================
+        // MeshContext → UnifiedMeshIndex マッピング
+        // ============================================================
+        
+        // MeshContextsのインデックス → UnifiedSystem内メッシュインデックス
+        private Dictionary<int, int> _contextToUnifiedMeshIndex = new Dictionary<int, int>();
+        
+        /// <summary>
+        /// MeshContextsのインデックスをUnifiedSystem内メッシュインデックスに変換
+        /// </summary>
+        public int ContextToUnifiedMeshIndex(int contextIndex)
+        {
+            if (_contextToUnifiedMeshIndex.TryGetValue(contextIndex, out int unifiedIndex))
+                return unifiedIndex;
+            return -1;
+        }
 
         // ============================================================
         // バッファ（Level 5: Topology）
@@ -53,9 +90,29 @@ namespace MeshFactory.Core
         // バッファ（Level 4: Transform）
         // ============================================================
 
-        // 頂点位置
+        // 頂点位置（ローカル座標）
         private ComputeBuffer _positionBuffer;
         private Vector3[] _positions;
+
+        // ワールド座標変換後の頂点位置（GPU計算出力）
+        private ComputeBuffer _worldPositionBuffer;
+        private Vector3[] _worldPositions;
+
+        // 変換行列（メッシュごと）
+        private ComputeBuffer _transformMatrixBuffer;
+        private Matrix4x4[] _transformMatrices;
+
+        // 頂点→メッシュインデックス（各頂点がどのメッシュに属するか）
+        private ComputeBuffer _vertexMeshIndexBuffer;
+        private uint[] _vertexMeshIndices;
+
+        // ボーンウェイト（スキンメッシュ用、通常メッシュは (1,0,0,0)）
+        private ComputeBuffer _boneWeightsBuffer;
+        private Vector4[] _boneWeights;
+
+        // ボーンインデックス（スキンメッシュ用、通常メッシュは (meshIndex,0,0,0)）
+        private ComputeBuffer _boneIndicesBuffer;
+        private UInt4[] _boneIndices;
 
         // 法線
         private ComputeBuffer _normalBuffer;
@@ -194,6 +251,11 @@ namespace MeshFactory.Core
 
         // バッファアクセス
         public ComputeBuffer PositionBuffer => _positionBuffer;
+        public ComputeBuffer WorldPositionBuffer => _worldPositionBuffer;
+        public ComputeBuffer TransformMatrixBuffer => _transformMatrixBuffer;
+        public ComputeBuffer VertexMeshIndexBuffer => _vertexMeshIndexBuffer;
+        public ComputeBuffer BoneWeightsBuffer => _boneWeightsBuffer;
+        public ComputeBuffer BoneIndicesBuffer => _boneIndicesBuffer;
         public ComputeBuffer NormalBuffer => _normalBuffer;
         public ComputeBuffer UVBuffer => _uvBuffer;
         public ComputeBuffer IndexBuffer => _indexBuffer;
@@ -211,6 +273,25 @@ namespace MeshFactory.Core
 
         // CPU配列アクセス
         public Vector3[] Positions => _positions;
+        
+        /// <summary>
+        /// 描画に使用する位置配列を取得
+        /// UseWorldPositions=trueの場合はワールド座標、falseの場合はローカル座標を返す
+        /// </summary>
+        public Vector3[] GetDisplayPositions()
+        {
+            if (UseWorldPositions && _worldPositions != null && _worldPositions.Length >= _totalVertexCount)
+            {
+                return _worldPositions;
+            }
+            return _positions;
+        }
+        
+        /// <summary>
+        /// ワールド座標を描画に使用するか
+        /// </summary>
+        public bool UseWorldPositions { get; set; } = false;
+        
         public uint[] VertexFlags => _vertexFlags;
         public uint[] LineFlags => _lineFlags;
         public UnifiedLine[] Lines => _lines;
@@ -250,10 +331,14 @@ namespace MeshFactory.Core
 
             // CPU配列初期化
             _positions = new Vector3[_vertexCapacity];
+            _worldPositions = new Vector3[_vertexCapacity];
             _normals = new Vector3[_vertexCapacity];
             _uvs = new Vector2[_vertexCapacity];
             _vertexFlags = new uint[_vertexCapacity];
             _mirrorPositions = new Vector3[_vertexCapacity];
+            _vertexMeshIndices = new uint[_vertexCapacity];
+            _boneWeights = new Vector4[_vertexCapacity];
+            _boneIndices = new UInt4[_vertexCapacity];
 
             _lines = new UnifiedLine[_lineCapacity];
             _lineFlags = new uint[_lineCapacity];
@@ -265,6 +350,7 @@ namespace MeshFactory.Core
 
             _meshInfos = new MeshInfo[256];
             _modelInfos = new ModelInfo[16];
+            _transformMatrices = new Matrix4x4[256];
 
             _cameraInfo = new CameraInfo[1];
             _screenPositions = new Vector2[_vertexCapacity];
@@ -343,6 +429,11 @@ namespace MeshFactory.Core
             // Level 4: Transform
             _boundsBuffer = new ComputeBuffer(_meshInfos.Length, AABB.Stride);
             _mirrorPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
+            _worldPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
+            _transformMatrixBuffer = new ComputeBuffer(Mathf.Max(1, _meshInfos.Length), sizeof(float) * 16);
+            _vertexMeshIndexBuffer = new ComputeBuffer(_vertexCapacity, sizeof(uint));
+            _boneWeightsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4);
+            _boneIndicesBuffer = new ComputeBuffer(_vertexCapacity, UInt4.Stride);
 
             // Level 3: Selection
             _vertexFlagsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(uint));
@@ -421,10 +512,14 @@ namespace MeshFactory.Core
         {
             // CPU配列リサイズ
             Array.Resize(ref _positions, _vertexCapacity);
+            Array.Resize(ref _worldPositions, _vertexCapacity);
             Array.Resize(ref _normals, _vertexCapacity);
             Array.Resize(ref _uvs, _vertexCapacity);
             Array.Resize(ref _vertexFlags, _vertexCapacity);
             Array.Resize(ref _mirrorPositions, _vertexCapacity);
+            Array.Resize(ref _vertexMeshIndices, _vertexCapacity);
+            Array.Resize(ref _boneWeights, _vertexCapacity);
+            Array.Resize(ref _boneIndices, _vertexCapacity);
             Array.Resize(ref _screenPositions, _vertexCapacity);
             Array.Resize(ref _screenPositions4, _vertexCapacity);
             Array.Resize(ref _mirrorScreenPositions4, _vertexCapacity);
@@ -457,6 +552,11 @@ namespace MeshFactory.Core
         private void ReleaseAllBuffers()
         {
             ReleaseBuffer(ref _positionBuffer);
+            ReleaseBuffer(ref _worldPositionBuffer);
+            ReleaseBuffer(ref _transformMatrixBuffer);
+            ReleaseBuffer(ref _vertexMeshIndexBuffer);
+            ReleaseBuffer(ref _boneWeightsBuffer);
+            ReleaseBuffer(ref _boneIndicesBuffer);
             ReleaseBuffer(ref _normalBuffer);
             ReleaseBuffer(ref _uvBuffer);
             ReleaseBuffer(ref _indexBuffer);

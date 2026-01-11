@@ -153,44 +153,64 @@ namespace MeshFactory.Core
                 newHoveredFace = _bufferManager.FindNearestFace(_mousePosition, _backfaceCullingEnabled);
             }
 
-            // ホバー優先度: 頂点 > 線分 > 面
-            // 上位がヒットしている場合、下位はクリア
-            if (newHoveredVertex >= 0)
+            // 選択モードを取得
+            var mode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
+            bool hasVertexMode = (mode & MeshSelectMode.Vertex) != 0;
+            bool hasEdgeMode = (mode & MeshSelectMode.Edge) != 0;
+            bool hasFaceMode = (mode & MeshSelectMode.Face) != 0;
+            bool hasLineMode = (mode & MeshSelectMode.Line) != 0;
+            bool hasEdgeOrLineMode = hasEdgeMode || hasLineMode;
+
+            // 選択モードと優先度に基づいてホバーをフィルタリング
+            // 優先度: 頂点 > 線分 > 面
+            // ただし、そのモードが有効な場合のみ
+            
+            int effectiveVertex = -1;
+            int effectiveLine = -1;
+            int effectiveFace = -1;
+
+            // 頂点モードが有効で頂点ヒットあり → 頂点ホバー
+            if (hasVertexMode && newHoveredVertex >= 0)
             {
-                // 頂点がヒット → 線分・面はクリア
-                newHoveredLine = -1;
-                newHoveredFace = -1;
+                effectiveVertex = newHoveredVertex;
+                // 頂点ヒット時は下位をクリア
             }
-            else if (newHoveredLine >= 0)
+            // 線分モードが有効で線分ヒットあり → 線分ホバー
+            else if (hasEdgeOrLineMode && newHoveredLine >= 0)
             {
-                // 線分がヒット → 面はクリア
-                newHoveredFace = -1;
+                effectiveLine = newHoveredLine;
+                // 線分ヒット時は面をクリア
+            }
+            // 面モードが有効で面ヒットあり → 面ホバー
+            else if (hasFaceMode && newHoveredFace >= 0)
+            {
+                effectiveFace = newHoveredFace;
             }
 
-            // ホバー状態更新
+            // ホバー状態を更新
             bool changed = false;
 
-            if (newHoveredVertex != _hoveredVertexIndex)
+            if (effectiveVertex != _hoveredVertexIndex)
             {
-                _hoveredVertexIndex = newHoveredVertex;
+                _hoveredVertexIndex = effectiveVertex;
                 changed = true;
             }
 
-            if (newHoveredLine != _hoveredLineIndex)
+            if (effectiveLine != _hoveredLineIndex)
             {
-                _hoveredLineIndex = newHoveredLine;
+                _hoveredLineIndex = effectiveLine;
                 changed = true;
             }
 
-            if (newHoveredFace != _hoveredFaceIndex)
+            if (effectiveFace != _hoveredFaceIndex)
             {
-                _hoveredFaceIndex = newHoveredFace;
+                _hoveredFaceIndex = effectiveFace;
                 changed = true;
             }
 
             if (changed)
             {
-                // ホバーフラグを更新（頂点・線分・面すべて）
+                // ホバーフラグを更新（有効なもののみ）
                 _bufferManager.ClearHover();
                 
                 if (_hoveredVertexIndex >= 0)

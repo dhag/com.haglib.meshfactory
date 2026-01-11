@@ -138,24 +138,14 @@ public partial class SimpleMeshFactory
     /// previewRect: タブなしのプレビュー領域（rect座標系）
     /// mousePosition: rect座標系のマウス位置
     /// 
-    /// 内部でadjustedRect座標系に変換してからUnifiedSystemに渡す。
+    /// GUI.BeginClip()使用後はローカル座標系（0,0起点）になるため、
+    /// タブオフセット計算は不要。previewRectとmousePositionをそのまま使用。
     /// </summary>
     private void UpdateUnifiedFrame(Rect previewRect, Vector2 mousePosition)
     {
-        // タブ高さを計算（ウィンドウタブ分のオフセット）
-        float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
-        
-        // adjustedRect: タブオフセット付きの領域
-        Rect adjustedRect = new Rect(
-            previewRect.x, 
-            previewRect.y + tabHeight, 
-            previewRect.width, 
-            previewRect.height - tabHeight);
-        
-        // マウス座標を adjustedRect 座標系に変換
-        float rY = mousePosition.y / previewRect.height;
-        float adjMouseY = tabHeight + rY * (previewRect.height - tabHeight);
-        Vector2 adjustedMousePos = new Vector2(mousePosition.x, adjMouseY);
+        // GUI.BeginClip()後はローカル座標系なので、タブオフセット不要
+        // previewRectは (0, 0, width, height) の形式
+        // mousePositionもローカル座標系
 
         // カメラ位置計算
         Quaternion rotation = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
@@ -166,8 +156,8 @@ public partial class SimpleMeshFactory
             cameraPosition,
             _cameraTarget,
             fov,
-            adjustedRect,
-            adjustedMousePos,
+            previewRect,
+            mousePosition,
             _rotationZ);
     }
 
@@ -381,35 +371,10 @@ public partial class SimpleMeshFactory
             bufMgr.ComputeScreenPositionsGPU(camera.projectionMatrix * camera.worldToCameraMatrix, viewport);
             bufMgr.DispatchFaceVisibilityGPU();
             bufMgr.DispatchLineVisibilityGPU();
-            
-            // デバッグ: ラインフラグの状態
-            var lineFlags = bufMgr.LineFlags;
-            var lines = bufMgr.Lines;
-            if (lineFlags != null && lines != null)
-            {
-                int total = Mathf.Min(bufMgr.TotalLineCount, lineFlags.Length);
-                
-                // メッシュごとのライン数をカウント
-                var meshLineCounts = new Dictionary<uint, int>();
-                for (int i = 0; i < total; i++)
-                {
-                    uint mi = lines[i].MeshIndex;
-                    if (!meshLineCounts.ContainsKey(mi)) meshLineCounts[mi] = 0;
-                    meshLineCounts[mi]++;
-                }
-                
-                // 最初の5つのメッシュのライン数
-                var sb = new System.Text.StringBuilder();
-                sb.Append($"[PrepareUnifiedDrawing] Lines total={total}, selectedIndex={_selectedIndex}, MeshIndex distribution: ");
-                int count = 0;
-                foreach (var kvp in meshLineCounts)
-                {
-                    if (count++ >= 5) { sb.Append("..."); break; }
-                    sb.Append($"[{kvp.Key}]={kvp.Value} ");
-                }
-                Debug.Log(sb.ToString());
-            }
         }
+        
+        // ContextIndex → UnifiedMeshIndex に変換
+        int unifiedMeshIndex = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
         
         _unifiedAdapter.PrepareDrawing(
             camera,
@@ -417,7 +382,7 @@ public partial class SimpleMeshFactory
             showVertices,
             showUnselectedWireframe,
             showUnselectedVertices,
-            _selectedIndex,
+            unifiedMeshIndex,
             pointSize,
             alpha);
     }

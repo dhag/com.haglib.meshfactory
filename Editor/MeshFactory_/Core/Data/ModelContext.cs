@@ -621,5 +621,130 @@ namespace MeshFactory.Model
 
             return CurrentMeshContext.MeshObject.CalculateBounds();
         }
+
+        // ================================================================
+        // ワールド変換行列計算
+        // ================================================================
+
+        /// <summary>
+        /// 全MeshContextのワールド変換行列を計算
+        /// HierarchyParentIndexに基づいて親子関係を解決し、
+        /// 累積変換行列をWorldMatrixに設定する
+        /// </summary>
+        public void ComputeWorldMatrices()
+        {
+            if (MeshContextList == null || MeshContextList.Count == 0)
+                return;
+
+            // トポロジカルソートして親から順に処理
+            var sortedIndices = TopologicalSortByHierarchy();
+
+            foreach (int index in sortedIndices)
+            {
+                var ctx = MeshContextList[index];
+                if (ctx == null) continue;
+
+                Matrix4x4 localMatrix = ctx.LocalMatrix;
+                int parentIndex = ctx.HierarchyParentIndex;
+
+                if (parentIndex >= 0 && parentIndex < MeshContextList.Count)
+                {
+                    // 親がある場合：親のワールド行列 × 自身のローカル行列
+                    var parent = MeshContextList[parentIndex];
+                    ctx.WorldMatrix = parent.WorldMatrix * localMatrix;
+                }
+                else
+                {
+                    // ルートの場合：ローカル行列 = ワールド行列
+                    ctx.WorldMatrix = localMatrix;
+                }
+
+                // 逆行列をキャッシュ
+                ctx.WorldMatrixInverse = ctx.WorldMatrix.inverse;
+            }
+        }
+
+        /// <summary>
+        /// HierarchyParentIndexに基づいてトポロジカルソート
+        /// 親が先に来るようにインデックスを並べ替える
+        /// </summary>
+        private List<int> TopologicalSortByHierarchy()
+        {
+            int count = MeshContextList.Count;
+            var result = new List<int>(count);
+            var visited = new bool[count];
+            var inProgress = new bool[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                if (!visited[i])
+                {
+                    TopologicalSortVisit(i, visited, inProgress, result);
+                }
+            }
+
+            return result;
+        }
+
+        private void TopologicalSortVisit(int index, bool[] visited, bool[] inProgress, List<int> result)
+        {
+            if (index < 0 || index >= MeshContextList.Count)
+                return;
+
+            if (inProgress[index])
+            {
+                // 循環参照を検出（警告を出して無視）
+                Debug.LogWarning($"[ModelContext] Circular hierarchy detected at index {index}");
+                return;
+            }
+
+            if (visited[index])
+                return;
+
+            inProgress[index] = true;
+
+            // 親を先に処理
+            var ctx = MeshContextList[index];
+            if (ctx != null)
+            {
+                int parentIndex = ctx.HierarchyParentIndex;
+                if (parentIndex >= 0 && parentIndex < MeshContextList.Count && parentIndex != index)
+                {
+                    TopologicalSortVisit(parentIndex, visited, inProgress, result);
+                }
+            }
+
+            inProgress[index] = false;
+            visited[index] = true;
+            result.Add(index);
+        }
+
+        /// <summary>
+        /// 指定インデックスのMeshContextのワールド行列のみを再計算
+        /// 親の行列は既に計算済みである前提
+        /// </summary>
+        public void ComputeWorldMatrix(int index)
+        {
+            if (index < 0 || index >= MeshContextList.Count)
+                return;
+
+            var ctx = MeshContextList[index];
+            if (ctx == null) return;
+
+            Matrix4x4 localMatrix = ctx.LocalMatrix;
+            int parentIndex = ctx.HierarchyParentIndex;
+
+            if (parentIndex >= 0 && parentIndex < MeshContextList.Count)
+            {
+                var parent = MeshContextList[parentIndex];
+                ctx.WorldMatrix = parent.WorldMatrix * localMatrix;
+            }
+            else
+            {
+                ctx.WorldMatrix = localMatrix;
+            }
+
+            ctx.WorldMatrixInverse = ctx.WorldMatrix.inverse;
+        }
     }
 }

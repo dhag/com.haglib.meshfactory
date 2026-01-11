@@ -113,7 +113,7 @@ namespace MeshFactory.Core.Rendering
             _wireframeOverlayShader = Shader.Find("MeshFactory/Wireframe3D_Overlay");
 
             // デバッグ: シェーダーロード状況
-            //Debug.Log($"[UnifiedRenderer] Shader load status: Point3D={_pointShader != null}, Wireframe3D={_wireframeShader != null}, Point3D_Overlay={_pointOverlayShader != null}, Wireframe3D_Overlay={_wireframeOverlayShader != null}");
+            Debug.Log($"[UnifiedRenderer] Shader load status: Point3D={_pointShader != null}, Wireframe3D={_wireframeShader != null}, Point3D_Overlay={_pointOverlayShader != null}, Wireframe3D_Overlay={_wireframeOverlayShader != null}");
 
             if (_pointShader == null || _wireframeShader == null)
             {
@@ -235,7 +235,7 @@ namespace MeshFactory.Core.Rendering
             var uvs = new List<Vector2>();  // 元のラインインデックス格納用
             var indices = new List<int>();
 
-            var positions = _bufferManager.Positions;
+            var positions = _bufferManager.GetDisplayPositions();
             var lines = _bufferManager.Lines;
             var lineFlags = _bufferManager.LineFlags;
             int vertexCount = _bufferManager.TotalVertexCount;
@@ -268,21 +268,21 @@ namespace MeshFactory.Core.Rendering
 
                 float alpha = isSelected ? selectedAlpha : unselectedAlpha;
 
-                // 色設定
+                // ShaderColorSettingsから色を取得
                 Color normalColor = isSelected
-                    ? new Color(0f, 1f, 0.5f, 0.9f * alpha)   // 緑
-                    : new Color(0.5f, 0.5f, 0.5f, 0.7f * alpha); // グレー
-                Color selectedColor = new Color(0f, 1f, 1f, 1f * alpha);
+                    ? _colorSettings.WithAlpha(_colorSettings.LineSelectedMesh, alpha)
+                    : _colorSettings.WithAlpha(_colorSettings.LineUnselectedMesh, alpha);
+                Color edgeSelectedColor = _colorSettings.WithAlpha(_colorSettings.EdgeSelected, alpha);
                 Color auxColor = isSelected
-                    ? new Color(1f, 0.3f, 1f, 0.9f * alpha)
-                    : new Color(0.7f, 0.3f, 0.7f, 0.5f * alpha);
-                Color hoverColor = _colorSettings.LineHovered;// new Color(1f, 1f, 0f, 1f * alpha);
+                    ? _colorSettings.WithAlpha(_colorSettings.AuxLineSelectedMesh, alpha)
+                    : _colorSettings.WithAlpha(_colorSettings.AuxLineUnselectedMesh, alpha);
+                Color hoverColor = _colorSettings.WithAlpha(_colorSettings.LineHovered, alpha);
 
                 Color lineColor;
                 if (isHovered)
                     lineColor = hoverColor;
                 else if (isEdgeSelected)
-                    lineColor = selectedColor;
+                    lineColor = edgeSelectedColor;
                 else if (line.IsAuxLine)
                     lineColor = auxColor;
                 else
@@ -366,7 +366,7 @@ namespace MeshFactory.Core.Rendering
             var uvs2 = new List<Vector2>();  // 元のバッファインデックス格納用
             var indices = new List<int>();
 
-            var positions = _bufferManager.Positions;
+            var positions = _bufferManager.GetDisplayPositions();
             var vertexFlags = _bufferManager.VertexFlags;
             var meshInfos = _bufferManager.MeshInfos;
 
@@ -512,6 +512,10 @@ namespace MeshFactory.Core.Rendering
         /// </summary>
         public void QueuePoints()
         {
+            // ShaderColorSettingsをマテリアルに適用
+            ApplyPointColorSettings(_pointMaterial);
+            ApplyPointColorSettings(_pointOverlayMaterial);
+            
             // フラグバッファは常に設定（MeshSelected非表示に必要）
             bool hasBuffer = _bufferManager?.VertexFlagsBuffer != null;
             if (hasBuffer && _pointMaterial != null)
@@ -541,13 +545,28 @@ namespace MeshFactory.Core.Rendering
                 _pointOverlayMaterial.SetBuffer("_VertexFlagsBuffer", _bufferManager.VertexFlagsBuffer);
                 _pointOverlayMaterial.SetInt("_UseVertexFlagsBuffer", 1);
                 _pointOverlayMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
-                //Debug.Log($"[QueuePoints] Overlay: BackfaceCullingEnabled={BackfaceCullingEnabled}");
+                Debug.Log($"[QueuePoints] Overlay: BackfaceCullingEnabled={BackfaceCullingEnabled}");
                 
                 var overlayMeshCopy = UnityEngine.Object.Instantiate(_pointMesh);
                 overlayMeshCopy.hideFlags = HideFlags.HideAndDontSave;
                 _pendingMeshes.Add(overlayMeshCopy);
                 _pendingMaterials.Add(_pointOverlayMaterial);
             }
+        }
+
+        /// <summary>
+        /// ShaderColorSettingsを頂点マテリアルに適用
+        /// </summary>
+        private void ApplyPointColorSettings(Material mat)
+        {
+            if (mat == null) return;
+            
+            mat.SetColor("_ColorSelected", _colorSettings.VertexSelected);
+            mat.SetColor("_BorderColorSelected", _colorSettings.VertexBorderSelected);
+            mat.SetColor("_ColorHovered", _colorSettings.VertexHovered);
+            mat.SetColor("_BorderColorHovered", _colorSettings.VertexBorderHovered);
+            mat.SetColor("_ColorDefault", _colorSettings.VertexDefault);
+            mat.SetColor("_BorderColorDefault", _colorSettings.VertexBorderDefault);
         }
 
         /// <summary>

@@ -190,6 +190,7 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// UnifiedSystemからホバー結果を取得して_lastHoverHitResultを更新
+    /// Note: インデックスはグローバルインデックスとして保持
     /// </summary>
     private void UpdateLastHoverHitResultFromUnified()
     {
@@ -203,10 +204,11 @@ public partial class SimpleMeshFactory
         // グローバルインデックスを取得
         int globalVertex = _unifiedAdapter.HoverVertexIndex;
         int globalLine = _unifiedAdapter.HoverLineIndex;
+        int globalFace = _unifiedAdapter.HoverFaceIndex;
 
-        // ローカルインデックスに変換
+        // 選択中メッシュのインデックスかチェックし、ローカルインデックスに変換
         int localVertex = -1;
-        int localLine = -1;
+        int localFace = -1;
         float vertexDist = float.MaxValue;
         float lineDist = float.MaxValue;
 
@@ -217,19 +219,34 @@ public partial class SimpleMeshFactory
                 if (meshIdx == _selectedIndex)
                 {
                     localVertex = localIdx;
-                    vertexDist = 0f; // UnifiedSystemでホバー判定済み
+                    vertexDist = 0f;
                 }
             }
         }
 
+        // 線分はグローバルインデックスのまま保持（_edgeCacheはグローバルリスト）
+        // ただし選択中メッシュの線分かチェック
+        int validGlobalLine = -1;
         if (globalLine >= 0)
         {
             if (bufferManager.GlobalToLocalLineIndex(globalLine, out int meshIdx, out int localIdx))
             {
                 if (meshIdx == _selectedIndex)
                 {
-                    localLine = localIdx;
-                    lineDist = 0f; // UnifiedSystemでホバー判定済み
+                    validGlobalLine = globalLine;  // グローバルインデックスを保持
+                    lineDist = 0f;
+                }
+            }
+        }
+
+        // 面はローカルインデックスに変換
+        if (globalFace >= 0)
+        {
+            if (bufferManager.GlobalToLocalFaceIndex(globalFace, out int meshIdx, out int localIdx))
+            {
+                if (meshIdx == _selectedIndex)
+                {
+                    localFace = localIdx;
                 }
             }
         }
@@ -239,10 +256,10 @@ public partial class SimpleMeshFactory
             NearestVertexIndex = localVertex,
             NearestVertexDistance = vertexDist,
             NearestVertexDepth = 0f,
-            NearestLineIndex = localLine,
+            NearestLineIndex = validGlobalLine,  // グローバルインデックス
             NearestLineDistance = lineDist,
             NearestLineDepth = 0f,
-            HitFaceIndices = null
+            HitFaceIndices = localFace >= 0 ? new int[] { localFace } : null
         };
     }
     /// <summary>
@@ -269,71 +286,100 @@ public partial class SimpleMeshFactory
         _meshTopology?.SetMeshObject(meshObject);
 
         // ================================================================
-        // ★ Phase 6: ホバー結果から _hitResultOnMouseDown を構築
+        // ★ ホバー結果から _hitResultOnMouseDown を構築
+        // UnifiedSystemのホバー結果を直接使用
         // ================================================================
         _hitResultOnMouseDown = HitResult.None;
         var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
+        var bufferManager = _unifiedAdapter?.BufferManager;
 
-        if (_edgeCache != null)
+        if (bufferManager != null)
         {
-            var hitResult = _lastHoverHitResult;
+            // グローバルインデックスを取得
+            int globalVertex = _unifiedAdapter.HoverVertexIndex;
+            int globalLine = _unifiedAdapter.HoverLineIndex;
+            int globalFace = _unifiedAdapter.HoverFaceIndex;
 
-            // 頂点ヒット判定（最優先）
-            if (hitResult.HasVertexHit(HOVER_VERTEX_RADIUS) && currentMode.Has(MeshSelectMode.Vertex))
+            // 頂点ヒット判定（頂点モードの場合のみ）
+            if (currentMode.Has(MeshSelectMode.Vertex) && globalVertex >= 0)
             {
-                _hitResultOnMouseDown = new HitResult
+                if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localVertex))
                 {
-                    HitType = MeshSelectMode.Vertex,
-                    VertexIndex = hitResult.NearestVertexIndex,
-                    EdgePair = null,
-                    FaceIndex = -1,
-                    LineIndex = -1
-                };
-            }
-            // 線分ヒット判定（Edge/Line）
-            else if (hitResult.HasLineHit(HOVER_LINE_DISTANCE) &&
-                     hitResult.NearestLineIndex >= 0 &&
-                     hitResult.NearestLineIndex < _edgeCache.Lines.Count)
-            {
-                var lineData = _edgeCache.Lines[hitResult.NearestLineIndex];
-
-                if (lineData.LineType == 1 && currentMode.Has(MeshSelectMode.Line))
-                {
-                    _hitResultOnMouseDown = new HitResult
+                    if (meshIdx == _selectedIndex)
                     {
-                        HitType = MeshSelectMode.Line,
-                        VertexIndex = -1,
-                        EdgePair = null,
-                        FaceIndex = -1,
-                        LineIndex = lineData.FaceIndex
-                    };
-                }
-                else if (lineData.LineType != 1 && currentMode.Has(MeshSelectMode.Edge))
-                {
-                    _hitResultOnMouseDown = new HitResult
-                    {
-                        HitType = MeshSelectMode.Edge,
-                        VertexIndex = -1,
-                        EdgePair = new VertexPair(lineData.V1, lineData.V2),
-                        FaceIndex = -1,
-                        LineIndex = -1
-                    };
+                        _hitResultOnMouseDown = new HitResult
+                        {
+                            HitType = MeshSelectMode.Vertex,
+                            VertexIndex = localVertex,
+                            EdgePair = null,
+                            FaceIndex = -1,
+                            LineIndex = -1
+                        };
+                    }
                 }
             }
-            // 面ヒット判定（最も優先度が低い）
-            else if (hitResult.HasFaceHit && currentMode.Has(MeshSelectMode.Face))
+            
+            // 線分ヒット判定（Edge/Lineモードの場合）
+            if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
+                (currentMode.Has(MeshSelectMode.Edge) || currentMode.Has(MeshSelectMode.Line)) && 
+                globalLine >= 0)
             {
-                int nearestFace = hitResult.GetNearestFaceIndex();
-                if (nearestFace >= 0)
+                if (bufferManager.GetLineVerticesLocal(globalLine, out int meshIdx, out int localV1, out int localV2))
                 {
-                    _hitResultOnMouseDown = new HitResult
+                    if (meshIdx == _selectedIndex)
                     {
-                        HitType = MeshSelectMode.Face,
-                        VertexIndex = -1,
-                        EdgePair = null,
-                        FaceIndex = nearestFace,
-                        LineIndex = -1
-                    };
+                        // LineTypeを取得（UnifiedLineから）
+                        if (bufferManager.GetLineType(globalLine, out bool isAuxLine))
+                        {
+                            if (isAuxLine && currentMode.Has(MeshSelectMode.Line))
+                            {
+                                // 補助線 → Line選択
+                                if (bufferManager.GetLineFaceIndex(globalLine, out int faceIndex))
+                                {
+                                    _hitResultOnMouseDown = new HitResult
+                                    {
+                                        HitType = MeshSelectMode.Line,
+                                        VertexIndex = -1,
+                                        EdgePair = null,
+                                        FaceIndex = -1,
+                                        LineIndex = faceIndex
+                                    };
+                                }
+                            }
+                            else if (!isAuxLine && currentMode.Has(MeshSelectMode.Edge))
+                            {
+                                // 通常エッジ → Edge選択
+                                _hitResultOnMouseDown = new HitResult
+                                {
+                                    HitType = MeshSelectMode.Edge,
+                                    VertexIndex = -1,
+                                    EdgePair = new VertexPair(localV1, localV2),
+                                    FaceIndex = -1,
+                                    LineIndex = -1
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 面ヒット判定（Faceモードの場合）
+            if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
+                currentMode.Has(MeshSelectMode.Face) && globalFace >= 0)
+            {
+                if (bufferManager.GlobalToLocalFaceIndex(globalFace, out int meshIdx, out int localFace))
+                {
+                    if (meshIdx == _selectedIndex)
+                    {
+                        _hitResultOnMouseDown = new HitResult
+                        {
+                            HitType = MeshSelectMode.Face,
+                            VertexIndex = -1,
+                            EdgePair = null,
+                            FaceIndex = localFace,
+                            LineIndex = -1
+                        };
+                    }
                 }
             }
         }
@@ -416,6 +462,9 @@ public partial class SimpleMeshFactory
             _toolManager.toolContext.SelectedVertices = _selectedVertices;
             _toolManager.toolContext.SelectionState = _selectionState;  // ★ SelectionStateも更新
         }
+
+        // UnifiedSystemに選択変更を通知
+        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
 
         // 表示を即座に更新
         Repaint();
@@ -696,6 +745,9 @@ public partial class SimpleMeshFactory
             {
                 _selectedVertices.Add(v);
             }
+
+            // UnifiedSystemに選択変更を通知
+            _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
         }
 
         // 選択が変更されていたら記録

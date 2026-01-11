@@ -8,6 +8,7 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
 using MeshFactory.Rendering;
+using MeshFactory.Core.Rendering;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public partial class SimpleMeshFactory
@@ -46,6 +47,28 @@ public partial class SimpleMeshFactory
     // ================================================================
     private void DrawPreview()
     {
+        // ワールド変換行列を計算（親子関係を解決）
+        _model?.ComputeWorldMatrices();
+
+        // GPU変換を更新（ローカル/ワールド表示モードに応じて）
+        var editorState = _undoController?.EditorState;
+        bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
+        bool useLocalTransform = editorState?.ShowLocalTransform ?? false;
+        
+        // ワールドモード: WorldMatrix（親子関係適用）
+        // ローカルモード: LocalMatrix（親子関係無視）
+        // どちらでもない: 変換なし
+        if (useWorldTransform || useLocalTransform)
+        {
+            _unifiedAdapter?.UpdateTransform(useWorldTransform);  // trueならWorld、falseならLocal
+            
+            // スキンドメッシュの面描画用：GPU変換後の頂点をUnityMeshに書き戻す
+            if (useWorldTransform)
+            {
+                _unifiedAdapter?.WritebackTransformedVertices();
+            }
+        }
+
         Rect rect = GUILayoutUtility.GetRect(
             200, 10000,
             200, 10000,
@@ -73,11 +96,22 @@ public partial class SimpleMeshFactory
         if (Event.current.type != EventType.Repaint)
             return;
 
-        _preview.BeginPreview(rect, GUIStyle.none);
+        // ============================================================
+        // クリップ領域を設定
+        // これにより描画が中央ペイン内に制限される
+        // また、座標系が (0,0) 起点のローカル座標になる
+        // ============================================================
+        GUI.BeginClip(rect);
+        
+        // ローカル座標系での領域（0,0起点）
+        Rect localRect = new Rect(0, 0, rect.width, rect.height);
 
+        _preview.BeginPreview(localRect, GUIStyle.none);
 
+        // ShaderColorSettingsから背景色を取得
+        var bgColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
         _preview.camera.clearFlags = CameraClearFlags.SolidColor;
-        _preview.camera.backgroundColor = new Color(0.15f, 0.15f, 0.18f, 1f);
+        _preview.camera.backgroundColor = bgColors.Background;
 
         _preview.camera.transform.position = camPos;
         Quaternion lookRot = Quaternion.LookRotation(_cameraTarget - camPos, Vector3.up);
@@ -92,9 +126,9 @@ public partial class SimpleMeshFactory
         _preview.camera.transform.position = camPos;
         _preview.camera.transform.rotation = lookRot * rollRot;
 
-        // ★新システム毎フレーム更新
+        // ★新システム毎フレーム更新（ローカル座標系を使用）
         Vector2 mousePos = Event.current.mousePosition;
-        UpdateUnifiedFrame(rect, mousePos);
+        UpdateUnifiedFrame(localRect, mousePos);
 
 
 
@@ -169,7 +203,7 @@ public partial class SimpleMeshFactory
         CleanupUnifiedDrawing();
 
         Texture result = _preview.EndPreview();
-        GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
+        GUI.DrawTexture(localRect, result, ScaleMode.StretchToFill, false);
 
         // 選択メッシュ用の表示行列を取得
         Matrix4x4 selectedDisplayMatrix = GetDisplayMatrix(_selectedIndex);
@@ -177,7 +211,10 @@ public partial class SimpleMeshFactory
         // ================================================================
         // 面ホバー描画（2Dオーバーレイ）
         // ================================================================
-        DrawHoveredFace(rect, meshContext, selectedDisplayMatrix);
+        DrawHoveredFace(localRect, meshContext, selectedDisplayMatrix);
+
+        // 選択面ハイライト描画
+        DrawSelectedFaces(localRect, meshContext, selectedDisplayMatrix);
 
         // ================================================================
         // 頂点インデックス表示（2Dオーバーレイ）
@@ -185,27 +222,27 @@ public partial class SimpleMeshFactory
         if (_showVertexIndices && meshContext != null && meshContext.IsVisible)
         {
             _unifiedAdapter?.ReadBackVertexFlags();
-            DrawVertexIndices(rect, meshContext.MeshObject, camPos, _cameraTarget, selectedDisplayMatrix);
+            DrawVertexIndices(localRect, meshContext.MeshObject, camPos, _cameraTarget, selectedDisplayMatrix);
         }
 
         // ローカル原点マーカー
-        DrawOriginMarker(rect, camPos, _cameraTarget);
+        DrawOriginMarker(localRect, camPos, _cameraTarget);
 
         // ツールのギズモ描画
-        UpdateToolContext(meshContext, rect, camPos, dist);
+        UpdateToolContext(meshContext, localRect, camPos, dist);
         _currentTool?.DrawGizmo(_toolContext);
 
         // WorkPlaneギズモ描画
         if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
         {
-            DrawWorkPlaneGizmo(rect, camPos, _cameraTarget);
+            DrawWorkPlaneGizmo(localRect, camPos, _cameraTarget);
         }
 
         // 対称平面ギズモ描画
         if (_symmetrySettings != null && _symmetrySettings.IsEnabled && _symmetrySettings.ShowSymmetryPlane)
         {
             Bounds meshBounds = meshContext.MeshObject != null ? meshContext.MeshObject.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
-            DrawSymmetryPlane(rect, camPos, _cameraTarget, meshBounds);
+            DrawSymmetryPlane(localRect, camPos, _cameraTarget, meshBounds);
         }
 
         // 矩形選択オーバーレイ描画
@@ -213,6 +250,9 @@ public partial class SimpleMeshFactory
         {
             DrawBoxSelectOverlay();
         }
+
+        // クリップ領域を終了
+        GUI.EndClip();
     }
 
     // ================================================================
@@ -264,12 +304,13 @@ public partial class SimpleMeshFactory
             screenPoints[i] = screenPos;
         }
 
-        // 半透明で塗りつぶし
-        Color fillColor = new Color(0f, 1f, 1f, 0.2f);
+        // ShaderColorSettingsから色を取得
+        var colors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
+        Color fillColor = colors.FaceHoveredFill;
         DrawFilledPolygon(screenPoints, fillColor);
 
         // 輪郭線
-        Color edgeColor = new Color(0f, 1f, 1f, 0.8f);
+        Color edgeColor = colors.FaceHoveredEdge;
         UnityEditor_Handles.BeginGUI();
         UnityEditor_Handles.color = edgeColor;
         for (int i = 0; i < face.VertexCount; i++)
@@ -278,6 +319,70 @@ public partial class SimpleMeshFactory
             UnityEditor_Handles.DrawAAPolyLine(2f, screenPoints[i], screenPoints[next]);
         }
         UnityEditor_Handles.EndGUI();
+    }
+
+    /// <summary>
+    /// 選択中の面をハイライト描画
+    /// </summary>
+    private void DrawSelectedFaces(Rect previewRect, MeshContext meshContext, Matrix4x4 displayMatrix)
+    {
+        if (meshContext?.MeshObject == null || _selectionState == null)
+            return;
+
+        if (_selectionState.Faces.Count == 0)
+            return;
+
+        var meshObject = meshContext.MeshObject;
+        Vector3 camPos = _preview.camera.transform.position;
+        Vector3 lookAt = _cameraTarget;
+
+        // ShaderColorSettingsから色を取得
+        var colors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
+        Color fillColor = colors.FaceSelectedFill;
+        Color edgeColor = colors.FaceSelectedEdge;
+
+        foreach (int faceIndex in _selectionState.Faces)
+        {
+            if (faceIndex < 0 || faceIndex >= meshObject.FaceCount)
+                continue;
+
+            var face = meshObject.Faces[faceIndex];
+            if (face.VertexCount < 3)
+                continue;
+
+            // 面の頂点をスクリーン座標に変換
+            var screenPoints = new Vector2[face.VertexCount];
+            bool valid = true;
+            for (int i = 0; i < face.VertexCount; i++)
+            {
+                int vi = face.VertexIndices[i];
+                if (vi < 0 || vi >= meshObject.VertexCount)
+                {
+                    valid = false;
+                    break;
+                }
+
+                Vector3 worldPos = displayMatrix.MultiplyPoint3x4(meshObject.Vertices[vi].Position);
+                Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+                screenPoints[i] = screenPos;
+            }
+
+            if (!valid)
+                continue;
+
+            // 半透明で塗りつぶし
+            DrawFilledPolygon(screenPoints, fillColor);
+
+            // 輪郭線
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.color = edgeColor;
+            for (int i = 0; i < face.VertexCount; i++)
+            {
+                int next = (i + 1) % face.VertexCount;
+                UnityEditor_Handles.DrawAAPolyLine(2f, screenPoints[i], screenPoints[next]);
+            }
+            UnityEditor_Handles.EndGUI();
+        }
     }
 
     /// <summary>
@@ -405,19 +510,21 @@ public partial class SimpleMeshFactory
         if (!previewRect.Contains(originScreen))
             return;
 
+        // ShaderColorSettingsから軸色を取得
+        var axisColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
         float axisLength = 0.2f;
 
         Vector3 xEnd = origin + Vector3.right * axisLength;
         Vector2 xScreen = WorldToPreviewPos(xEnd, previewRect, camPos, lookAt);
-        DrawDottedLine(originScreen, xScreen, new Color(1f, 0.3f, 0.3f, 0.7f));
+        DrawDottedLine(originScreen, xScreen, axisColors.AxisX);
 
         Vector3 yEnd = origin + Vector3.up * axisLength;
         Vector2 yScreen = WorldToPreviewPos(yEnd, previewRect, camPos, lookAt);
-        DrawDottedLine(originScreen, yScreen, new Color(0.3f, 1f, 0.3f, 0.7f));
+        DrawDottedLine(originScreen, yScreen, axisColors.AxisY);
 
         Vector3 zEnd = origin + Vector3.forward * axisLength;
         Vector2 zScreen = WorldToPreviewPos(zEnd, previewRect, camPos, lookAt);
-        DrawDottedLine(originScreen, zScreen, new Color(0.3f, 0.3f, 1f, 0.7f));
+        DrawDottedLine(originScreen, zScreen, axisColors.AxisZ);
 
         UnityEditor_Handles.BeginGUI();
         float centerSize = 4f;
@@ -440,11 +547,10 @@ public partial class SimpleMeshFactory
             Mathf.Abs(_boxSelectEnd.y - _boxSelectStart.y)
         );
 
-        Color fillColor = new Color(0.3f, 0.6f, 1f, 0.2f);
-        UnityEditor_Handles.DrawRect(selectRect, fillColor);
-
-        Color borderColor = new Color(0.3f, 0.6f, 1f, 0.8f);
-        DrawRectBorder(selectRect, borderColor);
+        // ShaderColorSettingsから色を取得
+        var boxColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
+        UnityEditor_Handles.DrawRect(selectRect, boxColors.BoxSelectFill);
+        DrawRectBorder(selectRect, boxColors.BoxSelectBorder);
 
         UnityEditor_Handles.EndGUI();
     }
@@ -455,57 +561,30 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// メッシュのローカルトランスフォーム行列を取得
-    /// BoneTransform の Position/Rotation/Scale から生成
+    /// MeshContext.LocalMatrix を使用（BoneTransform.UseLocalTransformを考慮済み）
     /// </summary>
     private Matrix4x4 GetLocalTransformMatrix(MeshContext ctx)
     {
-        if (ctx?.BoneTransform == null || !ctx.BoneTransform.UseLocalTransform)
+        if (ctx == null)
             return Matrix4x4.identity;
 
-        return ctx.BoneTransform.TransformMatrix;
+        return ctx.LocalMatrix;
     }
 
     /// <summary>
     /// メッシュのワールドトランスフォーム行列を取得
-    /// HierarchyParentIndex を遡って累積計算
+    /// MeshContext.WorldMatrix を使用（ComputeWorldMatrices()で事前計算済み）
     /// </summary>
     private Matrix4x4 GetWorldTransformMatrix(int meshIndex)
     {
         if (meshIndex < 0 || meshIndex >= _meshContextList.Count)
             return Matrix4x4.identity;
 
-        // 親子チェーンを遡ってスタックに積む
-        var chain = new System.Collections.Generic.Stack<int>();
-        int current = meshIndex;
+        var ctx = _meshContextList[meshIndex];
+        if (ctx == null)
+            return Matrix4x4.identity;
 
-        // 循環参照検出用
-        var visited = new System.Collections.Generic.HashSet<int>();
-
-        while (current >= 0 && current < _meshContextList.Count)
-        {
-            if (visited.Contains(current))
-                break; // 循環参照を検出したら終了
-
-            visited.Add(current);
-            chain.Push(current);
-
-            var ctx = _meshContextList[current];
-            current = ctx?.HierarchyParentIndex ?? -1;
-        }
-
-        // ルートから順に行列を累積
-        Matrix4x4 worldMatrix = Matrix4x4.identity;
-        while (chain.Count > 0)
-        {
-            int idx = chain.Pop();
-            var ctx = _meshContextList[idx];
-            if (ctx?.BoneTransform != null && ctx.BoneTransform.UseLocalTransform)
-            {
-                worldMatrix *= ctx.BoneTransform.TransformMatrix;
-            }
-        }
-
-        return worldMatrix;
+        return ctx.WorldMatrix;
     }
 
     /// <summary>
@@ -519,10 +598,11 @@ public partial class SimpleMeshFactory
         if (editorState == null)
             return Matrix4x4.identity;
 
-        // WorldTransform が優先（両方ONの場合）
+        // WorldTransformモードでは頂点は既にGPUで変換済み（WritebackTransformedVertices）
+        // なのでIdentityを返す
         if (editorState.ShowWorldTransform)
         {
-            return GetWorldTransformMatrix(meshIndex);
+            return Matrix4x4.identity;
         }
         else if (editorState.ShowLocalTransform)
         {

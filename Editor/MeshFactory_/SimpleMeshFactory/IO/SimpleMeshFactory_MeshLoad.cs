@@ -130,10 +130,10 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// 選択中のオブジェクトから階層構造を含めて読み込み
-    /// GameObjectの親子関係をHierarchyParentIndexに保持
+    /// ヒエラルキーからメッシュを読み込み
+    /// 選択中のオブジェクトを優先、なければヒエラルキーを検索
     /// </summary>
-    private void LoadMeshFromSelection()
+    private void LoadMeshFromHierarchy()
     {
         var selected = Selection.activeGameObject;
         if (selected == null)
@@ -146,8 +146,18 @@ public partial class SimpleMeshFactory
                 return;
             }
 
-            EditorUtility.DisplayDialog("Info", "GameObjectまたはMeshを選択してください", "OK");
-            return;
+            // 選択がない場合、ヒエラルキーを検索
+            GameObject foundObject = FindFirstMeshInHierarchy();
+            if (foundObject != null)
+            {
+                Debug.Log($"[LoadMeshFromHierarchy] ヒエラルキーから自動検出: {foundObject.name}");
+                selected = foundObject;
+            }
+            else
+            {
+                EditorUtility.DisplayDialog("Info", "GameObjectまたはMeshを選択してください\nヒエラルキー内にメッシュが見つかりませんでした", "OK");
+                return;
+            }
         }
 
         // SkinnedMeshRendererがあるかチェック
@@ -159,9 +169,67 @@ public partial class SimpleMeshFactory
         }
         else
         {
-            // 従来通り階層構造をインポート
+            // 通常メッシュは即座にインポート
             LoadHierarchyFromGameObject(selected, null);
         }
+    }
+
+    /// <summary>
+    /// 旧API互換用（選択から読み込み）
+    /// </summary>
+    private void LoadMeshFromSelection()
+    {
+        LoadMeshFromHierarchy();
+    }
+
+    /// <summary>
+    /// ヒエラルキーのルートオブジェクトを順に検索し、
+    /// メッシュまたはスキンドメッシュを持つ最初のルートを返す
+    /// </summary>
+    private GameObject FindFirstMeshInHierarchy()
+    {
+        // シーン内のすべてのルートオブジェクトを取得
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        var rootObjects = scene.GetRootGameObjects();
+
+        foreach (var root in rootObjects)
+        {
+            // 非アクティブなオブジェクトはスキップ（オプション）
+            // if (!root.activeInHierarchy) continue;
+
+            // 子孫を含めてMeshFilterまたはSkinnedMeshRendererを検索
+            bool hasMesh = HasMeshInDescendants(root);
+            if (hasMesh)
+            {
+                return root;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 指定したオブジェクトまたはその子孫にメッシュがあるかチェック
+    /// </summary>
+    private bool HasMeshInDescendants(GameObject obj)
+    {
+        // MeshFilterをチェック
+        var meshFilters = obj.GetComponentsInChildren<MeshFilter>(true);
+        foreach (var mf in meshFilters)
+        {
+            if (mf.sharedMesh != null)
+                return true;
+        }
+
+        // SkinnedMeshRendererをチェック
+        var skinnedRenderers = obj.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        foreach (var smr in skinnedRenderers)
+        {
+            if (smr.sharedMesh != null)
+                return true;
+        }
+
+        return false;
     }
 
     // ================================================================
@@ -258,6 +326,8 @@ public partial class SimpleMeshFactory
         // ボーン階層を収集（ボーン取り込み時）
         var boneTransforms = new List<Transform>();
         var boneToIndex = new Dictionary<Transform, int>();
+        var boneBindPoses = new Dictionary<Transform, Matrix4x4>(); // BindPose収集用
+        
         if (boneRootTransform != null)
         {
             CollectBoneTransformsDepthFirst(boneRootTransform, boneTransforms);
@@ -266,6 +336,24 @@ public partial class SimpleMeshFactory
                 boneToIndex[boneTransforms[i]] = i;
             }
             Debug.Log($"[LoadHierarchyFromGameObject] Collected {boneTransforms.Count} bones from '{boneRootTransform.name}'");
+            
+            // 全SkinnedMeshRendererからBindPoseを収集
+            var smrs = rootGameObject.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var smr in smrs)
+            {
+                if (smr.sharedMesh == null || smr.bones == null) continue;
+                var bindposes = smr.sharedMesh.bindposes;
+                if (bindposes == null) continue;
+                
+                for (int i = 0; i < smr.bones.Length && i < bindposes.Length; i++)
+                {
+                    var bone = smr.bones[i];
+                    if (bone != null && !boneBindPoses.ContainsKey(bone))
+                    {
+                        boneBindPoses[bone] = bindposes[i];
+                    }
+                }
+            }
         }
 
         // Undo記録用：変更前の状態を保存
@@ -311,9 +399,22 @@ public partial class SimpleMeshFactory
         {
             for (int i = 0; i < boneTransforms.Count; i++)
             {
-                var boneCtx = CreateMeshContextFromBone(boneTransforms[i], boneToIndex);
+                var boneTransform = boneTransforms[i];
+                var boneCtx = CreateMeshContextFromBone(boneTransform, boneToIndex);
                 _meshContextList.Add(boneCtx);
                 boneCtx.MaterialOwner = _model;
+                
+                // BindPoseを設定（収集できた場合）
+                if (boneBindPoses.TryGetValue(boneTransform, out Matrix4x4 bindPose))
+                {
+                    boneCtx.BindPose = bindPose;
+                }
+                else
+                {
+                    // BindPoseがない場合はワールド位置の逆行列を使用
+                    boneCtx.BindPose = boneTransform.worldToLocalMatrix;
+                }
+                // WorldMatrixはComputeWorldMatrices()で計算される
             }
             boneStartIndex = boneTransforms.Count;
         }
@@ -439,10 +540,12 @@ public partial class SimpleMeshFactory
         if (bone.parent != null && boneToIndex.TryGetValue(bone.parent, out int parentIndex))
         {
             meshContext.ParentIndex = parentIndex;
+            meshContext.HierarchyParentIndex = parentIndex;  // ComputeWorldMatricesで使用
         }
         else
         {
             meshContext.ParentIndex = -1;
+            meshContext.HierarchyParentIndex = -1;
         }
 
         // ローカルトランスフォームをMeshContextにも設定
@@ -556,8 +659,9 @@ public partial class SimpleMeshFactory
         // メッシュデータを変換
         if (sourceMesh != null)
         {
-            // BoneWeight情報も含めて読み込み
-            meshContext.MeshObject.FromUnityMesh(sourceMesh, true);
+            // スキンドメッシュの場合はBoneWeight情報も読み込む
+            bool isSkinnedMesh = (boneIndexRemap != null && boneIndexRemap.Count > 0);
+            meshContext.MeshObject.FromUnityMesh(sourceMesh, true, isSkinnedMesh);
 
             // BoneWeightのインデックスを再マッピング
             if (boneIndexRemap != null && boneIndexRemap.Count > 0)
@@ -613,12 +717,15 @@ public partial class SimpleMeshFactory
             if (!vertex.HasBoneWeight) continue;
 
             var bw = vertex.BoneWeight.Value;
+            
+            // weight > 0 のボーンのみリマップ、それ以外は0に設定
+            // リマップに失敗した場合も0に設定（無効なインデックス参照を防ぐ）
             var newBw = new BoneWeight
             {
-                boneIndex0 = remap.TryGetValue(bw.boneIndex0, out int idx0) ? idx0 : bw.boneIndex0,
-                boneIndex1 = remap.TryGetValue(bw.boneIndex1, out int idx1) ? idx1 : bw.boneIndex1,
-                boneIndex2 = remap.TryGetValue(bw.boneIndex2, out int idx2) ? idx2 : bw.boneIndex2,
-                boneIndex3 = remap.TryGetValue(bw.boneIndex3, out int idx3) ? idx3 : bw.boneIndex3,
+                boneIndex0 = (bw.weight0 > 0 && remap.TryGetValue(bw.boneIndex0, out int idx0)) ? idx0 : 0,
+                boneIndex1 = (bw.weight1 > 0 && remap.TryGetValue(bw.boneIndex1, out int idx1)) ? idx1 : 0,
+                boneIndex2 = (bw.weight2 > 0 && remap.TryGetValue(bw.boneIndex2, out int idx2)) ? idx2 : 0,
+                boneIndex3 = (bw.weight3 > 0 && remap.TryGetValue(bw.boneIndex3, out int idx3)) ? idx3 : 0,
                 weight0 = bw.weight0,
                 weight1 = bw.weight1,
                 weight2 = bw.weight2,

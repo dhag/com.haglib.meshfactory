@@ -227,6 +227,7 @@ namespace MeshFactory.Localization
             ["FromAsset"] = new() { ["en"] = "From Mesh Asset...", ["ja"] = "アセットから...", ["hi"] = "あせっとから..." },
             ["FromPrefab"] = new() { ["en"] = "From Prefab...", ["ja"] = "プレハブから...", ["hi"] = "ぷれはぶから..." },
             ["FromSelection"] = new() { ["en"] = "From Selection", ["ja"] = "選択から", ["hi"] = "せんたくから" },
+            ["FromHierarchy"] = new() { ["en"] = "From Hierarchy", ["ja"] = "ヒエラルキーから", ["hi"] = "ひえらるきーから" },
             ["CreateMesh"] = new() { ["en"] = "Create Mesh", ["ja"] = "メッシュ作成", ["hi"] = "つくる" },
             ["AddToCurrent"] = new() { ["en"] = "Add to Current", ["ja"] = "現在に追加", ["hi"] = "いまのにたす" },
             ["AutoMerge"] = new() { ["en"] = "Auto Merge", ["ja"] = "自動マージ", ["hi"] = "じどうがったい" },

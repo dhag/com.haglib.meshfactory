@@ -79,6 +79,9 @@ namespace MeshFactory.Core
             Debug.Log($"[BuildFromMeshContexts] meshCount={meshCount}, totalVerts={totalVerts}, totalLines={totalLines}, totalFaces={totalFaces}, _meshInfos.Length={_meshInfos?.Length ?? 0}");
             EnsureCapacity(totalVerts, totalLines, totalFaces, totalIndices, meshCount);
 
+            // マッピングをクリア
+            _contextToUnifiedMeshIndex.Clear();
+
             // データ構築
             uint vertexOffset = 0;
             uint lineOffset = 0;
@@ -90,6 +93,9 @@ namespace MeshFactory.Core
                 var meshContext = meshContexts[meshIdx];
                 if (meshContext?.MeshObject == null)
                     continue;
+
+                // マッピングを記録: MeshContextインデックス → UnifiedMeshインデックス
+                _contextToUnifiedMeshIndex[meshIdx] = _meshCount;
 
                 var meshObject = meshContext.MeshObject;
 
@@ -167,6 +173,27 @@ namespace MeshFactory.Core
                 _normals[globalIdx] = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
                 // UVsリストの最初の要素を使用（なければゼロ）
                 _uvs[globalIdx] = vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero;
+
+                // メッシュインデックス（頂点→メッシュマッピング）
+                _vertexMeshIndices[globalIdx] = (uint)meshIndex;
+
+                // ボーンウェイトとインデックス
+                if (vertex.HasBoneWeight)
+                {
+                    var bw = vertex.BoneWeight.Value;
+                    _boneWeights[globalIdx] = new Vector4(bw.weight0, bw.weight1, bw.weight2, bw.weight3);
+                    _boneIndices[globalIdx] = new UInt4(
+                        (uint)bw.boneIndex0,
+                        (uint)bw.boneIndex1,
+                        (uint)bw.boneIndex2,
+                        (uint)bw.boneIndex3);
+                }
+                else
+                {
+                    // 通常メッシュ: メッシュ自身の変換行列のみ使用
+                    _boneWeights[globalIdx] = new Vector4(1, 0, 0, 0);
+                    _boneIndices[globalIdx] = new UInt4((uint)meshIndex, 0, 0, 0);
+                }
 
                 // フラグ計算
                 _vertexFlags[globalIdx] = (uint)_flagManager.ComputeVertexFlags(
@@ -354,6 +381,9 @@ namespace MeshFactory.Core
                 _normalBuffer.SetData(_normals, 0, 0, _totalVertexCount);
                 _uvBuffer.SetData(_uvs, 0, 0, _totalVertexCount);
                 _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
+                _vertexMeshIndexBuffer?.SetData(_vertexMeshIndices, 0, 0, _totalVertexCount);
+                _boneWeightsBuffer?.SetData(_boneWeights, 0, 0, _totalVertexCount);
+                _boneIndicesBuffer?.SetData(_boneIndices, 0, 0, _totalVertexCount);
             }
 
             if (_totalLineCount > 0)

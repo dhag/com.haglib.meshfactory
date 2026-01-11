@@ -107,6 +107,10 @@ public partial class SimpleMeshFactory
         {
             RecordSelectionChange(oldSelection, _selectedVertices);
         }
+        
+        // UnifiedSystemに選択変更を通知
+        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+        
         Repaint();
     }
 
@@ -132,6 +136,10 @@ public partial class SimpleMeshFactory
         {
             RecordSelectionChange(oldSelection, _selectedVertices);
         }
+        
+        // UnifiedSystemに選択変更を通知
+        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+        
         Repaint();
     }
 
@@ -143,6 +151,10 @@ public partial class SimpleMeshFactory
         var oldSelection = new HashSet<int>(_selectedVertices);
         _selectedVertices.Clear();
         RecordSelectionChange(oldSelection, _selectedVertices);
+        
+        // UnifiedSystemに選択変更を通知
+        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+        
         Repaint();
     }
 
