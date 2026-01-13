@@ -179,6 +179,7 @@ namespace Poly_Ling.Core.Rendering
         // メッシュ構築
         // ============================================================
 
+        /*
         /// <summary>
         /// ワイヤーフレームメッシュを構築（後方互換用オーバーロード）
         /// </summary>
@@ -186,18 +187,187 @@ namespace Poly_Ling.Core.Rendering
         {
             // 全メッシュ描画（後方互換）
             UpdateWireframeMesh(-1, true, alpha, alpha);
-        }
+        }*/
 
         /// <summary>
         /// ワイヤーフレームメッシュを構築（選択/非選択フィルタリング対応）
+        /// 
+        /// 動くけど思いや。
         /// </summary>
         /// <param name="selectedMeshIndex">選択メッシュインデックス（-1で全選択扱い）</param>
         /// <param name="showUnselected">非選択メッシュを表示するか</param>
         /// <param name="selectedAlpha">選択メッシュのアルファ値</param>
         /// <param name="unselectedAlpha">非選択メッシュのアルファ値</param>
+        public void UpdateWireframeMesh0001(
+            int selectedMeshIndex,
+            bool showUnselected,
+            Camera cam,
+            float lineWidthPx = 1.0f,
+            float selectedAlpha = 1f,
+            float unselectedAlpha = 0.4f)
+        {
+            if (_bufferManager == null || cam == null)
+            {
+                if (_wireframeMesh != null) _wireframeMesh.Clear();
+                return;
+            }
+
+            int lineCount = _bufferManager.TotalLineCount;
+            int vertexCount = _bufferManager.TotalVertexCount;
+
+            if (lineCount <= 0)
+            {
+                if (_wireframeMesh != null) _wireframeMesh.Clear();
+                return;
+            }
+
+            if (_wireframeMesh == null)
+            {
+                _wireframeMesh = new Mesh();
+                _wireframeMesh.name = "UnifiedWireframeMesh";
+                _wireframeMesh.hideFlags = HideFlags.HideAndDontSave;
+                _wireframeMesh.indexFormat = IndexFormat.UInt32;
+            }
+            else
+            {
+                _wireframeMesh.Clear();
+            }
+
+            var vertices = new List<Vector3>(lineCount * 4);
+            var colors = new List<Color>(lineCount * 4);
+            var uvs0 = new List<Vector2>(lineCount * 4); // (lineIndex, 0/1) などに使う
+            var indices = new List<int>(lineCount * 6);
+
+            var positions = _bufferManager.GetDisplayPositions();
+            var lines = _bufferManager.Lines;
+            var lineFlags = _bufferManager.LineFlags;
+
+            int screenH = Mathf.Max(1, cam.pixelHeight);
+
+            for (int i = 0; i < lineCount; i++)
+            {
+                var line = lines[i];
+                int v1 = (int)line.V1;
+                int v2 = (int)line.V2;
+
+                if ((uint)v1 >= (uint)vertexCount || (uint)v2 >= (uint)vertexCount)
+                    continue;
+
+                int lineMeshIndex = (int)line.MeshIndex;
+                bool isSelected = (selectedMeshIndex < 0) || (lineMeshIndex == selectedMeshIndex);
+                if (!isSelected && !showUnselected)
+                    continue;
+
+                uint flags = (lineFlags != null && i < lineFlags.Length) ? lineFlags[i] : 0;
+                bool isHovered = (flags & (uint)SelectionFlags.Hovered) != 0;
+                bool isEdgeSelected = (flags & (uint)SelectionFlags.EdgeSelected) != 0;
+
+                Vector3 p1 = positions[v1];
+                Vector3 p2 = positions[v2];
+
+                float alpha = isSelected ? selectedAlpha : unselectedAlpha;
+
+                Color normalColor = isSelected
+                    ? _colorSettings.WithAlpha(_colorSettings.LineSelectedMesh, alpha)
+                    : _colorSettings.WithAlpha(_colorSettings.LineUnselectedMesh, alpha);
+                Color edgeSelectedColor = _colorSettings.WithAlpha(_colorSettings.EdgeSelected, alpha);
+                Color auxColor = isSelected
+                    ? _colorSettings.WithAlpha(_colorSettings.AuxLineSelectedMesh, alpha)
+                    : _colorSettings.WithAlpha(_colorSettings.AuxLineUnselectedMesh, alpha);
+                Color hoverColor = _colorSettings.WithAlpha(_colorSettings.LineHovered, alpha);
+
+                Color lineColor;
+                if (isHovered) lineColor = hoverColor;
+                else if (isEdgeSelected) lineColor = edgeSelectedColor;
+                else if (line.IsAuxLine) lineColor = auxColor;
+                else lineColor = normalColor;
+
+                // ---- 太さ（px）→ world幅へ換算 ----
+                // 線分の中点の深度で換算する（簡易だが安定しやすい）
+                Vector3 mid = 0.5f * (p1 + p2);
+                float widthWorld;
+
+                if (cam.orthographic)
+                {
+                    // 画面の縦サイズに対するworld高さは 2*orthoSize
+                    float worldPerPixel = (2f * cam.orthographicSize) / screenH;
+                    widthWorld = lineWidthPx * worldPerPixel;
+                }
+                else
+                {
+                    float depth = Vector3.Dot(mid - cam.transform.position, cam.transform.forward);
+                    depth = Mathf.Max(0.0001f, depth);
+
+                    float halfFovRad = 0.5f * cam.fieldOfView * Mathf.Deg2Rad;
+                    float worldScreenHeightAtDepth = 2f * depth * Mathf.Tan(halfFovRad);
+                    float worldPerPixel = worldScreenHeightAtDepth / screenH;
+                    widthWorld = lineWidthPx * worldPerPixel;
+                }
+
+                // ---- クアッドの横方向ベクトルを作る ----
+                Vector3 dir = (p2 - p1);
+                float len = dir.magnitude;
+                if (len < 1e-6f) continue;
+                dir /= len;
+
+                // カメラ前方向と線方向に垂直な方向（画面上での太さ方向）
+                Vector3 side = Vector3.Cross(cam.transform.forward, dir);
+                float sideLen = side.magnitude;
+                if (sideLen < 1e-6f)
+                {
+                    // 線がカメラ前方向とほぼ平行でsideが不安定な場合、別軸でフォールバック
+                    side = Vector3.Cross(cam.transform.up, dir);
+                    sideLen = side.magnitude;
+                    if (sideLen < 1e-6f) continue;
+                }
+                side /= sideLen;
+
+                Vector3 off = side * (0.5f * widthWorld);
+
+                // ---- 4頂点（p1±off, p2±off） ----
+                int baseIdx = vertices.Count;
+
+                vertices.Add(p1 - off); // 0
+                vertices.Add(p1 + off); // 1
+                vertices.Add(p2 + off); // 2
+                vertices.Add(p2 - off); // 3
+
+                colors.Add(lineColor);
+                colors.Add(lineColor);
+                colors.Add(lineColor);
+                colors.Add(lineColor);
+
+                // lineIndexをUV0.xに残す（既存の用途を維持しやすい）
+                // UV0.yは端点識別など（0: p1側, 1: p2側）に使える
+                uvs0.Add(new Vector2(i, 0));
+                uvs0.Add(new Vector2(i, 0));
+                uvs0.Add(new Vector2(i, 1));
+                uvs0.Add(new Vector2(i, 1));
+
+                // ---- 2三角形 ----
+                indices.Add(baseIdx + 0);
+                indices.Add(baseIdx + 1);
+                indices.Add(baseIdx + 2);
+
+                indices.Add(baseIdx + 0);
+                indices.Add(baseIdx + 2);
+                indices.Add(baseIdx + 3);
+            }
+
+            _wireframeMesh.SetVertices(vertices);
+            _wireframeMesh.SetColors(colors);
+            _wireframeMesh.SetUVs(0, uvs0);
+            _wireframeMesh.SetIndices(indices, MeshTopology.Triangles, 0, true);
+            _wireframeMesh.RecalculateBounds(); // 必要なら
+        }
+
+
+
         public void UpdateWireframeMesh(
             int selectedMeshIndex,
             bool showUnselected,
+            Camera cam=null,
+            float lineWidthPx = 1.0f,
             float selectedAlpha = 1f,
             float unselectedAlpha = 0.4f)
         {

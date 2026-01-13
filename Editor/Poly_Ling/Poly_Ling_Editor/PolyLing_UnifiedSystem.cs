@@ -352,6 +352,7 @@ public partial class PolyLing
         bool showUnselectedWireframe,
         bool showUnselectedVertices,
         float pointSize,
+        float lineWidthPx = 1.0f,
         float alpha = 1f)
     {
         // 背面カリング設定を反映
@@ -386,6 +387,7 @@ public partial class PolyLing
             showUnselectedVertices,
             unifiedMeshIndex,
             pointSize,
+            lineWidthPx,
             alpha);
     }
 }

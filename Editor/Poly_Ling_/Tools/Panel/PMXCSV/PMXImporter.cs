@@ -97,8 +97,19 @@ namespace Poly_Ling.PMX
 
             try
             {
-                // パース
-                var document = PMXCSVParser.ParseFile(filePath);
+                // 拡張子で判定してパース
+                PMXDocument document;
+                string ext = Path.GetExtension(filePath).ToLower();
+                if (ext == ".pmx")
+                {
+                    // バイナリPMX
+                    document = PMXReader.Load(filePath);
+                }
+                else
+                {
+                    // CSV
+                    document = PMXCSVParser.ParseFile(filePath);
+                }
                 result.Document = document;
 
                 // 変換
@@ -264,9 +275,9 @@ namespace Poly_Ling.PMX
             }
 
             // TODO: 剛体をインポート（将来実装）
-            if (settings.ShouldImportBodies && document.Bodies.Count > 0)
+            if (settings.ShouldImportBodies && document.RigidBodies.Count > 0)
             {
-                Debug.Log($"[PMXImporter] Bodies import not yet implemented ({document.Bodies.Count} bodies)");
+                Debug.Log($"[PMXImporter] Bodies import not yet implemented ({document.RigidBodies.Count} bodies)");
                 // ConvertBodies(document, settings, result);
             }
 

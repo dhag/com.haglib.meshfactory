@@ -26,7 +26,7 @@ namespace Poly_Ling.PMX
         public static PMXDocument ParseFile(string filePath)
         {
             if (!File.Exists(filePath))
-                throw new FileNotFoundException($"PMX CSV file not found: {filePath}");
+                throw new FileNotFoundException($"PMXCSV CSV file not found: {filePath}");
 
             // UTF-8で読み込み（BOM付きにも対応）
             string content = File.ReadAllText(filePath, Encoding.UTF8);
@@ -434,7 +434,7 @@ namespace Poly_Ling.PMX
             // Toonテクスチャ [29]
             if (fields.Count >= 30)
             {
-                material.ToonTexture = fields[29];
+                material.ToonTexturePath = fields[29];
             }
 
             // メモ [30]
@@ -540,12 +540,12 @@ namespace Poly_Ling.PMX
             if (fields.Count < 5)
                 return;
 
-            var body = new PMXBody
+            var body = new PMXRigidBody
             {
                 Name = fields[1],
                 NameEnglish = fields.Count > 2 ? fields[2] : "",
                 RelatedBoneName = fields[3],
-                BodyType = ParseInt(fields[4])
+                PhysicsMode = ParseInt(fields[4])
             };
 
             if (fields.Count >= 6)
@@ -597,7 +597,7 @@ namespace Poly_Ling.PMX
                 body.Friction = ParseFloat(fields[21]);
             }
 
-            document.Bodies.Add(body);
+            document.RigidBodies.Add(body);
         }
 
         private static void ParseJoint(List<string> fields, PMXDocument document)

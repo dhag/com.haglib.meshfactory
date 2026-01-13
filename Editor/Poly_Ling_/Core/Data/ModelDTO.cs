@@ -167,6 +167,9 @@ namespace Poly_Ling.Serialization
         /// <summary>ミラー距離</summary>
         public float mirrorDistance = 0f;
 
+        /// <summary>ミラー側マテリアルオフセット（ミラー側マテリアルインデックス = 実体側 + オフセット）</summary>
+        public int mirrorMaterialOffset = 0;
+
         // ================================================================
         // モーフ基準データ（Phase: Morph対応）
         // ================================================================
@@ -194,6 +197,9 @@ namespace Poly_Ling.Serialization
     [Serializable]
     public class VertexDTO
     {
+        /// <summary>頂点ID（モーフ追跡等に使用）</summary>
+        public int id;
+
         /// <summary>位置 [x, y, z]</summary>
         public float[] p;
 
@@ -208,6 +214,15 @@ namespace Poly_Ling.Serialization
         /// null = スキニングなし
         /// </summary>
         public float[] bw;
+
+        /// <summary>
+        /// ミラー側ボーンウェイト [i0, i1, i2, i3, w0, w1, w2, w3]
+        /// null = ミラーウェイトなし
+        /// </summary>
+        public float[] mbw;
+
+        /// <summary>頂点フラグ (VertexFlags)</summary>
+        public byte f;
 
         // === 変換ヘルパー ===
 
@@ -301,6 +316,40 @@ namespace Poly_Ling.Serialization
                 b.weight0, b.weight1, b.weight2, b.weight3
             };
         }
+
+        public BoneWeight? GetMirrorBoneWeight()
+        {
+            if (mbw == null || mbw.Length < 8)
+                return null;
+
+            return new BoneWeight
+            {
+                boneIndex0 = (int)mbw[0],
+                boneIndex1 = (int)mbw[1],
+                boneIndex2 = (int)mbw[2],
+                boneIndex3 = (int)mbw[3],
+                weight0 = mbw[4],
+                weight1 = mbw[5],
+                weight2 = mbw[6],
+                weight3 = mbw[7]
+            };
+        }
+
+        public void SetMirrorBoneWeight(BoneWeight? boneWeight)
+        {
+            if (!boneWeight.HasValue)
+            {
+                mbw = null;
+                return;
+            }
+
+            var b = boneWeight.Value;
+            mbw = new float[]
+            {
+                b.boneIndex0, b.boneIndex1, b.boneIndex2, b.boneIndex3,
+                b.weight0, b.weight1, b.weight2, b.weight3
+            };
+        }
     }
 
     // ================================================================
@@ -313,6 +362,9 @@ namespace Poly_Ling.Serialization
     [Serializable]
     public class FaceDTO
     {
+        /// <summary>面ID（モーフ追跡等に使用）</summary>
+        public int id;
+
         /// <summary>頂点インデックスリスト</summary>
         public List<int> v;
 
@@ -324,6 +376,9 @@ namespace Poly_Ling.Serialization
 
         /// <summary>マテリアルインデックス（省略時は0）</summary>
         public int? mi;
+
+        /// <summary>面フラグ (FaceFlags)</summary>
+        public byte f;
     }
 
     // ================================================================

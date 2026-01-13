@@ -9,7 +9,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Localization;
 
-namespace Poly_Ling.PMX
+namespace Poly_Ling.PMXCSV
 {
     /// <summary>
     /// PMX Avatar作成パネル

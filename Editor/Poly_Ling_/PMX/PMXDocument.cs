@@ -1,6 +1,5 @@
-// Assets/Editor/Poly_Ling/PMX/Core/PMXDocument.cs
-// PMX CSVファイルの中間データ構造
-// パース結果を保持し、インポートで使用
+// PMXDocument.cs - PMXデータ構造
+// バイナリ読み込み、CSV読み込み両対応
 
 using System;
 using System.Collections.Generic;
@@ -9,7 +8,7 @@ using UnityEngine;
 namespace Poly_Ling.PMX
 {
     /// <summary>
-    /// PMXドキュメント全体を表す中間データ構造
+    /// PMXドキュメント全体を表すデータ構造
     /// </summary>
     public class PMXDocument
     {
@@ -37,6 +36,9 @@ namespace Poly_Ling.PMX
         /// <summary>面リスト</summary>
         public List<PMXFace> Faces { get; } = new List<PMXFace>();
 
+        /// <summary>テクスチャパスリスト</summary>
+        public List<string> TexturePaths { get; } = new List<string>();
+
         /// <summary>マテリアルリスト</summary>
         public List<PMXMaterial> Materials { get; } = new List<PMXMaterial>();
 
@@ -46,11 +48,17 @@ namespace Poly_Ling.PMX
         /// <summary>モーフリスト</summary>
         public List<PMXMorph> Morphs { get; } = new List<PMXMorph>();
 
+        /// <summary>表示枠リスト</summary>
+        public List<PMXDisplayFrame> DisplayFrames { get; } = new List<PMXDisplayFrame>();
+
         /// <summary>剛体リスト</summary>
-        public List<PMXBody> Bodies { get; } = new List<PMXBody>();
+        public List<PMXRigidBody> RigidBodies { get; } = new List<PMXRigidBody>();
 
         /// <summary>ジョイントリスト</summary>
         public List<PMXJoint> Joints { get; } = new List<PMXJoint>();
+
+        /// <summary>ソフトボディリスト（PMX 2.1）</summary>
+        public List<PMXSoftBody> SoftBodies { get; } = new List<PMXSoftBody>();
 
         // ================================================================
         // ヘルパー
@@ -77,8 +85,16 @@ namespace Poly_Ling.PMX
             }
             return -1;
         }
-    }
 
+        /// <summary>ボーンインデックスからボーン名を取得</summary>
+        public string GetBoneName(int index)
+        {
+            if (index < 0 || index >= Bones.Count)
+                return "";
+            return Bones[index].Name ?? "";
+        }
+    }
+    
     /// <summary>
     /// モデル情報
     /// </summary>
@@ -96,7 +112,7 @@ namespace Poly_Ling.PMX
         /// <summary>コメント（英語）</summary>
         public string CommentEnglish { get; set; } = "";
     }
-
+    
     /// <summary>
     /// 頂点
     /// </summary>
@@ -135,7 +151,7 @@ namespace Poly_Ling.PMX
         /// <summary>SDEF用R1座標</summary>
         public Vector3 SDEF_R1 { get; set; }
     }
-
+    
     /// <summary>
     /// ボーンウェイト
     /// </summary>
@@ -144,10 +160,13 @@ namespace Poly_Ling.PMX
         /// <summary>ボーン名</summary>
         public string BoneName { get; set; }
 
+        /// <summary>ボーンインデックス（バイナリ読み込み時）</summary>
+        public int BoneIndex { get; set; } = -1;
+
         /// <summary>ウェイト値</summary>
         public float Weight { get; set; }
     }
-
+    
     /// <summary>
     /// 面（三角形）
     /// </summary>
@@ -155,6 +174,9 @@ namespace Poly_Ling.PMX
     {
         /// <summary>親マテリアル名</summary>
         public string MaterialName { get; set; }
+
+        /// <summary>マテリアルインデックス（バイナリ読み込み時）</summary>
+        public int MaterialIndex { get; set; } = -1;
 
         /// <summary>面インデックス</summary>
         public int FaceIndex { get; set; }
@@ -168,7 +190,7 @@ namespace Poly_Ling.PMX
         /// <summary>頂点インデックス3</summary>
         public int VertexIndex3 { get; set; }
     }
-
+    
     /// <summary>
     /// マテリアル
     /// </summary>
@@ -201,8 +223,14 @@ namespace Poly_Ling.PMX
         /// <summary>エッジサイズ</summary>
         public float EdgeSize { get; set; } = 1f;
 
+        /// <summary>テクスチャインデックス</summary>
+        public int TextureIndex { get; set; } = -1;
+
         /// <summary>テクスチャパス</summary>
         public string TexturePath { get; set; }
+
+        /// <summary>スフィアテクスチャインデックス</summary>
+        public int SphereTextureIndex { get; set; } = -1;
 
         /// <summary>スフィアテクスチャパス</summary>
         public string SphereTexturePath { get; set; }
@@ -213,8 +241,11 @@ namespace Poly_Ling.PMX
         /// <summary>共有Toonフラグ</summary>
         public bool SharedToon { get; set; }
 
-        /// <summary>Toonテクスチャインデックス/パス</summary>
-        public string ToonTexture { get; set; }
+        /// <summary>Toonテクスチャインデックス</summary>
+        public int ToonTextureIndex { get; set; } = -1;
+
+        /// <summary>Toonテクスチャパス</summary>
+        public string ToonTexturePath { get; set; }
 
         /// <summary>メモ</summary>
         public string Memo { get; set; }
@@ -222,7 +253,7 @@ namespace Poly_Ling.PMX
         /// <summary>面数</summary>
         public int FaceCount { get; set; }
     }
-
+    
     /// <summary>
     /// ボーン
     /// </summary>
@@ -237,6 +268,9 @@ namespace Poly_Ling.PMX
         /// <summary>位置</summary>
         public Vector3 Position { get; set; }
 
+        /// <summary>親ボーンインデックス</summary>
+        public int ParentIndex { get; set; } = -1;
+
         /// <summary>親ボーン名</summary>
         public string ParentBoneName { get; set; }
 
@@ -246,11 +280,17 @@ namespace Poly_Ling.PMX
         /// <summary>ボーンフラグ</summary>
         public int Flags { get; set; }
 
-        /// <summary>接続先ボーン名（またはオフセット）</summary>
+        /// <summary>接続先ボーンインデックス</summary>
+        public int ConnectBoneIndex { get; set; } = -1;
+
+        /// <summary>接続先ボーン名</summary>
         public string ConnectBoneName { get; set; }
 
         /// <summary>接続先オフセット</summary>
         public Vector3 ConnectOffset { get; set; }
+
+        /// <summary>付与親ボーンインデックス</summary>
+        public int GrantParentIndex { get; set; } = -1;
 
         /// <summary>付与親ボーン名</summary>
         public string GrantParentBoneName { get; set; }
@@ -270,6 +310,9 @@ namespace Poly_Ling.PMX
         /// <summary>外部親キー</summary>
         public int ExternalParentKey { get; set; }
 
+        /// <summary>IKターゲットボーンインデックス</summary>
+        public int IKTargetIndex { get; set; } = -1;
+
         /// <summary>IKターゲットボーン名</summary>
         public string IKTargetBoneName { get; set; }
 
@@ -288,6 +331,9 @@ namespace Poly_Ling.PMX
     /// </summary>
     public class PMXIKLink
     {
+        /// <summary>リンクボーンインデックス</summary>
+        public int BoneIndex { get; set; } = -1;
+
         /// <summary>リンクボーン名</summary>
         public string BoneName { get; set; }
 
@@ -330,7 +376,7 @@ namespace Poly_Ling.PMX
         /// <summary>オフセットタイプ</summary>
         public int Type { get; set; }
     }
-
+    
     /// <summary>
     /// 頂点モーフオフセット
     /// </summary>
@@ -344,9 +390,91 @@ namespace Poly_Ling.PMX
     }
 
     /// <summary>
+    /// UVモーフオフセット
+    /// </summary>
+    public class PMXUVMorphOffset : PMXMorphOffset
+    {
+        /// <summary>頂点インデックス</summary>
+        public int VertexIndex { get; set; }
+
+        /// <summary>UVオフセット</summary>
+        public Vector4 Offset { get; set; }
+    }
+
+    /// <summary>
+    /// ボーンモーフオフセット
+    /// </summary>
+    public class PMXBoneMorphOffset : PMXMorphOffset
+    {
+        /// <summary>ボーンインデックス</summary>
+        public int BoneIndex { get; set; }
+
+        /// <summary>移動量</summary>
+        public Vector3 Translation { get; set; }
+
+        /// <summary>回転</summary>
+        public Quaternion Rotation { get; set; }
+    }
+
+    /// <summary>
+    /// マテリアルモーフオフセット
+    /// </summary>
+    public class PMXMaterialMorphOffset : PMXMorphOffset
+    {
+        public int MaterialIndex { get; set; }
+        public byte Operation { get; set; }  // 0:乗算, 1:加算
+        public Color Diffuse { get; set; }
+        public Color Specular { get; set; }
+        public float SpecularPower { get; set; }
+        public Color Ambient { get; set; }
+        public Color EdgeColor { get; set; }
+        public float EdgeSize { get; set; }
+        public Color TextureCoef { get; set; }
+        public Color SphereCoef { get; set; }
+        public Color ToonCoef { get; set; }
+    }
+
+    /// <summary>
+    /// グループモーフオフセット
+    /// </summary>
+    public class PMXGroupMorphOffset : PMXMorphOffset
+    {
+        public int MorphIndex { get; set; }
+        public float Weight { get; set; }
+    }
+
+    /// <summary>
+    /// インパルスモーフオフセット（PMX 2.1）
+    /// </summary>
+    public class PMXImpulseMorphOffset : PMXMorphOffset
+    {
+        public int RigidBodyIndex { get; set; }
+        public bool IsLocal { get; set; }
+        public Vector3 Velocity { get; set; }
+        public Vector3 Torque { get; set; }
+    }
+
+    /// <summary>
+    /// 表示枠
+    /// </summary>
+    public class PMXDisplayFrame
+    {
+        public string Name { get; set; }
+        public string NameEnglish { get; set; }
+        public bool IsSpecial { get; set; }
+        public List<PMXDisplayElement> Elements { get; } = new List<PMXDisplayElement>();
+    }
+
+    public class PMXDisplayElement
+    {
+        public bool IsMorph { get; set; }
+        public int Index { get; set; }
+    }
+
+    /// <summary>
     /// 剛体
     /// </summary>
-    public class PMXBody
+    public class PMXRigidBody
     {
         /// <summary>剛体名</summary>
         public string Name { get; set; }
@@ -354,16 +482,19 @@ namespace Poly_Ling.PMX
         /// <summary>剛体名（英語）</summary>
         public string NameEnglish { get; set; }
 
+        /// <summary>関連ボーンインデックス</summary>
+        public int BoneIndex { get; set; } = -1;
+
         /// <summary>関連ボーン名</summary>
         public string RelatedBoneName { get; set; }
-
-        /// <summary>剛体タイプ（0:Bone, 1:物理演算, 2:物理演算+ボーン追従）</summary>
-        public int BodyType { get; set; }
 
         /// <summary>グループ</summary>
         public int Group { get; set; }
 
-        /// <summary>非衝突グループ文字列</summary>
+        /// <summary>非衝突グループマスク</summary>
+        public ushort CollisionMask { get; set; }
+
+        /// <summary>非衝突グループ文字列（CSV用）</summary>
         public string NonCollisionGroups { get; set; }
 
         /// <summary>形状（0:球, 1:箱, 2:カプセル）</summary>
@@ -375,7 +506,7 @@ namespace Poly_Ling.PMX
         /// <summary>位置</summary>
         public Vector3 Position { get; set; }
 
-        /// <summary>回転（度）</summary>
+        /// <summary>回転</summary>
         public Vector3 Rotation { get; set; }
 
         /// <summary>質量</summary>
@@ -392,6 +523,9 @@ namespace Poly_Ling.PMX
 
         /// <summary>摩擦力</summary>
         public float Friction { get; set; }
+
+        /// <summary>物理演算タイプ（0:Bone追従, 1:物理演算, 2:物理+Bone）</summary>
+        public int PhysicsMode { get; set; }
     }
 
     /// <summary>
@@ -405,19 +539,25 @@ namespace Poly_Ling.PMX
         /// <summary>ジョイント名（英語）</summary>
         public string NameEnglish { get; set; }
 
+        /// <summary>ジョイントタイプ</summary>
+        public int JointType { get; set; }
+
+        /// <summary>剛体Aインデックス</summary>
+        public int RigidBodyIndexA { get; set; } = -1;
+
         /// <summary>剛体A名</summary>
         public string BodyAName { get; set; }
+
+        /// <summary>剛体Bインデックス</summary>
+        public int RigidBodyIndexB { get; set; } = -1;
 
         /// <summary>剛体B名</summary>
         public string BodyBName { get; set; }
 
-        /// <summary>ジョイントタイプ</summary>
-        public int JointType { get; set; }
-
         /// <summary>位置</summary>
         public Vector3 Position { get; set; }
 
-        /// <summary>回転（度）</summary>
+        /// <summary>回転</summary>
         public Vector3 Rotation { get; set; }
 
         /// <summary>移動下限</summary>
@@ -426,10 +566,10 @@ namespace Poly_Ling.PMX
         /// <summary>移動上限</summary>
         public Vector3 TranslationMax { get; set; }
 
-        /// <summary>回転下限（度）</summary>
+        /// <summary>回転下限</summary>
         public Vector3 RotationMin { get; set; }
 
-        /// <summary>回転上限（度）</summary>
+        /// <summary>回転上限</summary>
         public Vector3 RotationMax { get; set; }
 
         /// <summary>バネ定数-移動</summary>
@@ -437,5 +577,40 @@ namespace Poly_Ling.PMX
 
         /// <summary>バネ定数-回転</summary>
         public Vector3 SpringRotation { get; set; }
+    }
+
+    /// <summary>
+    /// ソフトボディ（PMX 2.1）
+    /// </summary>
+    public class PMXSoftBody
+    {
+        public string Name { get; set; }
+        public string NameEnglish { get; set; }
+        public byte Shape { get; set; }
+        public int MaterialIndex { get; set; }
+        public byte Group { get; set; }
+        public ushort CollisionMask { get; set; }
+        public byte Flags { get; set; }
+        public int BendingLinkDistance { get; set; }
+        public int ClusterCount { get; set; }
+        public float TotalMass { get; set; }
+        public float Margin { get; set; }
+        // Config
+        public int AeroModel { get; set; }
+        public float VCF, DP, DG, LF, PR, VC, DF, MT;
+        public float CHR, KHR, SHR, AHR;
+        public float SRHR_CL, SKHR_CL, SSHR_CL;
+        public float SR_SPLT_CL, SK_SPLT_CL, SS_SPLT_CL;
+        public int V_IT, P_IT, D_IT, C_IT;
+        public float LST, AST, VST;
+        public List<PMXSoftBodyAnchor> Anchors { get; } = new List<PMXSoftBodyAnchor>();
+        public List<int> PinnedVertices { get; } = new List<int>();
+    }
+
+    public class PMXSoftBodyAnchor
+    {
+        public int RigidBodyIndex { get; set; }
+        public int VertexIndex { get; set; }
+        public bool NearMode { get; set; }
     }
 }

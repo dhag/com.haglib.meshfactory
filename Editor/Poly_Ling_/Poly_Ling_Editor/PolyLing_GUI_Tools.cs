@@ -226,7 +226,7 @@ public partial class PolyLing
 
         if (GUILayout.Button("Avatar Creator..."))
         {
-            Poly_Ling.PMX.AvatarCreatorPanel.ShowWindow();
+            Poly_Ling.PMXCSV.AvatarCreatorPanel.ShowWindow();
         }
 
         EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);

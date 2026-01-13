@@ -41,8 +41,8 @@ namespace Poly_Ling.PMX
 
             // ファイルセクション
             ["File"] = new() { ["en"] = "File", ["ja"] = "ファイル" },
-            ["PMXFile"] = new() { ["en"] = "PMX CSV File", ["ja"] = "PMX CSVファイル" },
-            ["DragDropHere"] = new() { ["en"] = "Drag & Drop PMX CSV file here", ["ja"] = "PMX CSVファイルをここにドロップ" },
+            ["PMXFile"] = new() { ["en"] = "PMX File", ["ja"] = "PMXファイル" },
+            ["DragDropHere"] = new() { ["en"] = "Drag & Drop PMX/CSV file here", ["ja"] = "PMX/CSVファイルをここにドロップ" },
 
             // 設定セクション
             ["ImportSettings"] = new() { ["en"] = "Import Settings", ["ja"] = "インポート設定" },
@@ -178,7 +178,7 @@ namespace Poly_Ling.PMX
                         ? Application.dataPath
                         : Path.GetDirectoryName(_lastFilePath);
 
-                    string path = EditorUtility.OpenFilePanel("Select PMX CSV File", dir, "csv");
+                    string path = EditorUtility.OpenFilePanel("Select PMX File", dir, "pmx,csv");
 
                     if (!string.IsNullOrEmpty(path))
                     {
@@ -198,7 +198,7 @@ namespace Poly_Ling.PMX
                 switch (evt.type)
                 {
                     case EventType.DragUpdated:
-                        if (IsPMXCSVFile(DragAndDrop.paths))
+                        if (IsPMXFile(DragAndDrop.paths))
                         {
                             DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
                             evt.Use();
@@ -206,7 +206,7 @@ namespace Poly_Ling.PMX
                         break;
 
                     case EventType.DragPerform:
-                        if (IsPMXCSVFile(DragAndDrop.paths))
+                        if (IsPMXFile(DragAndDrop.paths))
                         {
                             DragAndDrop.AcceptDrag();
                             _lastFilePath = DragAndDrop.paths[0];
@@ -218,11 +218,11 @@ namespace Poly_Ling.PMX
             }
         }
 
-        private bool IsPMXCSVFile(string[] paths)
+        private bool IsPMXFile(string[] paths)
         {
             if (paths == null || paths.Length == 0) return false;
             string ext = Path.GetExtension(paths[0]).ToLower();
-            return ext == ".csv";
+            return ext == ".csv" || ext == ".pmx";
         }
 
         // ================================================================
@@ -390,7 +390,17 @@ namespace Poly_Ling.PMX
 
             try
             {
-                _previewDocument = PMXCSVParser.ParseFile(_lastFilePath);
+                string ext = Path.GetExtension(_lastFilePath).ToLower();
+                if (ext == ".pmx")
+                {
+                    // バイナリPMX
+                    _previewDocument = PMXReader.Load(_lastFilePath);
+                }
+                else
+                {
+                    // CSV
+                    _previewDocument = PMXCSVParser.ParseFile(_lastFilePath);
+                }
             }
             catch (System.Exception ex)
             {

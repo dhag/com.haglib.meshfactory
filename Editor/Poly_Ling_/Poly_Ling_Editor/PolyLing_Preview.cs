@@ -54,14 +54,14 @@ public partial class PolyLing
         var editorState = _undoController?.EditorState;
         bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
         bool useLocalTransform = editorState?.ShowLocalTransform ?? false;
-        
+
         // ワールドモード: WorldMatrix（親子関係適用）
         // ローカルモード: LocalMatrix（親子関係無視）
         // どちらでもない: 変換なし
         if (useWorldTransform || useLocalTransform)
         {
             _unifiedAdapter?.UpdateTransform(useWorldTransform);  // trueならWorld、falseならLocal
-            
+
             // スキンドメッシュの面描画用：GPU変換後の頂点をUnityMeshに書き戻す
             if (useWorldTransform)
             {
@@ -102,7 +102,7 @@ public partial class PolyLing
         // また、座標系が (0,0) 起点のローカル座標になる
         // ============================================================
         GUI.BeginClip(rect);
-        
+
         // ローカル座標系での領域（0,0起点）
         Rect localRect = new Rect(0, 0, rect.width, rect.height);
 
@@ -188,13 +188,16 @@ public partial class PolyLing
         // ワイヤフレーム・頂点描画（UnifiedSystem使用）
         // ================================================================
         var pointSize = 0.01f;
+        var lineWithPx = 1f;
         PrepareUnifiedDrawing(
-            _preview.camera, 
-            _showWireframe, 
+            _preview.camera,
+            _showWireframe,
             _showVertices,
             _showUnselectedWireframe,
             _showUnselectedVertices,
-            pointSize);
+            pointSize,
+            lineWithPx
+            );
 
         DrawUnifiedQueued(_preview);
 
@@ -248,7 +251,7 @@ public partial class PolyLing
         // 矩形選択オーバーレイ描画
         if (_editState == VertexEditState.BoxSelecting)
         {
-            DrawBoxSelectOverlay();
+            DrawBoxSelectOverlay(rect);
         }
 
         // クリップ領域を終了
@@ -537,14 +540,20 @@ public partial class PolyLing
     }
 
 
-    private void DrawBoxSelectOverlay()
+    private void DrawBoxSelectOverlay(Rect clipRect)
     {
         UnityEditor_Handles.BeginGUI();
+
+        // _boxSelectStart/End はウィンドウ座標で記録されている
+        // GUI.BeginClip(clipRect) 後はローカル座標系なので、clipRectの位置を引く
+        Vector2 localStart = _boxSelectStart - clipRect.position;
+        Vector2 localEnd = _boxSelectEnd - clipRect.position;
+
         Rect selectRect = new Rect(
-            Mathf.Min(_boxSelectStart.x, _boxSelectEnd.x),
-            Mathf.Min(_boxSelectStart.y, _boxSelectEnd.y),
-            Mathf.Abs(_boxSelectEnd.x - _boxSelectStart.x),
-            Mathf.Abs(_boxSelectEnd.y - _boxSelectStart.y)
+            Mathf.Min(localStart.x, localEnd.x),
+            Mathf.Min(localStart.y, localEnd.y),
+            Mathf.Abs(localEnd.x - localStart.x),
+            Mathf.Abs(localEnd.y - localStart.y)
         );
 
         // ShaderColorSettingsから色を取得

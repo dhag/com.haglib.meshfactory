@@ -433,6 +433,7 @@ namespace Poly_Ling.Core
             bool showUnselectedVertices,
             int selectedMeshIndex,
             float pointSize ,
+            float lineWidthPx = 1.0f,
             float alpha = 1f)
         {
             if (!_isInitialized)
@@ -446,6 +447,8 @@ namespace Poly_Ling.Core
                 _renderer.UpdateWireframeMesh(
                     selectedMeshIndex,
                     showUnselectedWireframe,
+                    camera,
+                    lineWidthPx,
                     alpha,
                     0.4f);
                 _renderer.QueueWireframe();
@@ -485,7 +488,7 @@ namespace Poly_Ling.Core
 
             _renderer.CleanupQueued();
         }
-
+        /*
         /// <summary>
         /// 旧API互換（非推奨）
         /// </summary>
@@ -494,7 +497,7 @@ namespace Poly_Ling.Core
         {
             // 旧APIは機能しない
         }
-
+        */
         // ============================================================
         // ヒットテスト
         // ============================================================

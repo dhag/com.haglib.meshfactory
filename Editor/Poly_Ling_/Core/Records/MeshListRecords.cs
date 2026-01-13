@@ -61,6 +61,7 @@ namespace Poly_Ling.UndoSystem
         public int MirrorType;
         public int MirrorAxis;
         public float MirrorDistance;
+        public int MirrorMaterialOffset;
 
         // ================================================================
         // 選択状態（Phase 1追加）
@@ -110,6 +111,7 @@ namespace Poly_Ling.UndoSystem
                 MirrorType = meshContext.MirrorType,
                 MirrorAxis = meshContext.MirrorAxis,
                 MirrorDistance = meshContext.MirrorDistance,
+                MirrorMaterialOffset = meshContext.MirrorMaterialOffset,
                 // 選択状態（Phase 1追加）
                 Selection = meshContext.CaptureSelection(),
                 // 選択セット（Phase 9追加）
@@ -175,7 +177,8 @@ namespace Poly_Ling.UndoSystem
                 // ミラー設定
                 MirrorType = MirrorType,
                 MirrorAxis = MirrorAxis,
-                MirrorDistance = MirrorDistance
+                MirrorDistance = MirrorDistance,
+                MirrorMaterialOffset = MirrorMaterialOffset
             };
 
             // 名前を設定（MeshObjectに反映）

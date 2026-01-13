@@ -1,6 +1,6 @@
 // Assets/Editor/Poly_Ling/Tools/Panels/PMX/Export/PMXBoneWeightExportPanel.cs
 // PMXのボーンウェイトをMQO頂点と対応付けてCSV出力
-// v2.0: 材質ごとの頂点数を列挙
+// v2.1: バイナリPMX対応
 
 using System;
 using System.Collections.Generic;
@@ -29,9 +29,9 @@ namespace Poly_Ling.PMX
         {
             ["WindowTitle"] = new() { ["en"] = "PMX Bone Weight Export", ["ja"] = "PMXボーンウェイト出力" },
             ["InputFiles"] = new() { ["en"] = "Input Files", ["ja"] = "入力ファイル" },
-            ["PMXFile"] = new() { ["en"] = "PMX CSV File", ["ja"] = "PMX CSVファイル" },
+            ["PMXFile"] = new() { ["en"] = "PMX File", ["ja"] = "PMXファイル" },
             ["MQOFile"] = new() { ["en"] = "MQO File", ["ja"] = "MQOファイル" },
-            ["DragDropPMX"] = new() { ["en"] = "Drag & Drop PMX CSV here", ["ja"] = "PMX CSVをここにドロップ" },
+            ["DragDropPMX"] = new() { ["en"] = "Drag & Drop PMX/CSV here", ["ja"] = "PMX/CSVをここにドロップ" },
             ["DragDropMQO"] = new() { ["en"] = "Drag & Drop MQO here", ["ja"] = "MQOをここにドロップ" },
             ["Preview"] = new() { ["en"] = "Preview", ["ja"] = "プレビュー" },
             ["PMXVertices"] = new() { ["en"] = "PMX Vertices", ["ja"] = "PMX頂点数" },
@@ -53,46 +53,14 @@ namespace Poly_Ling.PMX
         private static string T(string key, params object[] args) => string.Format(L.GetFrom(_localize, key), args);
 
         // ================================================================
-        // PMXデータ構造
-        // ================================================================
-
-        private class PMXVertexData
-        {
-            public int Index;
-            public Vector3 Position;
-            public Vector2 UV;
-            public string[] BoneNames = new string[4];
-            public float[] Weights = new float[4];
-        }
-
-        private class PMXFaceData
-        {
-            public string MaterialName;
-            public int FaceIndex;
-            public int VertexIndex1;
-            public int VertexIndex2;
-            public int VertexIndex3;
-        }
-
-        private class PMXMaterialData
-        {
-            public string Name;
-            public int FaceCount;
-            public HashSet<int> UsedVertexIndices = new HashSet<int>();
-        }
-
-        // ================================================================
         // フィールド
         // ================================================================
 
         private string _pmxFilePath = "";
         private string _mqoFilePath = "";
 
-        // PMXデータ
-        private List<PMXVertexData> _pmxVertices;
-        private List<PMXFaceData> _pmxFaces;
-        private List<PMXMaterialData> _pmxMaterials;
-        private List<string> _pmxBoneNames;
+        // PMXデータ（PMXDocument使用）
+        private PMXDocument _pmxDocument;
 
         // MQOデータ（MQOImporter経由）
         private MQOImportResult _mqoImportResult;
@@ -124,7 +92,6 @@ namespace Poly_Ling.PMX
                         font = Font.CreateDynamicFontFromOSFont("Consolas", 11),
                         fontSize = 11
                     };
-                    // フォールバック
                     if (_monoStyle.font == null)
                     {
                         _monoStyle.font = Font.CreateDynamicFontFromOSFont("Courier New", 11);
@@ -153,7 +120,6 @@ namespace Poly_Ling.PMX
         // Open
         // ================================================================
 
-        //[MenuItem("Tools/Poly_Ling/PMX Bone Weight Export...")]
         public static void ShowWindow()
         {
             var window = GetWindow<PMXBoneWeightExportPanel>();
@@ -189,13 +155,13 @@ namespace Poly_Ling.PMX
         {
             EditorGUILayout.LabelField(T("InputFiles"), EditorStyles.boldLabel);
 
-            // PMX CSV
+            // PMX (バイナリ/CSV両対応)
             using (new EditorGUILayout.HorizontalScope())
             {
                 _pmxFilePath = EditorGUILayout.TextField(T("PMXFile"), _pmxFilePath);
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
-                    string path = EditorUtility.OpenFilePanel("Select PMX CSV", "", "csv");
+                    string path = EditorUtility.OpenFilePanel("Select PMX File", "", "pmx,csv");
                     if (!string.IsNullOrEmpty(path))
                     {
                         _pmxFilePath = path;
@@ -205,7 +171,7 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            DrawDropArea(T("DragDropPMX"), "csv", path =>
+            DrawDropArea(T("DragDropPMX"), new[] { ".pmx", ".csv" }, path =>
             {
                 _pmxFilePath = path;
                 LoadPMX();
@@ -230,7 +196,7 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            DrawDropArea(T("DragDropMQO"), "mqo", path =>
+            DrawDropArea(T("DragDropMQO"), new[] { ".mqo" }, path =>
             {
                 _mqoFilePath = path;
                 LoadMQO();
@@ -238,7 +204,7 @@ namespace Poly_Ling.PMX
             });
         }
 
-        private void DrawDropArea(string message, string extension, Action<string> onDrop)
+        private void DrawDropArea(string message, string[] extensions, Action<string> onDrop)
         {
             var dropArea = GUILayoutUtility.GetRect(0, 30, GUILayout.ExpandWidth(true));
             GUI.Box(dropArea, message, EditorStyles.helpBox);
@@ -249,8 +215,7 @@ namespace Poly_Ling.PMX
                 switch (evt.type)
                 {
                     case EventType.DragUpdated:
-                        if (DragAndDrop.paths.Length > 0 &&
-                            DragAndDrop.paths[0].EndsWith($".{extension}", StringComparison.OrdinalIgnoreCase))
+                        if (DragAndDrop.paths.Length > 0 && HasValidExtension(DragAndDrop.paths[0], extensions))
                         {
                             DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
                             evt.Use();
@@ -261,7 +226,7 @@ namespace Poly_Ling.PMX
                         if (DragAndDrop.paths.Length > 0)
                         {
                             string path = DragAndDrop.paths[0];
-                            if (path.EndsWith($".{extension}", StringComparison.OrdinalIgnoreCase))
+                            if (HasValidExtension(path, extensions))
                             {
                                 DragAndDrop.AcceptDrag();
                                 onDrop(path);
@@ -271,6 +236,12 @@ namespace Poly_Ling.PMX
                         break;
                 }
             }
+        }
+
+        private bool HasValidExtension(string path, string[] extensions)
+        {
+            string ext = Path.GetExtension(path).ToLower();
+            return extensions.Any(e => e.ToLower() == ext);
         }
 
         // ================================================================
@@ -284,151 +255,92 @@ namespace Poly_Ling.PMX
 
             EditorGUI.indentLevel++;
 
-            if (_pmxVertices == null && _mqoImportResult == null)
+            if (_pmxDocument == null && _mqoImportResult == null)
             {
-                EditorGUILayout.HelpBox(T("SelectFilesToPreview"), MessageType.Info);
+                EditorGUILayout.LabelField(T("SelectFilesToPreview"));
+                EditorGUI.indentLevel--;
+                return;
             }
-            else
+
+            // PMX情報
+            if (_pmxDocument != null)
             {
-                // PMX情報
-                if (_pmxVertices != null)
+                EditorGUILayout.LabelField(T("PMXVertices"), _pmxDocument.Vertices.Count.ToString(), MonoStyleBold);
+                EditorGUILayout.LabelField(T("PMXBones"), _pmxDocument.Bones.Count.ToString(), MonoStyle);
+                EditorGUILayout.LabelField(T("PMXMaterials"), _pmxDocument.Materials.Count.ToString(), MonoStyle);
+
+                // 材質詳細
+                _foldPMXMaterials = EditorGUILayout.Foldout(_foldPMXMaterials, $"PMX Materials ({_pmxDocument.Materials.Count})", true);
+                if (_foldPMXMaterials)
                 {
-                    EditorGUILayout.LabelField(T("PMXVertices"), _pmxVertices.Count.ToString());
-                    EditorGUILayout.LabelField(T("PMXBones"), _pmxBoneNames?.Count.ToString() ?? "0");
-                    EditorGUILayout.LabelField(T("PMXMaterials"), _pmxMaterials?.Count.ToString() ?? "0");
-
-                    // 材質ごとの頂点数
-                    if (_pmxMaterials != null && _pmxMaterials.Count > 0)
+                    EditorGUI.indentLevel++;
+                    int faceOffset = 0;
+                    foreach (var mat in _pmxDocument.Materials)
                     {
-                        EditorGUILayout.Space(3);
-                        _foldPMXMaterials = EditorGUILayout.Foldout(_foldPMXMaterials, $"PMX Materials ({_pmxMaterials.Count})", true);
-                        if (_foldPMXMaterials)
+                        // 使用頂点を計算
+                        var usedVertices = new HashSet<int>();
+                        for (int i = 0; i < mat.FaceCount && faceOffset + i < _pmxDocument.Faces.Count; i++)
                         {
-                            // ボックス内に表示
-                            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-                            // ヘッダー（MQOと同じ順序: Verts, Tris）
-                            EditorGUILayout.LabelField("Name                        Verts    Tris", MonoStyleBold);
-
-                            int totalVertices = 0;
-                            int totalFaces = 0;
-
-                            foreach (var mat in _pmxMaterials)
-                            {
-                                string name = mat.Name.Length > 24 ? mat.Name.Substring(0, 21) + "..." : mat.Name;
-                                string line = $"{name,-24} {mat.UsedVertexIndices.Count,8} {mat.FaceCount,7}";
-                                EditorGUILayout.LabelField(line, MonoStyle);
-
-                                totalVertices += mat.UsedVertexIndices.Count;
-                                totalFaces += mat.FaceCount;
-                            }
-
-                            // 合計
-                            EditorGUILayout.LabelField("───────────────────────────────────────────", MonoStyle);
-                            EditorGUILayout.LabelField($"{"TOTAL",-24} {_pmxVertices.Count,8} {totalFaces,7}", MonoStyleBold);
-
-                            EditorGUILayout.EndVertical();
+                            var face = _pmxDocument.Faces[faceOffset + i];
+                            usedVertices.Add(face.VertexIndex1);
+                            usedVertices.Add(face.VertexIndex2);
+                            usedVertices.Add(face.VertexIndex3);
                         }
+                        
+                        string info = $"{mat.Name}: verts={usedVertices.Count}, faces={mat.FaceCount}";
+                        EditorGUILayout.LabelField(info, MonoStyle);
+                        faceOffset += mat.FaceCount;
                     }
+                    EditorGUI.indentLevel--;
                 }
 
                 EditorGUILayout.Space(5);
+            }
 
-                // MQO情報
-                if (_mqoImportResult != null && _mqoImportResult.Success)
+            // MQO情報
+            if (_mqoImportResult != null && _mqoImportResult.Success)
+            {
+                int totalVerts = _mqoImportResult.MeshContexts.Sum(m => m.MeshObject?.VertexCount ?? 0);
+                EditorGUILayout.LabelField(T("MQOVertices"), totalVerts.ToString(), MonoStyle);
+                EditorGUILayout.LabelField(T("MQOExpandedVertices"), _mqoExpandedVertexCount.ToString(), MonoStyleBold);
+                EditorGUILayout.LabelField(T("MQOObjects"), _mqoImportResult.MeshContexts.Count.ToString(), MonoStyle);
+
+                // オブジェクト詳細
+                _foldMQOObjects = EditorGUILayout.Foldout(_foldMQOObjects, $"MQO Objects ({_mqoImportResult.MeshContexts.Count})", true);
+                if (_foldMQOObjects)
                 {
-                    int totalVertices = _mqoImportResult.MeshContexts.Sum(m => m.MeshObject?.VertexCount ?? 0);
-                    EditorGUILayout.LabelField(T("MQOVertices"), totalVertices.ToString());
-                    EditorGUILayout.LabelField(T("MQOExpandedVertices"), _mqoExpandedVertexCount.ToString());
-                    EditorGUILayout.LabelField(T("MQOObjects"), _mqoImportResult.MeshContexts.Count.ToString());
-
-                    // 頂点数チェック結果
-                    if (_pmxVertices != null)
+                    EditorGUI.indentLevel++;
+                    foreach (var meshContext in _mqoImportResult.MeshContexts)
                     {
-                        EditorGUILayout.Space(3);
-                        if (_pmxVertices.Count == _mqoExpandedVertexCount)
-                        {
-                            EditorGUILayout.HelpBox(T("VertexCountMatch"), MessageType.Info);
-                        }
-                        else if (_pmxVertices.Count == _mqoExpandedVertexCount * 2)
-                        {
-                            EditorGUILayout.HelpBox(
-                                T("VertexCountMatchMirror", _pmxVertices.Count, _mqoExpandedVertexCount),
-                                MessageType.Info);
-                        }
-                        else
-                        {
-                            EditorGUILayout.HelpBox(
-                                T("VertexCountMismatch", _pmxVertices.Count, _mqoExpandedVertexCount),
-                                MessageType.Error);
-                        }
+                        var mo = meshContext.MeshObject;
+                        if (mo == null) continue;
+
+                        int uvExpand = CalculateExpandedVertexCount(mo);
+                        string mirrorMark = meshContext.IsMirrored ? " [Mirror]" : "";
+                        string info = $"{meshContext.Name}: verts={mo.VertexCount}, uvExpand={uvExpand}{mirrorMark}";
+                        EditorGUILayout.LabelField(info, MonoStyle);
                     }
-
-                    // MQOオブジェクト一覧
-                    EditorGUILayout.Space(3);
-                    _foldMQOObjects = EditorGUILayout.Foldout(_foldMQOObjects, $"MQO Objects ({_mqoImportResult.MeshContexts.Count})", true);
-                    if (_foldMQOObjects)
-                    {
-                        // ボックス内に表示
-                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-                        // ヘッダー
-                        EditorGUILayout.LabelField("Name                    SrcV  Expand    Tris", MonoStyleBold);
-
-                        int totalSrcVerts = 0;
-                        int totalExpanded = 0;
-                        int totalTris = 0;
-
-                        foreach (var meshContext in _mqoImportResult.MeshContexts)
-                        {
-                            var mo = meshContext.MeshObject;
-                            if (mo == null) continue;
-
-                            int srcVerts = mo.VertexCount;
-                            int expanded = CalculateExpandedVertexCountForMesh(mo);
-
-                            // 三角形数 = 三角形の面数×1 + 四角形の面数×2
-                            int triCount = 0;
-                            int quadCount = 0;
-                            foreach (var f in mo.Faces)
-                            {
-                                if (f.IsTriangle) triCount++;
-                                else if (f.IsQuad) quadCount++;
-                            }
-                            int tris = triCount + quadCount * 2;
-
-                            string name = meshContext.Name;
-                            if (name.Length > 20) name = name.Substring(0, 17) + "...";
-
-                            string line = $"{name,-20} {srcVerts,6} {expanded,7} {tris,7}";
-                            EditorGUILayout.LabelField(line, MonoStyle);
-
-                            totalSrcVerts += srcVerts;
-                            totalExpanded += expanded;
-                            totalTris += tris;
-
-                            // ミラーの場合は別行で表示
-                            if (meshContext.IsMirrored)
-                            {
-                                string mirrorLine = $"  (mirror)           {srcVerts,6} {expanded,7} {tris,7}";
-                                EditorGUILayout.LabelField(mirrorLine, MonoStyle);
-
-                                totalSrcVerts += srcVerts;
-                                totalExpanded += expanded;
-                                totalTris += tris;
-                            }
-                        }
-
-                        // 合計
-                        EditorGUILayout.LabelField("─────────────────────────────────────────────", MonoStyle);
-                        EditorGUILayout.LabelField($"{"TOTAL",-20} {totalSrcVerts,6} {totalExpanded,7} {totalTris,7}", MonoStyleBold);
-
-                        EditorGUILayout.EndVertical();
-                    }
+                    EditorGUI.indentLevel--;
                 }
-                else if (_mqoImportResult != null && !_mqoImportResult.Success)
+
+                EditorGUILayout.Space(5);
+            }
+
+            // 頂点数チェック結果
+            if (_pmxDocument != null && _mqoImportResult != null && _mqoImportResult.Success)
+            {
+                int pmxCount = _pmxDocument.Vertices.Count;
+                if (pmxCount == _mqoExpandedVertexCount)
                 {
-                    EditorGUILayout.HelpBox(T("LoadError", _mqoImportResult.ErrorMessage), MessageType.Error);
+                    EditorGUILayout.HelpBox(T("VertexCountMatch"), MessageType.Info);
+                }
+                else if (_isMirrorBaked)
+                {
+                    EditorGUILayout.HelpBox(T("VertexCountMatchMirror", pmxCount, _mqoExpandedVertexCount), MessageType.Info);
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox(T("VertexCountMismatch", pmxCount, _mqoExpandedVertexCount), MessageType.Error);
                 }
             }
 
@@ -441,26 +353,10 @@ namespace Poly_Ling.PMX
 
         private void DrawExportButton()
         {
-            bool vertexCountMatch = _pmxVertices != null &&
-                                    _mqoImportResult != null &&
-                                    _mqoImportResult.Success &&
-                                    _pmxVertices.Count == _mqoExpandedVertexCount;
-
-            bool mirrorMatch = _pmxVertices != null &&
-                               _mqoImportResult != null &&
-                               _mqoImportResult.Success &&
-                               _pmxVertices.Count == _mqoExpandedVertexCount * 2;
-
-            bool canExport = vertexCountMatch || mirrorMatch;
-
-            // 頂点数不一致エラーを表示
-            if (_pmxVertices != null && _mqoImportResult != null && _mqoImportResult.Success && !canExport)
-            {
-                EditorGUILayout.HelpBox(
-                    $"ERROR: 頂点数不一致 PMX={_pmxVertices.Count}, MQO展開後={_mqoExpandedVertexCount}\n" +
-                    $"差分: {Math.Abs(_pmxVertices.Count - _mqoExpandedVertexCount)}",
-                    MessageType.Error);
-            }
+            bool canExport = _pmxDocument != null && 
+                            _mqoImportResult != null && 
+                            _mqoImportResult.Success &&
+                            (_pmxDocument.Vertices.Count == _mqoExpandedVertexCount || _isMirrorBaked);
 
             EditorGUI.BeginDisabledGroup(!canExport);
 
@@ -486,181 +382,51 @@ namespace Poly_Ling.PMX
         }
 
         // ================================================================
-        // PMX読み込み
+        // PMX読み込み（バイナリ/CSV自動判定）
         // ================================================================
 
         private void LoadPMX()
         {
             try
             {
-                _pmxVertices = new List<PMXVertexData>();
-                _pmxFaces = new List<PMXFaceData>();
-                _pmxMaterials = new List<PMXMaterialData>();
-                _pmxBoneNames = new List<string>();
-
-                var materialDict = new Dictionary<string, PMXMaterialData>();
-
-                var lines = File.ReadAllLines(_pmxFilePath, Encoding.UTF8);
-
-                foreach (var line in lines)
+                string ext = Path.GetExtension(_pmxFilePath).ToLower();
+                if (ext == ".pmx")
                 {
-                    if (line.StartsWith("PmxVertex,"))
-                    {
-                        var v = ParsePMXVertex(line);
-                        if (v != null) _pmxVertices.Add(v);
-                    }
-                    else if (line.StartsWith("PmxFace,"))
-                    {
-                        var f = ParsePMXFace(line);
-                        if (f != null)
-                        {
-                            _pmxFaces.Add(f);
-
-                            // 材質ごとの頂点を集計
-                            if (!materialDict.TryGetValue(f.MaterialName, out var mat))
-                            {
-                                mat = new PMXMaterialData { Name = f.MaterialName };
-                                materialDict[f.MaterialName] = mat;
-                            }
-                            mat.FaceCount++;
-                            mat.UsedVertexIndices.Add(f.VertexIndex1);
-                            mat.UsedVertexIndices.Add(f.VertexIndex2);
-                            mat.UsedVertexIndices.Add(f.VertexIndex3);
-                        }
-                    }
-                    else if (line.StartsWith("PmxBone,"))
-                    {
-                        var parts = SplitCSV(line);
-                        if (parts.Length >= 2)
-                        {
-                            _pmxBoneNames.Add(parts[1].Trim('"'));
-                        }
-                    }
-                    else if (line.StartsWith("PmxMaterial,"))
-                    {
-                        // マテリアル行からも名前を取得（順序を保持するため）
-                        var parts = SplitCSV(line);
-                        if (parts.Length >= 2)
-                        {
-                            string matName = parts[1].Trim('"');
-                            if (!materialDict.ContainsKey(matName))
-                            {
-                                materialDict[matName] = new PMXMaterialData { Name = matName };
-                            }
-                        }
-                    }
+                    // バイナリPMX
+                    _pmxDocument = PMXReader.Load(_pmxFilePath);
+                }
+                else
+                {
+                    // CSV
+                    _pmxDocument = PMXCSVParser.ParseFile(_pmxFilePath);
                 }
 
-                // 材質をPmxMaterial行の出現順（またはPmxFace出現順）でリスト化
-                // 再度ファイルを読んでマテリアル順を取得
-                _pmxMaterials.Clear();
-                var orderedMaterialNames = new List<string>();
-                foreach (var line in lines)
-                {
-                    if (line.StartsWith("PmxMaterial,"))
-                    {
-                        var parts = SplitCSV(line);
-                        if (parts.Length >= 2)
-                        {
-                            string matName = parts[1].Trim('"');
-                            if (!orderedMaterialNames.Contains(matName))
-                            {
-                                orderedMaterialNames.Add(matName);
-                            }
-                        }
-                    }
-                }
-
-                // 順序通りにリスト化
-                foreach (var matName in orderedMaterialNames)
-                {
-                    if (materialDict.TryGetValue(matName, out var mat))
-                    {
-                        _pmxMaterials.Add(mat);
-                    }
-                }
-
-                // PmxMaterial行がなかった場合はFace出現順
-                if (_pmxMaterials.Count == 0)
-                {
-                    _pmxMaterials = materialDict.Values.ToList();
-                }
-
-                Debug.Log($"[PMXBoneWeightExport] Loaded PMX: {_pmxVertices.Count} vertices, {_pmxFaces.Count} faces, {_pmxMaterials.Count} materials, {_pmxBoneNames.Count} bones");
+                Debug.Log($"[PMXBoneWeightExport] Loaded PMX: {_pmxDocument.Vertices.Count} vertices, " +
+                         $"{_pmxDocument.Faces.Count} faces, {_pmxDocument.Materials.Count} materials, " +
+                         $"{_pmxDocument.Bones.Count} bones");
 
                 // 材質ごとの詳細ログ
-                foreach (var mat in _pmxMaterials)
+                int faceOffset = 0;
+                foreach (var mat in _pmxDocument.Materials)
                 {
-                    Debug.Log($"[PMXBoneWeightExport]   PMX Material '{mat.Name}': verts={mat.UsedVertexIndices.Count}, faces={mat.FaceCount}");
+                    var usedVertices = new HashSet<int>();
+                    for (int i = 0; i < mat.FaceCount && faceOffset + i < _pmxDocument.Faces.Count; i++)
+                    {
+                        var face = _pmxDocument.Faces[faceOffset + i];
+                        usedVertices.Add(face.VertexIndex1);
+                        usedVertices.Add(face.VertexIndex2);
+                        usedVertices.Add(face.VertexIndex3);
+                    }
+                    Debug.Log($"[PMXBoneWeightExport]   PMX Material '{mat.Name}': verts={usedVertices.Count}, faces={mat.FaceCount}");
+                    faceOffset += mat.FaceCount;
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[PMXBoneWeightExport] Failed to load PMX: {ex.Message}");
-                _pmxVertices = null;
-                _pmxFaces = null;
-                _pmxMaterials = null;
-                _pmxBoneNames = null;
+                _pmxDocument = null;
             }
             Repaint();
-        }
-
-        private PMXVertexData ParsePMXVertex(string line)
-        {
-            var parts = SplitCSV(line);
-            if (parts.Length < 36) return null;
-
-            var v = new PMXVertexData
-            {
-                Index = int.Parse(parts[1])
-            };
-
-            // 位置 (2,3,4)
-            if (parts.Length > 4)
-            {
-                float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float x);
-                float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float y);
-                float.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out float z);
-                v.Position = new Vector3(x, y, z);
-            }
-
-            // UV (11,12)
-            if (parts.Length > 12)
-            {
-                float.TryParse(parts[11], NumberStyles.Float, CultureInfo.InvariantCulture, out float u);
-                float.TryParse(parts[12], NumberStyles.Float, CultureInfo.InvariantCulture, out float vCoord);
-                v.UV = new Vector2(u, vCoord);
-            }
-
-            // ボーンウェイト（インデックス28-35）
-            v.BoneNames[0] = parts[28].Trim('"');
-            v.Weights[0] = float.Parse(parts[29], CultureInfo.InvariantCulture);
-            v.BoneNames[1] = parts[30].Trim('"');
-            v.Weights[1] = float.Parse(parts[31], CultureInfo.InvariantCulture);
-            v.BoneNames[2] = parts[32].Trim('"');
-            v.Weights[2] = float.Parse(parts[33], CultureInfo.InvariantCulture);
-            v.BoneNames[3] = parts[34].Trim('"');
-            v.Weights[3] = float.Parse(parts[35], CultureInfo.InvariantCulture);
-
-            return v;
-        }
-
-        private PMXFaceData ParsePMXFace(string line)
-        {
-            var parts = SplitCSV(line);
-            // PmxFace,MaterialName,FaceIndex,V1,V2,V3
-            if (parts.Length < 6) return null;
-
-            var f = new PMXFaceData
-            {
-                MaterialName = parts[1].Trim('"'),
-                FaceIndex = int.Parse(parts[2]),
-                VertexIndex1 = int.Parse(parts[3]),
-                VertexIndex2 = int.Parse(parts[4]),
-                VertexIndex3 = int.Parse(parts[5])
-            };
-
-            return f;
         }
 
         // ================================================================
@@ -687,7 +453,8 @@ namespace Poly_Ling.PMX
                     // 展開後頂点数を計算
                     CalculateExpandedVertexCount();
 
-                    Debug.Log($"[PMXBoneWeightExport] Loaded MQO: {_mqoImportResult.MeshContexts.Count} objects, expanded vertices: {_mqoExpandedVertexCount}");
+                    Debug.Log($"[PMXBoneWeightExport] Loaded MQO: {_mqoImportResult.MeshContexts.Count} objects, " +
+                             $"expanded vertices: {_mqoExpandedVertexCount}");
 
                     // 各オブジェクトの詳細
                     foreach (var meshContext in _mqoImportResult.MeshContexts)
@@ -695,52 +462,11 @@ namespace Poly_Ling.PMX
                         var mo = meshContext.MeshObject;
                         if (mo == null) continue;
 
-                        int uvExpand = 0;
-                        foreach (var v in mo.Vertices)
-                        {
-                            uvExpand += v.UVs.Count > 0 ? v.UVs.Count : 1;
-                        }
-
-                        Debug.Log($"[PMXBoneWeightExport]   {meshContext.Name}: verts={mo.VertexCount}, uvExpand={uvExpand}, mirror={meshContext.IsMirrored}");
-
-                        // UV差分が小さい頂点を検出（UVが2個以上ある頂点について）
-                        var uvDiffs = new List<(int vIdx, int uvA, int uvB, float diff, Vector2 uvValA, Vector2 uvValB)>();
-                        for (int vIdx = 0; vIdx < mo.VertexCount; vIdx++)
-                        {
-                            var vertex = mo.Vertices[vIdx];
-                            if (vertex.UVs.Count >= 2)
-                            {
-                                // 全UV組み合わせの差を計算
-                                for (int i = 0; i < vertex.UVs.Count; i++)
-                                {
-                                    for (int j = i + 1; j < vertex.UVs.Count; j++)
-                                    {
-                                        float diff = (vertex.UVs[i] - vertex.UVs[j]).magnitude;
-                                        uvDiffs.Add((vIdx, i, j, diff, vertex.UVs[i], vertex.UVs[j]));
-                                    }
-                                }
-                            }
-                        }
-
-                        // 差が小さい順にソート
-                        uvDiffs.Sort((a, b) => a.diff.CompareTo(b.diff));
-
-                        // 上位5件を出力
-                        int showCount = Math.Min(5, uvDiffs.Count);
-                        if (showCount > 0)
-                        {
-                            Debug.Log($"[PMXBoneWeightExport]     UV差分小さい順 (top {showCount}):");
-                            for (int i = 0; i < showCount; i++)
-                            {
-                                var d = uvDiffs[i];
-                                Debug.Log($"[PMXBoneWeightExport]       vIdx={d.vIdx}, uv[{d.uvA}]=({d.uvValA.x:R},{d.uvValA.y:R}) vs uv[{d.uvB}]=({d.uvValB.x:R},{d.uvValB.y:R}), diff={d.diff:E}");
-                            }
-                        }
+                        int uvExpand = CalculateExpandedVertexCount(mo);
+                        string mirrorMark = meshContext.IsMirrored ? " [Mirror]" : "";
+                        Debug.Log($"[PMXBoneWeightExport]   MQO Object '{meshContext.Name}': verts={mo.VertexCount}, " +
+                                 $"uvExpand={uvExpand}{mirrorMark}");
                     }
-                }
-                else
-                {
-                    Debug.LogError($"[PMXBoneWeightExport] Failed to load MQO: {_mqoImportResult.ErrorMessage}");
                 }
             }
             catch (Exception ex)
@@ -751,38 +477,31 @@ namespace Poly_Ling.PMX
             Repaint();
         }
 
-        /// <summary>
-        /// 展開後頂点数を計算
-        /// FPXと同じ：頂点順 → UV順
-        /// </summary>
+        // ================================================================
+        // 頂点数計算
+        // ================================================================
+
         private void CalculateExpandedVertexCount()
         {
             _mqoExpandedVertexCount = 0;
+            if (_mqoImportResult == null || !_mqoImportResult.Success) return;
 
             foreach (var meshContext in _mqoImportResult.MeshContexts)
             {
-                var meshObject = meshContext.MeshObject;
-                if (meshObject == null) continue;
+                var mo = meshContext.MeshObject;
+                if (mo == null) continue;
 
-                int expanded = CalculateExpandedVertexCountForMesh(meshObject);
-                _mqoExpandedVertexCount += expanded;
+                int expand = CalculateExpandedVertexCount(mo);
+                _mqoExpandedVertexCount += expand;
 
                 // ミラーの場合は2倍
                 if (meshContext.IsMirrored)
-                {
-                    _mqoExpandedVertexCount += expanded;
-                }
+                    _mqoExpandedVertexCount += expand;
             }
         }
 
-        /// <summary>
-        /// 単一メッシュの展開後頂点数を計算
-        /// FPXと同じ：各頂点のUV数の合計
-        /// </summary>
-        private int CalculateExpandedVertexCountForMesh(MeshObject meshObject)
+        private int CalculateExpandedVertexCount(MeshObject meshObject)
         {
-            if (meshObject == null) return 0;
-
             int count = 0;
             foreach (var vertex in meshObject.Vertices)
             {
@@ -797,13 +516,13 @@ namespace Poly_Ling.PMX
         /// </summary>
         private void CheckVertexCount()
         {
-            if (_pmxVertices == null || _mqoImportResult == null || !_mqoImportResult.Success)
+            if (_pmxDocument == null || _mqoImportResult == null || !_mqoImportResult.Success)
             {
                 _isMirrorBaked = false;
                 return;
             }
 
-            _isMirrorBaked = (_pmxVertices.Count == _mqoExpandedVertexCount * 2);
+            _isMirrorBaked = (_pmxDocument.Vertices.Count == _mqoExpandedVertexCount * 2);
         }
 
         // ================================================================
@@ -820,7 +539,6 @@ namespace Poly_Ling.PMX
 
             try
             {
-                // CSV出力
                 var sb = new StringBuilder();
                 sb.AppendLine("MqoObjectName,VertexID,VertexIndex,Bone0,Bone1,Bone2,Bone3,Weight0,Weight1,Weight2,Weight3");
 
@@ -829,7 +547,7 @@ namespace Poly_Ling.PMX
                 int pmxVertexIndex = 0;
 
                 Debug.Log($"[PMXBoneWeightExport] === Export Start ===");
-                Debug.Log($"[PMXBoneWeightExport] PMX Vertices: {_pmxVertices.Count}");
+                Debug.Log($"[PMXBoneWeightExport] PMX Vertices: {_pmxDocument.Vertices.Count}");
                 Debug.Log($"[PMXBoneWeightExport] MQO Objects: {_mqoImportResult.MeshContexts.Count}");
 
                 foreach (var meshContext in _mqoImportResult.MeshContexts)
@@ -850,24 +568,37 @@ namespace Poly_Ling.PMX
 
                         for (int iuv = 0; iuv < uvCount; iuv++)
                         {
-                            if (pmxVertexIndex < _pmxVertices.Count)
+                            if (pmxVertexIndex < _pmxDocument.Vertices.Count)
                             {
-                                var pmxV = _pmxVertices[pmxVertexIndex];
+                                var pmxV = _pmxDocument.Vertices[pmxVertexIndex];
                                 int vertexId = vertex.Id != 0 ? vertex.Id : -1;
+
+                                // ボーン名とウェイトを取得
+                                string[] boneNames = new string[4] { "", "", "", "" };
+                                float[] weights = new float[4] { 0, 0, 0, 0 };
+                                
+                                if (pmxV.BoneWeights != null)
+                                {
+                                    for (int i = 0; i < Math.Min(4, pmxV.BoneWeights.Length); i++)
+                                    {
+                                        boneNames[i] = pmxV.BoneWeights[i].BoneName ?? "";
+                                        weights[i] = pmxV.BoneWeights[i].Weight;
+                                    }
+                                }
 
                                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
                                     "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
                                     meshContext.Name,
                                     vertexId,
                                     vIdx,
-                                    pmxV.BoneNames[0],
-                                    pmxV.BoneNames[1],
-                                    pmxV.BoneNames[2],
-                                    pmxV.BoneNames[3],
-                                    pmxV.Weights[0],
-                                    pmxV.Weights[1],
-                                    pmxV.Weights[2],
-                                    pmxV.Weights[3]
+                                    boneNames[0],
+                                    boneNames[1],
+                                    boneNames[2],
+                                    boneNames[3],
+                                    weights[0],
+                                    weights[1],
+                                    weights[2],
+                                    weights[3]
                                 ));
                                 exportedRows++;
                                 objectVertexCount++;
@@ -880,7 +611,9 @@ namespace Poly_Ling.PMX
                         }
                     }
 
-                    Debug.Log($"[PMXBoneWeightExport] Object '{meshContext.Name}': verts={mo.VertexCount}, uvExpand={objectUVCount}, pmxRange=[{objectStartIndex}..{pmxVertexIndex-1}], mirror={meshContext.IsMirrored}");
+                    Debug.Log($"[PMXBoneWeightExport] Object '{meshContext.Name}': verts={mo.VertexCount}, " +
+                             $"uvExpand={objectUVCount}, pmxRange=[{objectStartIndex}..{pmxVertexIndex-1}], " +
+                             $"mirror={meshContext.IsMirrored}");
 
                     // ミラーの場合：オブジェクト名に「+」を付けて出力
                     if (meshContext.IsMirrored)
@@ -896,24 +629,37 @@ namespace Poly_Ling.PMX
 
                             for (int iuv = 0; iuv < uvCount; iuv++)
                             {
-                                if (pmxVertexIndex < _pmxVertices.Count)
+                                if (pmxVertexIndex < _pmxDocument.Vertices.Count)
                                 {
-                                    var pmxV = _pmxVertices[pmxVertexIndex];
+                                    var pmxV = _pmxDocument.Vertices[pmxVertexIndex];
                                     int vertexId = vertex.Id != 0 ? vertex.Id : -1;
+
+                                    // ボーン名とウェイトを取得
+                                    string[] boneNames = new string[4] { "", "", "", "" };
+                                    float[] weights = new float[4] { 0, 0, 0, 0 };
+                                    
+                                    if (pmxV.BoneWeights != null)
+                                    {
+                                        for (int i = 0; i < Math.Min(4, pmxV.BoneWeights.Length); i++)
+                                        {
+                                            boneNames[i] = pmxV.BoneWeights[i].BoneName ?? "";
+                                            weights[i] = pmxV.BoneWeights[i].Weight;
+                                        }
+                                    }
 
                                     sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
                                         "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
                                         mirrorObjectName,
                                         vertexId,
                                         vIdx,
-                                        pmxV.BoneNames[0],
-                                        pmxV.BoneNames[1],
-                                        pmxV.BoneNames[2],
-                                        pmxV.BoneNames[3],
-                                        pmxV.Weights[0],
-                                        pmxV.Weights[1],
-                                        pmxV.Weights[2],
-                                        pmxV.Weights[3]
+                                        boneNames[0],
+                                        boneNames[1],
+                                        boneNames[2],
+                                        boneNames[3],
+                                        weights[0],
+                                        weights[1],
+                                        weights[2],
+                                        weights[3]
                                     ));
                                     exportedRows++;
                                     mirrorVertexCount++;
@@ -929,7 +675,7 @@ namespace Poly_Ling.PMX
                     }
                 }
 
-                Debug.Log($"[PMXBoneWeightExport] Final pmxVertexIndex: {pmxVertexIndex}, PMX count: {_pmxVertices.Count}, diff: {pmxVertexIndex - _pmxVertices.Count}");
+                Debug.Log($"[PMXBoneWeightExport] Final pmxVertexIndex: {pmxVertexIndex}, PMX count: {_pmxDocument.Vertices.Count}, diff: {pmxVertexIndex - _pmxDocument.Vertices.Count}");
 
                 File.WriteAllText(savePath, sb.ToString(), Encoding.UTF8);
 
@@ -947,38 +693,6 @@ namespace Poly_Ling.PMX
             }
 
             Repaint();
-        }
-
-        // ================================================================
-        // ヘルパー
-        // ================================================================
-
-        private string[] SplitCSV(string line)
-        {
-            var result = new List<string>();
-            bool inQuote = false;
-            var sb = new StringBuilder();
-
-            foreach (char c in line)
-            {
-                if (c == '"')
-                {
-                    inQuote = !inQuote;
-                    sb.Append(c);
-                }
-                else if (c == ',' && !inQuote)
-                {
-                    result.Add(sb.ToString());
-                    sb.Clear();
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            result.Add(sb.ToString());
-
-            return result.ToArray();
         }
     }
 }

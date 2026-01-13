@@ -59,10 +59,13 @@ namespace Poly_Ling.Serialization
             foreach (var vertex in meshObject.Vertices)
             {
                 var vertexDTO = new VertexDTO();
+                vertexDTO.id = vertex.Id;
                 vertexDTO.SetPosition(vertex.Position);
                 vertexDTO.SetUVs(vertex.UVs);
                 vertexDTO.SetNormals(vertex.Normals);
                 vertexDTO.SetBoneWeight(vertex.BoneWeight);
+                vertexDTO.SetMirrorBoneWeight(vertex.MirrorBoneWeight);
+                vertexDTO.f = (byte)vertex.Flags;
                 meshDTO.vertices.Add(vertexDTO);
             }
 
@@ -71,10 +74,12 @@ namespace Poly_Ling.Serialization
             {
                 var faceData = new FaceDTO
                 {
+                    id = face.Id,
                     v = new List<int>(face.VertexIndices),
                     uvi = new List<int>(face.UVIndices),
                     ni = new List<int>(face.NormalIndices),
-                    mi = face.MaterialIndex != 0 ? face.MaterialIndex : (int?)null  // 0はデフォルトなので省略
+                    mi = face.MaterialIndex != 0 ? face.MaterialIndex : (int?)null,  // 0はデフォルトなので省略
+                    f = (byte)face.Flags
                 };
                 meshDTO.faces.Add(faceData);
             }
@@ -164,9 +169,12 @@ namespace Poly_Ling.Serialization
             foreach (var vd in meshDTO.vertices)
             {
                 var vertex = new Vertex(vd.GetPosition());
+                vertex.Id = vd.id;
                 vertex.UVs = vd.GetUVs();
                 vertex.Normals = vd.GetNormals();
                 vertex.BoneWeight = vd.GetBoneWeight();
+                vertex.MirrorBoneWeight = vd.GetMirrorBoneWeight();
+                vertex.Flags = (VertexFlags)vd.f;
                 meshObject.Vertices.Add(vertex);
             }
 
@@ -175,10 +183,12 @@ namespace Poly_Ling.Serialization
             {
                 var face = new Face
                 {
+                    Id = fd.id,
                     VertexIndices = new List<int>(fd.v ?? new List<int>()),
                     UVIndices = new List<int>(fd.uvi ?? new List<int>()),
                     NormalIndices = new List<int>(fd.ni ?? new List<int>()),
-                    MaterialIndex = fd.mi ?? 0  // nullの場合は0
+                    MaterialIndex = fd.mi ?? 0,  // nullの場合は0
+                    Flags = (FaceFlags)fd.f
                 };
                 meshObject.Faces.Add(face);
             }
@@ -435,7 +445,8 @@ namespace Poly_Ling.Serialization
                     // ミラー設定
                     MirrorType = meshContextData.mirrorType,
                     MirrorAxis = meshContextData.mirrorAxis,
-                    MirrorDistance = meshContextData.mirrorDistance
+                    MirrorDistance = meshContextData.mirrorDistance,
+                    MirrorMaterialOffset = meshContextData.mirrorMaterialOffset
                 };
 
                 // 選択セットを復元
@@ -554,6 +565,7 @@ namespace Poly_Ling.Serialization
                 contextData.mirrorType = meshContext.MirrorType;
                 contextData.mirrorAxis = meshContext.MirrorAxis;
                 contextData.mirrorDistance = meshContext.MirrorDistance;
+                contextData.mirrorMaterialOffset = meshContext.MirrorMaterialOffset;
 
                 // 選択セット
                 SaveSelectionSetsToDTO(meshContext, contextData);
@@ -601,7 +613,8 @@ namespace Poly_Ling.Serialization
                 // ミラー設定
                 MirrorType = meshDTO.mirrorType,
                 MirrorAxis = meshDTO.mirrorAxis,
-                MirrorDistance = meshDTO.mirrorDistance
+                MirrorDistance = meshDTO.mirrorDistance,
+                MirrorMaterialOffset = meshDTO.mirrorMaterialOffset
             };
 
             // 選択セットを復元
