@@ -4,7 +4,7 @@
 using System;
 using UnityEngine;
 
-namespace MeshFactory.UndoSystem
+namespace Poly_Ling.UndoSystem
 {
     /// <summary>
     /// パラメータ編集用Undoヘルパー

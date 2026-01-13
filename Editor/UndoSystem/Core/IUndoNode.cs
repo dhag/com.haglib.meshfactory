@@ -5,7 +5,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace MeshFactory.UndoSystem
+namespace Poly_Ling.UndoSystem
 {
     /// <summary>
     /// Undo操作のメタ情報

@@ -4,9 +4,9 @@
 
 using UnityEditor;
 using UnityEngine;
-using MeshFactory.UndoSystem;
+using Poly_Ling.UndoSystem;
 
-namespace MeshFactory.UndoSystem.Examples
+namespace Poly_Ling.UndoSystem.Examples
 {
     /// <summary>
     /// Undoキュー処理の統合例

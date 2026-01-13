@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MeshFactory.UndoSystem
+namespace Poly_Ling.UndoSystem
 {
     /// <summary>
     /// グローバルUndoマネージャー

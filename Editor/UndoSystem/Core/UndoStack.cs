@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Threading;
 
-namespace MeshFactory.UndoSystem
+namespace Poly_Ling.UndoSystem
 {
     /// <summary>
     /// 保留中のレコード情報
