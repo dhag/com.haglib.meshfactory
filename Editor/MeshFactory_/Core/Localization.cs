@@ -260,11 +260,14 @@ namespace MeshFactory.Localization
             ["SaveMeshAsset"] = new() { ["en"] = "Save Mesh Asset...", ["ja"] = "メッシュを保存...", ["hi"] = "めっしゅをほぞん..." },
             ["SaveAsPrefab"] = new() { ["en"] = "Save as Prefab...", ["ja"] = "プレハブで保存...", ["hi"] = "ぷれはぶでほぞん..." },
             ["AddToHierarchy"] = new() { ["en"] = "Add to Hierarchy", ["ja"] = "ヒエラルキーに追加", ["hi"] = "シーンについか" },
+            ["OverwriteToHierarchy"] = new() { ["en"] = "Overwrite to Hierarchy", ["ja"] = "ヒエラルキーに上書き", ["hi"] = "うわがき" },
             ["ExportModel"] = new() { ["en"] = "Save...", ["ja"] = "保存...", ["hi"] = "ほぞん..." },
             ["ImportModel"] = new() { ["en"] = "Open...", ["ja"] = "開く...", ["hi"] = "ひらく..." },
             ["ExportSelectedMeshOnly"] = new() { ["en"] = "Selected Mesh Only", ["ja"] = "選択メッシュのみ", ["hi"] = "えらんだめっしゅだけ" },
             ["BakeMirror"] = new() { ["en"] = "Bake Symmetry", ["ja"] = "対称をベイク", ["hi"] = "たいしょうをやきつけ" },
             ["MirrorFlipU"] = new() { ["en"] = "Flip UV U", ["ja"] = "UV U反転", ["hi"] = "UV Uはんてん" },
+            ["CreateArmatureMeshesFolder"] = new() { ["en"] = "Create Armature/Meshes Folder", ["ja"] = "Armature/Meshesフォルダ作成", ["hi"] = "フォルダをつくる" },
+            ["ExportAsSkinned"] = new() { ["en"] = "Export as SkinnedMesh", ["ja"] = "スキンメッシュとしてエクスポート", ["hi"] = "スキンメッシュ" },
             ["SaveSection"] = new() { ["en"] = "Save / Export", ["ja"] = "保存 / エクスポート", ["hi"] = "ほぞん" },
             
             // ============================================================
@@ -310,7 +313,7 @@ namespace MeshFactory.Localization
             // ============================================================
             // BoneTransform
             // ============================================================
-            ["BoneTransform"] = new() { ["en"] = "Export Transform", ["ja"] = "エクスポート変換", ["hi"] = "かきだしへんかん" },
+            ["BoneTransform"] = new() { ["en"] = "Apply Local Transform", ["ja"] = "ローカルトランスフォームを反映", ["hi"] = "ろーかるとらんすふぉーむをはんえい" },
             ["UseLocalTransform"] = new() { ["en"] = "Use Local Transform", ["ja"] = "ローカル変換を使用", ["hi"] = "ローカルへんかん" },
             ["ExportAsSkinned"] = new() { ["en"] = "Export as Skinned", ["ja"] = "スキンメッシュで出力", ["hi"] = "すきんめっしゅでだす" },
             ["Position"] = new() { ["en"] = "Position", ["ja"] = "位置", ["hi"] = "いち" },

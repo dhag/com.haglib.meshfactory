@@ -831,56 +831,76 @@ namespace MeshFactory.PMX
             string normalizedPath = texturePath.Replace('\\', '/');
             string normalizedBaseDir = baseDir?.Replace('\\', '/') ?? "";
 
-            // アセットパスを構築
-            string assetPath;
-
+            // 実際のファイルパスを構築
+            string fullPath;
             if (Path.IsPathRooted(normalizedPath))
             {
-                // 絶対パスの場合
-                assetPath = normalizedPath;
+                fullPath = normalizedPath;
             }
             else
             {
-                // 相対パスの場合 → baseDirからの相対パス
                 if (!string.IsNullOrEmpty(normalizedBaseDir))
                 {
-                    assetPath = Path.Combine(normalizedBaseDir, normalizedPath).Replace('\\', '/');
+                    fullPath = Path.Combine(normalizedBaseDir, normalizedPath).Replace('\\', '/');
                 }
                 else
                 {
-                    assetPath = normalizedPath;
+                    fullPath = normalizedPath;
                 }
             }
 
-            // Assets/から始まるように正規化
+            // アセットパスを構築（Assets/から始まる形式）
+            string assetPath = fullPath;
+            bool isInsideAssets = false;
             if (!assetPath.StartsWith("Assets/"))
             {
-                // Assetsの位置を探す
                 int assetsIdx = assetPath.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
                 if (assetsIdx >= 0)
                 {
-                    assetPath = assetPath.Substring(assetsIdx + 1); // "/Assets/" の "/" を除去
+                    assetPath = assetPath.Substring(assetsIdx + 1);
+                    isInsideAssets = true;
                 }
                 else
                 {
                     assetsIdx = assetPath.IndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
-                    if (assetsIdx > 0)
+                    if (assetsIdx >= 0)
                     {
                         assetPath = assetPath.Substring(assetsIdx);
+                        isInsideAssets = true;
                     }
                 }
             }
-
-            // テクスチャを読み込み
-            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-
-            if (texture == null)
+            else
             {
-                // パスが見つからない場合、ファイル名で検索
+                isInsideAssets = true;
+            }
+
+            // 1. まずAssetDatabaseから読み込みを試す
+            Texture2D texture = null;
+            if (isInsideAssets)
+            {
+                texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+            }
+
+            // 2. Assets内の場合のみ、同じbaseDir内でファイル名検索
+            if (texture == null && isInsideAssets)
+            {
                 string fileName = Path.GetFileName(normalizedPath);
                 string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                
+                // baseDirをAssets/形式に変換
+                string searchFolder = normalizedBaseDir;
+                if (!searchFolder.StartsWith("Assets/"))
+                {
+                    int idx = searchFolder.IndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
+                    if (idx >= 0)
+                    {
+                        searchFolder = searchFolder.Substring(idx);
+                    }
+                }
 
-                string[] guids = AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}");
+                string[] guids = AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}", 
+                    new[] { searchFolder });
                 foreach (var guid in guids)
                 {
                     string foundPath = AssetDatabase.GUIDToAssetPath(guid);
@@ -889,16 +909,41 @@ namespace MeshFactory.PMX
                         texture = AssetDatabase.LoadAssetAtPath<Texture2D>(foundPath);
                         if (texture != null)
                         {
-                            Debug.Log($"[PMXImporter] Texture found by name: {foundPath}");
+                            Debug.Log($"[PMXImporter] Texture found in baseDir: {foundPath}");
                             break;
                         }
                     }
                 }
             }
 
+            // 3. それでも失敗した場合、File.ReadAllBytesで直接読み込み
+            if (texture == null && File.Exists(fullPath))
+            {
+                try
+                {
+                    byte[] fileData = File.ReadAllBytes(fullPath);
+                    texture = new Texture2D(2, 2);
+                    if (texture.LoadImage(fileData))
+                    {
+                        texture.name = Path.GetFileNameWithoutExtension(fullPath);
+                        Debug.Log($"[PMXImporter] Texture loaded from file: {fullPath}");
+                    }
+                    else
+                    {
+                        UnityEngine.Object.DestroyImmediate(texture);
+                        texture = null;
+                        Debug.LogWarning($"[PMXImporter] Failed to load image data: {fullPath}");
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[PMXImporter] Failed to read texture file: {fullPath} - {e.Message}");
+                }
+            }
+
             if (texture == null)
             {
-                Debug.LogWarning($"[PMXImporter] Texture not found: {assetPath} (original: {texturePath})");
+                Debug.LogWarning($"[PMXImporter] Texture not found: {fullPath} (original: {texturePath})");
             }
 
             return texture;

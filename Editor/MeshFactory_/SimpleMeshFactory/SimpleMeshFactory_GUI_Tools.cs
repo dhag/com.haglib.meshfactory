@@ -226,7 +226,7 @@ public partial class SimpleMeshFactory
 
         if (GUILayout.Button("Avatar Creator..."))
         {
-            MeshFactory.PMX.PMXAvatarCreatorPanel.ShowWindow();
+            MeshFactory.PMX.AvatarCreatorPanel.ShowWindow();
         }
 
         EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);

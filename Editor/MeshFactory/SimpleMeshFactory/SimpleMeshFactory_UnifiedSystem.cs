@@ -62,6 +62,7 @@ public partial class SimpleMeshFactory
             return false;
         }
 
+
         // 参照を設定
         _unifiedAdapter.SetModelContext(_model);
         _unifiedAdapter.SetSelectionState(_selectionState);
@@ -71,6 +72,7 @@ public partial class SimpleMeshFactory
         {
             _unifiedAdapter.SetActiveMesh(0, _selectedIndex);
         }
+
 
         // レンダリングモード設定
         _unifiedAdapter.UseUnifiedRendering = true;

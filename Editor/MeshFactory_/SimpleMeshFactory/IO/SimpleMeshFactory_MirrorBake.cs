@@ -38,182 +38,180 @@ public partial class SimpleMeshFactory
             return mesh;
 
         SymmetryAxis axis = meshContext.GetMirrorSymmetryAxis();
+        bool hasBoneWeights = meshObject.IsSkinned;
 
         // 頂点データ
         var unityVerts = new List<Vector3>();
         var unityUVs = new List<Vector2>();
         var unityNormals = new List<Vector3>();
+        var unityBoneWeights = new List<BoneWeight>();
 
-        // 頂点共有用マッピング（左側・右側で別々）
-        // キー: (頂点インデックス, UVサブインデックス, 法線サブインデックス)
-        var leftVertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
-        var rightVertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+        // === FPX仕様: 頂点順 → UV順 で頂点を展開 ===
+        // キー: (頂点インデックス, UVサブインデックス)
+        var leftVertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
+        var rightVertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
 
-        // マテリアルインデックス → サブメッシュインデックス（左側用）
-        var matToLeftSubMesh = new Dictionary<int, int>();
-        // 左側サブメッシュ用三角形リスト
-        var leftSubMeshTriangles = new List<List<int>>();
-        // 右側サブメッシュ用三角形リスト（後で追加）
-        var rightSubMeshTriangles = new List<List<int>>();
+        // パス1: 左側頂点を頂点順→UV順で作成
+        for (int vIdx = 0; vIdx < meshObject.Vertices.Count; vIdx++)
+        {
+            var vertex = meshObject.Vertices[vIdx];
+            int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
 
-        // ============================================
-        // パス1: 左側（オリジナル）
-        // ============================================
+            for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+            {
+                int unityIdx = unityVerts.Count;
+                leftVertexMapping[(vIdx, uvIdx)] = unityIdx;
+
+                // 位置
+                unityVerts.Add(vertex.Position);
+
+                // UV
+                if (uvIdx < vertex.UVs.Count)
+                    unityUVs.Add(vertex.UVs[uvIdx]);
+                else
+                    unityUVs.Add(Vector2.zero);
+
+                // 法線（最初の法線を使用）
+                if (vertex.Normals.Count > 0)
+                    unityNormals.Add(vertex.Normals[0]);
+                else
+                    unityNormals.Add(Vector3.up);
+
+                // BoneWeight（左側は実体側ウェイト）
+                if (hasBoneWeights)
+                {
+                    unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                }
+            }
+        }
+
+        int leftVertexCount = unityVerts.Count;
+
+        // パス2: 右側頂点を頂点順→UV順で作成（ミラー変換）
+        for (int vIdx = 0; vIdx < meshObject.Vertices.Count; vIdx++)
+        {
+            var vertex = meshObject.Vertices[vIdx];
+            int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+            for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+            {
+                int unityIdx = unityVerts.Count;
+                rightVertexMapping[(vIdx, uvIdx)] = unityIdx;
+
+                // 位置（ミラー）
+                unityVerts.Add(MirrorPosition(vertex.Position, axis));
+
+                // UV（flipU対応）
+                Vector2 uv;
+                if (uvIdx < vertex.UVs.Count)
+                    uv = vertex.UVs[uvIdx];
+                else
+                    uv = Vector2.zero;
+
+                if (flipU)
+                    uv.x = 1f - uv.x;
+                unityUVs.Add(uv);
+
+                // 法線（ミラー）
+                Vector3 normal;
+                if (vertex.Normals.Count > 0)
+                    normal = vertex.Normals[0];
+                else
+                    normal = Vector3.up;
+                unityNormals.Add(MirrorNormal(normal, axis));
+
+                // BoneWeight（右側はミラー側ウェイト、なければ実体側ウェイト）
+                if (hasBoneWeights)
+                {
+                    if (vertex.HasMirrorBoneWeight)
+                    {
+                        unityBoneWeights.Add(vertex.MirrorBoneWeight.Value);
+                    }
+                    else
+                    {
+                        unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                    }
+                }
+            }
+        }
+
+        Debug.Log($"[BakeMirror-B] Vertices: left={leftVertexCount}, right={unityVerts.Count - leftVertexCount}, total={unityVerts.Count}, hasBoneWeights={hasBoneWeights}");
+
+        // パス3: 使用マテリアルを収集
+        var matToSubMesh = new Dictionary<int, int>();
         foreach (var face in meshObject.Faces)
         {
             if (face.VertexCount < 3 || face.IsHidden)
                 continue;
 
             int matIdx = face.MaterialIndex;
-
-            // 新しいマテリアルなら左側のサブメッシュを追加
-            if (!matToLeftSubMesh.ContainsKey(matIdx))
+            if (!matToSubMesh.ContainsKey(matIdx))
             {
-                matToLeftSubMesh[matIdx] = leftSubMeshTriangles.Count;
-                leftSubMeshTriangles.Add(new List<int>());
-                rightSubMeshTriangles.Add(new List<int>()); // 右側も同時に追加
+                matToSubMesh[matIdx] = usedMaterialIndices.Count;
                 usedMaterialIndices.Add(matIdx);
-            }
-
-            int leftSubMesh = matToLeftSubMesh[matIdx];
-
-            var triangles = face.Triangulate();
-            foreach (var tri in triangles)
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    int vIdx = tri.VertexIndices[i];
-                    if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
-                        vIdx = 0;
-
-                    var vertex = meshObject.Vertices[vIdx];
-
-                    // UVサブインデックスを取得
-                    int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                    if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
-                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
-
-                    // 法線サブインデックスを取得
-                    int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                    if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
-                        normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
-
-                    var key = (vIdx, uvSubIdx, normalSubIdx);
-
-                    // 既存の頂点があるか確認
-                    if (!leftVertexMapping.TryGetValue(key, out int unityIdx))
-                    {
-                        // 新しいUnity頂点を作成
-                        unityIdx = unityVerts.Count;
-                        leftVertexMapping[key] = unityIdx;
-
-                        // 位置
-                        unityVerts.Add(vertex.Position);
-
-                        // UV
-                        if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
-                            unityUVs.Add(vertex.UVs[uvSubIdx]);
-                        else if (vertex.UVs.Count > 0)
-                            unityUVs.Add(vertex.UVs[0]);
-                        else
-                            unityUVs.Add(Vector2.zero);
-
-                        // 法線
-                        if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
-                            unityNormals.Add(vertex.Normals[normalSubIdx]);
-                        else if (vertex.Normals.Count > 0)
-                            unityNormals.Add(vertex.Normals[0]);
-                        else
-                            unityNormals.Add(Vector3.up);
-                    }
-
-                    leftSubMeshTriangles[leftSubMesh].Add(unityIdx);
-                }
             }
         }
 
-        int leftVertexCount = unityVerts.Count;
-        Debug.Log($"[BakeMirror-B] Pass1 done: leftVertexCount={leftVertexCount}");
+        int materialCount = usedMaterialIndices.Count;
 
-        // ============================================
-        // パス2: 右側（ミラー）
-        // ============================================
+        // サブメッシュ用三角形リスト（左全部 → 右全部）
+        var leftSubMeshTriangles = new List<List<int>>();
+        var rightSubMeshTriangles = new List<List<int>>();
+        for (int i = 0; i < materialCount; i++)
+        {
+            leftSubMeshTriangles.Add(new List<int>());
+            rightSubMeshTriangles.Add(new List<int>());
+        }
+
+        // パス4: 面の三角形インデックスを構築
         foreach (var face in meshObject.Faces)
         {
             if (face.VertexCount < 3 || face.IsHidden)
                 continue;
 
-            int rightSubMesh = matToLeftSubMesh[face.MaterialIndex];
+            int subMeshIdx = matToSubMesh[face.MaterialIndex];
 
             var triangles = face.Triangulate();
             foreach (var tri in triangles)
             {
-                // 右側は頂点順序を逆にして面を反転
-                int[] triIndices = new int[3];
-
+                // 左側
                 for (int i = 0; i < 3; i++)
                 {
-                    // 逆順で処理（2, 1, 0）
-                    int srcI = 2 - i;
-
-                    int vIdx = tri.VertexIndices[srcI];
+                    int vIdx = tri.VertexIndices[i];
                     if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
-                        vIdx = 0;
+                        continue;
 
+                    int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
                     var vertex = meshObject.Vertices[vIdx];
-
-                    // UVサブインデックスを取得
-                    int uvSubIdx = srcI < tri.UVIndices.Count ? tri.UVIndices[srcI] : 0;
                     if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
-                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
+                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : 0;
 
-                    // 法線サブインデックスを取得
-                    int normalSubIdx = srcI < tri.NormalIndices.Count ? tri.NormalIndices[srcI] : 0;
-                    if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
-                        normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
-
-                    var key = (vIdx, uvSubIdx, normalSubIdx);
-
-                    // 既存の頂点があるか確認
-                    if (!rightVertexMapping.TryGetValue(key, out int unityIdx))
+                    var key = (vIdx, uvSubIdx);
+                    if (leftVertexMapping.TryGetValue(key, out int unityIdx))
                     {
-                        // 新しいUnity頂点を作成（ミラー変換）
-                        unityIdx = unityVerts.Count;
-                        rightVertexMapping[key] = unityIdx;
-
-                        // 位置（ミラー）
-                        unityVerts.Add(MirrorPosition(vertex.Position, axis));
-
-                        // UV（flipU対応）
-                        Vector2 uv;
-                        if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
-                            uv = vertex.UVs[uvSubIdx];
-                        else if (vertex.UVs.Count > 0)
-                            uv = vertex.UVs[0];
-                        else
-                            uv = Vector2.zero;
-
-                        if (flipU)
-                            uv.x = 1f - uv.x;
-                        unityUVs.Add(uv);
-
-                        // 法線（ミラー）
-                        Vector3 normal;
-                        if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
-                            normal = vertex.Normals[normalSubIdx];
-                        else if (vertex.Normals.Count > 0)
-                            normal = vertex.Normals[0];
-                        else
-                            normal = Vector3.up;
-                        unityNormals.Add(MirrorNormal(normal, axis));
+                        leftSubMeshTriangles[subMeshIdx].Add(unityIdx);
                     }
-
-                    triIndices[i] = unityIdx;
                 }
 
-                rightSubMeshTriangles[rightSubMesh].Add(triIndices[0]);
-                rightSubMeshTriangles[rightSubMesh].Add(triIndices[1]);
-                rightSubMeshTriangles[rightSubMesh].Add(triIndices[2]);
+                // 右側（頂点順序を逆にして面を反転）
+                for (int i = 0; i < 3; i++)
+                {
+                    int srcI = 2 - i; // 逆順
+                    int vIdx = tri.VertexIndices[srcI];
+                    if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
+                        continue;
+
+                    int uvSubIdx = srcI < tri.UVIndices.Count ? tri.UVIndices[srcI] : 0;
+                    var vertex = meshObject.Vertices[vIdx];
+                    if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : 0;
+
+                    var key = (vIdx, uvSubIdx);
+                    if (rightVertexMapping.TryGetValue(key, out int unityIdx))
+                    {
+                        rightSubMeshTriangles[subMeshIdx].Add(unityIdx);
+                    }
+                }
             }
         }
 
@@ -225,8 +223,14 @@ public partial class SimpleMeshFactory
         mesh.SetUVs(0, unityUVs);
         mesh.SetNormals(unityNormals);
 
+        // BoneWeight設定
+        if (hasBoneWeights && unityBoneWeights.Count == unityVerts.Count)
+        {
+            mesh.boneWeights = unityBoneWeights.ToArray();
+            Debug.Log($"[BakeMirror-B] BoneWeights set: {unityBoneWeights.Count} weights");
+        }
+
         // サブメッシュ設定（B方式：左全部 → 右全部）
-        int materialCount = leftSubMeshTriangles.Count;
         mesh.subMeshCount = materialCount * 2;
 
         // 左側サブメッシュ
@@ -263,14 +267,14 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// ベイクミラー用のマテリアル配列を構築（B方式：左右分離版）
-    /// [mat0, mat1, ..., mat0, mat1, ...]
+    /// [mat0, mat1, ..., mat0+offset, mat1+offset, ...]
     /// </summary>
-    private Material[] GetMaterialsForBakedMirror(List<int> usedMaterialIndices, Material[] baseMaterials)
+    private Material[] GetMaterialsForBakedMirror(List<int> usedMaterialIndices, Material[] baseMaterials, int mirrorMaterialOffset = 0)
     {
         int materialCount = usedMaterialIndices.Count;
         var result = new Material[materialCount * 2];
 
-        // 左側マテリアル
+        // 左側マテリアル（実体側）
         for (int i = 0; i < materialCount; i++)
         {
             int matIndex = usedMaterialIndices[i];
@@ -280,10 +284,10 @@ public partial class SimpleMeshFactory
             result[i] = mat;
         }
 
-        // 右側マテリアル（同じマテリアルを参照）
+        // 右側マテリアル（ミラー側：オフセット適用）
         for (int i = 0; i < materialCount; i++)
         {
-            int matIndex = usedMaterialIndices[i];
+            int matIndex = usedMaterialIndices[i] + mirrorMaterialOffset;
             Material mat = (matIndex >= 0 && matIndex < baseMaterials.Length)
                 ? baseMaterials[matIndex]
                 : GetOrCreateDefaultMaterial();
@@ -301,7 +305,7 @@ public partial class SimpleMeshFactory
     /// ミラー（対称）をベイクしたUnity Meshを生成（C方式：材質ペア版）
     /// 頂点数・面数が2倍になり、サブメッシュは左右ペアで並ぶ
     /// 例: 元が[mat0, mat1]なら、結果は[左mat0, 右mat0, 左mat1, 右mat1]
-    /// (頂点インデックス, UVサブインデックス, 法線サブインデックス) の組み合わせで頂点を共有
+    /// FPX仕様: 頂点順 → UV順 で頂点を展開
     /// </summary>
     private Mesh BakeMirrorToUnityMesh_MaterialPaired(MeshContext meshContext, bool flipU, out List<int> usedMaterialIndices)
     {
@@ -314,179 +318,165 @@ public partial class SimpleMeshFactory
             return mesh;
 
         SymmetryAxis axis = meshContext.GetMirrorSymmetryAxis();
+        bool hasBoneWeights = meshObject.IsSkinned;
 
         // 頂点データ
         var unityVerts = new List<Vector3>();
         var unityUVs = new List<Vector2>();
         var unityNormals = new List<Vector3>();
+        var unityBoneWeights = new List<BoneWeight>();
 
-        // 頂点共有用マッピング（左側・右側で別々）
-        // キー: (頂点インデックス, UVサブインデックス, 法線サブインデックス)
-        var leftVertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
-        var rightVertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+        // === FPX仕様: 頂点順 → UV順 で頂点を展開 ===
+        var leftVertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
+        var rightVertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
 
-        // マテリアルインデックス → サブメッシュインデックス（左）
-        var matToLeftSubMesh = new Dictionary<int, int>();
-        var subMeshTriangles = new List<List<int>>();
+        // パス1: 左側頂点を頂点順→UV順で作成
+        for (int vIdx = 0; vIdx < meshObject.Vertices.Count; vIdx++)
+        {
+            var vertex = meshObject.Vertices[vIdx];
+            int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
 
-        // ============================================
-        // パス1: 左側（頂点共有版）
-        // ============================================
+            for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+            {
+                int unityIdx = unityVerts.Count;
+                leftVertexMapping[(vIdx, uvIdx)] = unityIdx;
+
+                unityVerts.Add(vertex.Position);
+
+                if (uvIdx < vertex.UVs.Count)
+                    unityUVs.Add(vertex.UVs[uvIdx]);
+                else
+                    unityUVs.Add(Vector2.zero);
+
+                if (vertex.Normals.Count > 0)
+                    unityNormals.Add(vertex.Normals[0]);
+                else
+                    unityNormals.Add(Vector3.up);
+
+                if (hasBoneWeights)
+                {
+                    unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                }
+            }
+        }
+
+        int leftVertexCount = unityVerts.Count;
+
+        // パス2: 右側頂点を頂点順→UV順で作成（ミラー変換）
+        for (int vIdx = 0; vIdx < meshObject.Vertices.Count; vIdx++)
+        {
+            var vertex = meshObject.Vertices[vIdx];
+            int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+            for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+            {
+                int unityIdx = unityVerts.Count;
+                rightVertexMapping[(vIdx, uvIdx)] = unityIdx;
+
+                unityVerts.Add(MirrorPosition(vertex.Position, axis));
+
+                Vector2 uv;
+                if (uvIdx < vertex.UVs.Count)
+                    uv = vertex.UVs[uvIdx];
+                else
+                    uv = Vector2.zero;
+
+                if (flipU)
+                    uv.x = 1f - uv.x;
+                unityUVs.Add(uv);
+
+                Vector3 normal;
+                if (vertex.Normals.Count > 0)
+                    normal = vertex.Normals[0];
+                else
+                    normal = Vector3.up;
+                unityNormals.Add(MirrorNormal(normal, axis));
+
+                if (hasBoneWeights)
+                {
+                    if (vertex.HasMirrorBoneWeight)
+                        unityBoneWeights.Add(vertex.MirrorBoneWeight.Value);
+                    else
+                        unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                }
+            }
+        }
+
+        Debug.Log($"[BakeMirror-C] Vertices: left={leftVertexCount}, right={unityVerts.Count - leftVertexCount}, total={unityVerts.Count}, hasBoneWeights={hasBoneWeights}");
+
+        // パス3: 使用マテリアルを収集
+        var matToSubMesh = new Dictionary<int, int>();
         foreach (var face in meshObject.Faces)
         {
             if (face.VertexCount < 3 || face.IsHidden)
                 continue;
 
             int matIdx = face.MaterialIndex;
-
-            // 新しいマテリアルなら左右のサブメッシュを追加
-            if (!matToLeftSubMesh.ContainsKey(matIdx))
+            if (!matToSubMesh.ContainsKey(matIdx))
             {
-                matToLeftSubMesh[matIdx] = subMeshTriangles.Count;
-                subMeshTriangles.Add(new List<int>()); // 左
-                subMeshTriangles.Add(new List<int>()); // 右
+                matToSubMesh[matIdx] = usedMaterialIndices.Count;
                 usedMaterialIndices.Add(matIdx);
-            }
-
-            int leftSubMesh = matToLeftSubMesh[matIdx];
-
-            var triangles = face.Triangulate();
-            foreach (var tri in triangles)
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    int vIdx = tri.VertexIndices[i];
-                    if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
-                        vIdx = 0;
-
-                    var vertex = meshObject.Vertices[vIdx];
-
-                    // UVサブインデックスを取得
-                    int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                    if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
-                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
-
-                    // 法線サブインデックスを取得
-                    int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                    if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
-                        normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
-
-                    var key = (vIdx, uvSubIdx, normalSubIdx);
-
-                    // 既存の頂点があるか確認
-                    if (!leftVertexMapping.TryGetValue(key, out int unityIdx))
-                    {
-                        // 新しいUnity頂点を作成
-                        unityIdx = unityVerts.Count;
-                        leftVertexMapping[key] = unityIdx;
-
-                        // 位置
-                        unityVerts.Add(vertex.Position);
-
-                        // UV
-                        if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
-                            unityUVs.Add(vertex.UVs[uvSubIdx]);
-                        else if (vertex.UVs.Count > 0)
-                            unityUVs.Add(vertex.UVs[0]);
-                        else
-                            unityUVs.Add(Vector2.zero);
-
-                        // 法線
-                        if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
-                            unityNormals.Add(vertex.Normals[normalSubIdx]);
-                        else if (vertex.Normals.Count > 0)
-                            unityNormals.Add(vertex.Normals[0]);
-                        else
-                            unityNormals.Add(Vector3.up);
-                    }
-
-                    subMeshTriangles[leftSubMesh].Add(unityIdx);
-                }
             }
         }
 
-        int leftVertexCount = unityVerts.Count;
-        Debug.Log($"[BakeMirror-C] Pass1 done: leftVertexCount={leftVertexCount}");
+        // サブメッシュ用三角形リスト（C方式：左右ペア）
+        var subMeshTriangles = new List<List<int>>();
+        for (int i = 0; i < usedMaterialIndices.Count * 2; i++)
+        {
+            subMeshTriangles.Add(new List<int>());
+        }
 
-        // ============================================
-        // パス2: 右側（頂点共有版、ミラー変換）
-        // ============================================
+        // パス4: 面の三角形インデックスを構築
         foreach (var face in meshObject.Faces)
         {
             if (face.VertexCount < 3 || face.IsHidden)
                 continue;
 
-            int rightSubMesh = matToLeftSubMesh[face.MaterialIndex] + 1;
+            int subMeshIdx = matToSubMesh[face.MaterialIndex];
+            int leftSubMesh = subMeshIdx * 2;
+            int rightSubMesh = subMeshIdx * 2 + 1;
 
             var triangles = face.Triangulate();
             foreach (var tri in triangles)
             {
-                // 右側は頂点順序を逆にして面を反転
-                int[] triIndices = new int[3];
-
+                // 左側
                 for (int i = 0; i < 3; i++)
                 {
-                    // 逆順で処理（2, 1, 0）
-                    int srcI = 2 - i;
-
-                    int vIdx = tri.VertexIndices[srcI];
+                    int vIdx = tri.VertexIndices[i];
                     if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
-                        vIdx = 0;
+                        continue;
 
+                    int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
                     var vertex = meshObject.Vertices[vIdx];
-
-                    // UVサブインデックスを取得
-                    int uvSubIdx = srcI < tri.UVIndices.Count ? tri.UVIndices[srcI] : 0;
                     if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
-                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
+                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : 0;
 
-                    // 法線サブインデックスを取得
-                    int normalSubIdx = srcI < tri.NormalIndices.Count ? tri.NormalIndices[srcI] : 0;
-                    if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
-                        normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
-
-                    var key = (vIdx, uvSubIdx, normalSubIdx);
-
-                    // 既存の頂点があるか確認
-                    if (!rightVertexMapping.TryGetValue(key, out int unityIdx))
+                    var key = (vIdx, uvSubIdx);
+                    if (leftVertexMapping.TryGetValue(key, out int unityIdx))
                     {
-                        // 新しいUnity頂点を作成（ミラー変換）
-                        unityIdx = unityVerts.Count;
-                        rightVertexMapping[key] = unityIdx;
-
-                        // 位置（ミラー）
-                        unityVerts.Add(MirrorPosition(vertex.Position, axis));
-
-                        // UV（flipU対応）
-                        Vector2 uv;
-                        if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
-                            uv = vertex.UVs[uvSubIdx];
-                        else if (vertex.UVs.Count > 0)
-                            uv = vertex.UVs[0];
-                        else
-                            uv = Vector2.zero;
-
-                        if (flipU)
-                            uv.x = 1f - uv.x;
-                        unityUVs.Add(uv);
-
-                        // 法線（ミラー）
-                        Vector3 normal;
-                        if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
-                            normal = vertex.Normals[normalSubIdx];
-                        else if (vertex.Normals.Count > 0)
-                            normal = vertex.Normals[0];
-                        else
-                            normal = Vector3.up;
-                        unityNormals.Add(MirrorNormal(normal, axis));
+                        subMeshTriangles[leftSubMesh].Add(unityIdx);
                     }
-
-                    triIndices[i] = unityIdx;
                 }
 
-                subMeshTriangles[rightSubMesh].Add(triIndices[0]);
-                subMeshTriangles[rightSubMesh].Add(triIndices[1]);
-                subMeshTriangles[rightSubMesh].Add(triIndices[2]);
+                // 右側（頂点順序を逆にして面を反転）
+                for (int i = 0; i < 3; i++)
+                {
+                    int srcI = 2 - i;
+                    int vIdx = tri.VertexIndices[srcI];
+                    if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
+                        continue;
+
+                    int uvSubIdx = srcI < tri.UVIndices.Count ? tri.UVIndices[srcI] : 0;
+                    var vertex = meshObject.Vertices[vIdx];
+                    if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : 0;
+
+                    var key = (vIdx, uvSubIdx);
+                    if (rightVertexMapping.TryGetValue(key, out int unityIdx))
+                    {
+                        subMeshTriangles[rightSubMesh].Add(unityIdx);
+                    }
+                }
             }
         }
 
@@ -498,6 +488,13 @@ public partial class SimpleMeshFactory
         mesh.SetUVs(0, unityUVs);
         mesh.SetNormals(unityNormals);
 
+        // BoneWeight設定
+        if (hasBoneWeights && unityBoneWeights.Count == unityVerts.Count)
+        {
+            mesh.boneWeights = unityBoneWeights.ToArray();
+            Debug.Log($"[BakeMirror-C] BoneWeights set: {unityBoneWeights.Count} weights");
+        }
+
         mesh.subMeshCount = subMeshTriangles.Count;
         for (int i = 0; i < subMeshTriangles.Count; i++)
         {
@@ -506,7 +503,7 @@ public partial class SimpleMeshFactory
 
         mesh.RecalculateBounds();
 
-        // デバッグ: 各サブメッシュのインデックス範囲を出力
+        // デバッグ
         Debug.Log($"[BakeMirror-C] {meshObject.Name}: totalVerts={unityVerts.Count}, leftVertexCount={leftVertexCount}, rightStart={leftVertexCount}");
         for (int i = 0; i < subMeshTriangles.Count; i++)
         {
@@ -526,19 +523,27 @@ public partial class SimpleMeshFactory
 
     /// <summary>
     /// ベイクミラー用のマテリアル配列を構築（C方式：材質ペア版）
-    /// [mat0, mat0, mat1, mat1, ...]
+    /// [mat0, mat0+offset, mat1, mat1+offset, ...]
     /// </summary>
-    private Material[] GetMaterialsForBakedMirror_MaterialPaired(List<int> usedMaterialIndices, Material[] baseMaterials)
+    private Material[] GetMaterialsForBakedMirror_MaterialPaired(List<int> usedMaterialIndices, Material[] baseMaterials, int mirrorMaterialOffset = 0)
     {
         var result = new Material[usedMaterialIndices.Count * 2];
         for (int i = 0; i < usedMaterialIndices.Count; i++)
         {
             int matIndex = usedMaterialIndices[i];
-            Material mat = (matIndex >= 0 && matIndex < baseMaterials.Length)
+            
+            // 左側（実体側）
+            Material leftMat = (matIndex >= 0 && matIndex < baseMaterials.Length)
                 ? baseMaterials[matIndex]
                 : GetOrCreateDefaultMaterial();
-            result[i * 2] = mat;       // 左
-            result[i * 2 + 1] = mat;   // 右
+            result[i * 2] = leftMat;
+            
+            // 右側（ミラー側：オフセット適用）
+            int mirrorMatIndex = matIndex + mirrorMaterialOffset;
+            Material rightMat = (mirrorMatIndex >= 0 && mirrorMatIndex < baseMaterials.Length)
+                ? baseMaterials[mirrorMatIndex]
+                : GetOrCreateDefaultMaterial();
+            result[i * 2 + 1] = rightMat;
         }
         return result;
     }

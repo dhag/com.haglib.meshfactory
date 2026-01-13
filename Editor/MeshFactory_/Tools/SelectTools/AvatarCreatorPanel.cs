@@ -1,4 +1,3 @@
-// Assets/Editor/MeshFactory/Tools/Panels/PMX/Export/PMXAvatarCreatorPanel.cs
 // ヒエラルキー上のGameObjectからUnity Humanoid Avatarを作成するパネル
 // HumanoidBoneMapping.csvで対応付け
 
@@ -15,7 +14,7 @@ namespace MeshFactory.PMX
     /// <summary>
     /// PMX Avatar作成パネル
     /// </summary>
-    public class PMXAvatarCreatorPanel : EditorWindow
+    public class AvatarCreatorPanel : EditorWindow
     {
         // ================================================================
         // ローカライズ辞書
@@ -69,10 +68,10 @@ namespace MeshFactory.PMX
         // Open
         // ================================================================
 
-        [MenuItem("MeshFactory/Tools/Avatar Creator...")]
+        //[MenuItem("MeshFactory/Tools/Avatar Creator...")]
         public static void ShowWindow()
         {
-            var window = GetWindow<PMXAvatarCreatorPanel>();
+            var window = GetWindow<AvatarCreatorPanel>();
             window.titleContent = new GUIContent(T("WindowTitle"));
             window.minSize = new Vector2(400, 500);
             window.Show();

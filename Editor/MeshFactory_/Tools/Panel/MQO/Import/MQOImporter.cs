@@ -5,9 +5,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Model;
+using MeshFactory.Tools;
 
 // MeshContextはSimpleMeshFactoryのネストクラス
 //using MeshContext = MeshContext;
@@ -28,8 +30,17 @@ namespace MeshFactory.MQO
         /// <summary>インポートされたMeshContextリスト</summary>
         public List<MeshContext> MeshContexts { get; } = new List<MeshContext>();
 
+        /// <summary>インポートされたボーンMeshContextリスト</summary>
+        public List<MeshContext> BoneMeshContexts { get; } = new List<MeshContext>();
+
         /// <summary>インポートされたマテリアルリスト</summary>
         public List<Material> Materials { get; } = new List<Material>();
+
+        /// <summary>
+        /// ミラー側マテリアルのオフセット
+        /// ミラー側マテリアルインデックス = 実体側インデックス + MirrorMaterialOffset
+        /// </summary>
+        public int MirrorMaterialOffset { get; set; } = 0;
 
         /// <summary>元のMQOドキュメント</summary>
         public MQODocument Document { get; set; }
@@ -61,6 +72,79 @@ namespace MeshFactory.MQO
 
             Debug.Log($"[MQOImportResult] Applied material index offset: +{offset}");
         }
+
+        /// <summary>
+        /// ボーンMeshContextsの親インデックスにオフセットを加算
+        /// メッシュの後にボーンを追加する場合に使用
+        /// </summary>
+        /// <param name="offset">加算するオフセット（メッシュ数）</param>
+        public void ApplyBoneParentIndexOffset(int offset)
+        {
+            if (offset <= 0) return;
+
+            foreach (var boneCtx in BoneMeshContexts)
+            {
+                if (boneCtx == null) continue;
+
+                // 親インデックスがある場合のみオフセット
+                if (boneCtx.ParentIndex >= 0)
+                {
+                    boneCtx.ParentIndex += offset;
+                }
+                if (boneCtx.HierarchyParentIndex >= 0)
+                {
+                    boneCtx.HierarchyParentIndex += offset;
+                }
+            }
+
+            Debug.Log($"[MQOImportResult] Applied bone parent index offset: +{offset}");
+        }
+
+        /// <summary>
+        /// 全MeshContextのBoneWeightインデックスにオフセットを加算
+        /// メッシュの後にボーンを追加する場合、BoneWeightのboneIndexを調整
+        /// </summary>
+        /// <param name="offset">加算するオフセット（メッシュ数）</param>
+        public void ApplyBoneWeightIndexOffset(int offset)
+        {
+            if (offset <= 0) return;
+
+            int adjustedVertices = 0;
+            int adjustedMirrorVertices = 0;
+            foreach (var meshContext in MeshContexts)
+            {
+                if (meshContext?.MeshObject == null) continue;
+
+                foreach (var vertex in meshContext.MeshObject.Vertices)
+                {
+                    // 実体側BoneWeight
+                    if (vertex.BoneWeight.HasValue)
+                    {
+                        var bw = vertex.BoneWeight.Value;
+                        bw.boneIndex0 += offset;
+                        bw.boneIndex1 += offset;
+                        bw.boneIndex2 += offset;
+                        bw.boneIndex3 += offset;
+                        vertex.BoneWeight = bw;
+                        adjustedVertices++;
+                    }
+
+                    // ミラー側BoneWeight
+                    if (vertex.MirrorBoneWeight.HasValue)
+                    {
+                        var mbw = vertex.MirrorBoneWeight.Value;
+                        mbw.boneIndex0 += offset;
+                        mbw.boneIndex1 += offset;
+                        mbw.boneIndex2 += offset;
+                        mbw.boneIndex3 += offset;
+                        vertex.MirrorBoneWeight = mbw;
+                        adjustedMirrorVertices++;
+                    }
+                }
+            }
+
+            Debug.Log($"[MQOImportResult] Applied bone weight index offset: +{offset} to {adjustedVertices} vertices, {adjustedMirrorVertices} mirror vertices");
+        }
     }
 
     /// <summary>
@@ -72,6 +156,7 @@ namespace MeshFactory.MQO
         public int TotalVertices { get; set; }
         public int TotalFaces { get; set; }
         public int MaterialCount { get; set; }
+        public int BoneCount { get; set; }
         public int SkippedSpecialFaces { get; set; }
     }
 
@@ -91,6 +176,9 @@ namespace MeshFactory.MQO
         {
             var result = new MQOImportResult();
             settings = settings ?? new MQOImportSettings();
+            
+            // ベースディレクトリを設定（テクスチャ読み込み用）
+            settings.BaseDir = Path.GetDirectoryName(filePath)?.Replace('\\', '/') ?? "";
 
             try
             {
@@ -170,25 +258,78 @@ namespace MeshFactory.MQO
             // マテリアル変換
             if (settings.ImportMaterials)
             {
+                // 実体側マテリアル
                 foreach (var mqoMat in document.Materials)
                 {
                     var mat = ConvertMaterial(mqoMat, settings);
                     result.Materials.Add(mat);
                 }
+                
+                // ミラー側マテリアルオフセットを記録
+                result.MirrorMaterialOffset = result.Materials.Count;
+                
+                // ミラー側マテリアル（実体側を複製、名前に"+"を付加）
+                foreach (var mqoMat in document.Materials)
+                {
+                    var mat = ConvertMaterial(mqoMat, settings);
+                    mat.name = mat.name + "+";
+                    result.Materials.Add(mat);
+                }
+                
                 result.Stats.MaterialCount = result.Materials.Count;
+                Debug.Log($"[MQOImporter] Materials: {result.MirrorMaterialOffset} original + {result.MirrorMaterialOffset} mirror = {result.Materials.Count} total");
             }
+
+            // ボーンCSVを先にロード
+            List<PmxBoneData> boneDataList = null;
+            Dictionary<string, int> boneNameToIndex = null;
+            
+            if (settings.UseBoneCSV)
+            {
+                Debug.Log($"[MQOImporter] Loading bone CSV: {settings.BoneCSVPath}");
+                boneDataList = PmxBoneCSVParser.ParseFile(settings.BoneCSVPath);
+                if (boneDataList.Count > 0)
+                {
+                    Debug.Log($"[MQOImporter] Bone CSV loaded: {boneDataList.Count} bones");
+                    
+                    // === PMXと同じ方式: ボーンを先にMeshContextsに追加 ===
+                    var boneMeshContexts = ConvertBonesToMeshContexts(boneDataList, settings);
+                    
+                    // boneNameToIndex: ボーン名 → result.MeshContexts内のインデックス
+                    boneNameToIndex = new Dictionary<string, int>();
+                    for (int i = 0; i < boneMeshContexts.Count; i++)
+                    {
+                        result.MeshContexts.Add(boneMeshContexts[i]);
+                        boneNameToIndex[boneMeshContexts[i].Name] = i;
+                    }
+                    
+                    result.Stats.BoneCount = boneMeshContexts.Count;
+                    Debug.Log($"[MQOImporter] Added {boneMeshContexts.Count} bones to MeshContexts");
+                }
+                else
+                {
+                    Debug.LogWarning($"[MQOImporter] Bone CSV is empty or failed to load");
+                }
+            }
+
+            // ボーン数を記録（メッシュのParentIndex計算用）
+            int boneContextCount = result.MeshContexts.Count;
 
             // ボーンウェイトCSVをロード（設定されている場合）
             BoneWeightCSVData boneWeightData = null;
-            Dictionary<string, int> boneNameToIndex = null;
             if (settings.UseBoneWeightCSV)
             {
                 Debug.Log($"[MQOImporter] Loading bone weight CSV: {settings.BoneWeightCSVPath}");
                 boneWeightData = MQOBoneWeightCSVParser.ParseFile(settings.BoneWeightCSVPath);
                 if (boneWeightData != null && boneWeightData.AllBoneNames.Count > 0)
                 {
-                    boneNameToIndex = MQOBoneWeightApplier.CreateBoneNameToIndexMap(boneWeightData.AllBoneNames);
-                    Debug.Log($"[MQOImporter] Bone weight CSV loaded: {boneWeightData.ObjectWeights.Count} objects, {boneNameToIndex.Count} bones");
+                    // boneNameToIndexがまだない場合（ボーンCSVなし）はウェイトCSVから作成
+                    if (boneNameToIndex == null)
+                    {
+                        boneNameToIndex = MQOBoneWeightApplier.CreateBoneNameToIndexMap(boneWeightData.AllBoneNames);
+                        Debug.Log($"[MQOImporter] Using bone weight CSV order for indices: {boneNameToIndex.Count} bones");
+                    }
+                    Debug.Log($"[MQOImporter] Bone weight CSV loaded: {boneWeightData.ObjectWeights.Count} objects");
                 }
                 else
                 {
@@ -196,7 +337,7 @@ namespace MeshFactory.MQO
                 }
             }
 
-            // オブジェクト変換
+            // オブジェクト変換（メッシュ）
             int boneWeightAppliedObjects = 0;
             int boneWeightSkippedObjects = 0;
             foreach (var mqoObj in document.Objects)
@@ -205,12 +346,13 @@ namespace MeshFactory.MQO
                 if (settings.SkipHiddenObjects && !mqoObj.IsVisible)
                     continue;
 
-                var meshContext = ConvertObject(mqoObj, document.Materials, result.Materials, settings, result.Stats);
+                var meshContext = ConvertObject(mqoObj, document.Materials, result.Materials, settings, result.Stats, result.MirrorMaterialOffset);
                 if (meshContext != null)
                 {
                     // ボーンウェイト適用
                     if (boneWeightData != null && boneNameToIndex != null)
                     {
+                        // 実体側のウェイト適用
                         var objectWeights = boneWeightData.GetObjectWeights(mqoObj.Name);
                         if (objectWeights != null)
                         {
@@ -221,6 +363,21 @@ namespace MeshFactory.MQO
                         {
                             boneWeightSkippedObjects++;
                             Debug.Log($"[MQOImporter] No bone weight data for object '{mqoObj.Name}'");
+                        }
+
+                        // ミラー側のウェイト適用（オブジェクト名+"+"）
+                        if (meshContext.IsMirrored)
+                        {
+                            var mirrorObjectWeights = boneWeightData.GetObjectWeights(mqoObj.Name + "+");
+                            if (mirrorObjectWeights != null)
+                            {
+                                MQOBoneWeightApplier.ApplyMirrorBoneWeights(meshContext.MeshObject, mirrorObjectWeights, boneNameToIndex);
+                                Debug.Log($"[MQOImporter] Applied mirror bone weights for '{mqoObj.Name}+'");
+                            }
+                            else
+                            {
+                                Debug.Log($"[MQOImporter] No mirror bone weight data for object '{mqoObj.Name}+'");
+                            }
                         }
                     }
 
@@ -236,18 +393,35 @@ namespace MeshFactory.MQO
                 Debug.Log($"[MQOImporter]   Skipped (no CSV data): {boneWeightSkippedObjects} objects");
             }
 
-            result.Stats.ObjectCount = result.MeshContexts.Count;
+            result.Stats.ObjectCount = result.MeshContexts.Count - boneContextCount;
 
-            // 統合オプション
-            if (settings.MergeObjects && result.MeshContexts.Count > 1)
+            // 統合オプション（ボーン以外のメッシュのみ対象）
+            // 注意: MergeObjectsが有効な場合、ボーンウェイトの整合性に注意が必要
+            if (settings.MergeObjects && result.MeshContexts.Count > boneContextCount + 1)
             {
-                var merged = MergeAllMeshContexts(result.MeshContexts, document.FileName ?? "Merged");
+                // ボーン部分を保持
+                var boneContexts = result.MeshContexts.GetRange(0, boneContextCount);
+                var meshContexts = result.MeshContexts.GetRange(boneContextCount, result.MeshContexts.Count - boneContextCount);
+                
+                var merged = MergeAllMeshContexts(meshContexts, document.FileName ?? "Merged");
+                
                 result.MeshContexts.Clear();
+                result.MeshContexts.AddRange(boneContexts);
                 result.MeshContexts.Add(merged);
             }
 
-            // 親子関係を計算（DepthからParentIndexを算出）
-            CalculateParentIndices(result.MeshContexts);
+            // 親子関係を計算（DepthからParentIndexを算出）- メッシュ部分のみ
+            // ボーンの親子関係はConvertBonesToMeshContextsで既に設定済み
+            if (boneContextCount > 0)
+            {
+                // メッシュ部分のみ親子関係を計算
+                var meshOnlyList = result.MeshContexts.GetRange(boneContextCount, result.MeshContexts.Count - boneContextCount);
+                CalculateParentIndices(meshOnlyList);
+            }
+            else
+            {
+                CalculateParentIndices(result.MeshContexts);
+            }
         }
 
         /// <summary>
@@ -299,6 +473,107 @@ namespace MeshFactory.MQO
         }
 
         // ================================================================
+        // ボーン変換
+        // ================================================================
+
+        /// <summary>
+        /// PmxBoneデータリストをMeshContextリストに変換
+        /// </summary>
+        private static List<MeshContext> ConvertBonesToMeshContexts(List<PmxBoneData> boneDataList, MQOImportSettings settings)
+        {
+            var result = new List<MeshContext>();
+            var boneNameToIndex = new Dictionary<string, int>();
+
+            // まず全ボーン名とインデックスのマップを作成
+            for (int i = 0; i < boneDataList.Count; i++)
+            {
+                var bone = boneDataList[i];
+                if (!string.IsNullOrEmpty(bone.Name) && !boneNameToIndex.ContainsKey(bone.Name))
+                {
+                    boneNameToIndex[bone.Name] = i;
+                }
+            }
+
+            // ボーンのワールド位置を変換済みで保持（ローカル座標計算用）
+            float pmxScale = settings.BoneScale;
+            var boneWorldPositions = new Vector3[boneDataList.Count];
+            for (int i = 0; i < boneDataList.Count; i++)
+            {
+                var bone = boneDataList[i];
+                boneWorldPositions[i] = new Vector3(
+                    bone.Position.x * pmxScale * settings.Scale,
+                    bone.Position.y * pmxScale * settings.Scale,
+                    settings.FlipZ ? -bone.Position.z * pmxScale * settings.Scale : bone.Position.z * pmxScale * settings.Scale
+                );
+            }
+
+            // 各ボーンをMeshContextに変換
+            for (int i = 0; i < boneDataList.Count; i++)
+            {
+                var bone = boneDataList[i];
+                Vector3 worldPosition = boneWorldPositions[i];
+
+                // 親インデックスを解決
+                int parentIndex = -1;
+                if (!string.IsNullOrEmpty(bone.ParentName) && boneNameToIndex.TryGetValue(bone.ParentName, out int pIdx))
+                {
+                    parentIndex = pIdx;
+                }
+
+                // ローカル位置を計算（親がいる場合は親からの相対位置）
+                Vector3 localPosition;
+                if (parentIndex >= 0)
+                {
+                    Vector3 parentWorldPos = boneWorldPositions[parentIndex];
+                    localPosition = worldPosition - parentWorldPos;
+                }
+                else
+                {
+                    localPosition = worldPosition;
+                }
+
+                // MeshObjectを作成
+                var meshObject = new MeshObject(bone.Name)
+                {
+                    Type = MeshType.Bone,
+                    HierarchyParentIndex = parentIndex
+                };
+
+                // BindPose行列を計算（ワールド位置からの逆変換）
+                // 回転・スケールなしの場合、worldToLocalMatrix = 平行移動(-worldPosition)
+                Matrix4x4 bindPose = Matrix4x4.Translate(-worldPosition);
+
+                // BoneTransformを設定（ローカル座標）
+                var boneTransform = new BoneTransform
+                {
+                    Position = localPosition,
+                    Rotation = Vector3.zero,
+                    Scale = Vector3.one,
+                    UseLocalTransform = true,
+                    ExportAsSkinned = true  // ★スキンドメッシュとして出力
+                };
+                meshObject.BoneTransform = boneTransform;
+
+                // MeshContextを作成
+                var meshContext = new MeshContext
+                {
+                    MeshObject = meshObject,
+                    Type = MeshType.Bone,
+                    IsVisible = true,
+                    BindPose = bindPose  // ★インポート時計算のBindPose
+                };
+
+                // 親インデックスを設定（MeshContextにも設定）
+                meshContext.HierarchyParentIndex = parentIndex;
+
+                result.Add(meshContext);
+            }
+
+            Debug.Log($"[MQOImporter] Converted {result.Count} bones to MeshContexts");
+            return result;
+        }
+
+        // ================================================================
         // オブジェクト変換
         // ================================================================
 
@@ -307,7 +582,8 @@ namespace MeshFactory.MQO
             List<MQOMaterial> mqoMaterials,
             List<Material> unityMaterials,
             MQOImportSettings settings,
-            MQOImportStats stats)
+            MQOImportStats stats,
+            int mirrorMaterialOffset = 0)
         {
             var meshObject = new MeshObject();
 
@@ -386,7 +662,8 @@ namespace MeshFactory.MQO
                 // ミラー設定をコピー
                 MirrorType = mqoObj.MirrorMode,
                 MirrorAxis = mqoObj.MirrorAxis,
-                MirrorDistance = mqoObj.MirrorDistance
+                MirrorDistance = mqoObj.MirrorDistance,
+                MirrorMaterialOffset = mirrorMaterialOffset
             };
 
             // マテリアル設定
@@ -506,9 +783,183 @@ namespace MeshFactory.MQO
             if (material.HasProperty("_Smoothness"))
                 material.SetFloat("_Smoothness", mqoMat.Specular);
 
-            // TODO: テクスチャ読み込み（パスが相対パスの場合の解決）
+            // テクスチャ読み込み
+            if (!string.IsNullOrEmpty(mqoMat.TexturePath))
+            {
+                var texture = LoadTexture(mqoMat.TexturePath, settings.BaseDir);
+                if (texture != null)
+                {
+                    SetMaterialTexture(material, "_BaseMap", "_MainTex", texture);
+                }
+            }
+
+            // バンプマップ
+            if (!string.IsNullOrEmpty(mqoMat.BumpMapPath))
+            {
+                var texture = LoadTexture(mqoMat.BumpMapPath, settings.BaseDir);
+                if (texture != null)
+                {
+                    SetMaterialTexture(material, "_BumpMap", "_BumpMap", texture);
+                }
+            }
+
+            // アルファマップ（メインテクスチャのアルファとして使用することが多い）
+            // MQOのアルファマップは特殊なのでここではスキップ
 
             return material;
+        }
+        
+        /// <summary>
+        /// テクスチャを読み込み
+        /// Assets内 → AssetDatabase、Assets外 → File.ReadAllBytes
+        /// </summary>
+        private static Texture2D LoadTexture(string texturePath, string baseDir)
+        {
+            if (string.IsNullOrEmpty(texturePath))
+                return null;
+
+            // パス区切り文字を正規化（\ → /）
+            // MQOファイルではバックスラッシュが使われることが多い
+            string normalizedPath = texturePath.Replace("\\", "/");
+            string normalizedBaseDir = baseDir?.Replace("\\", "/") ?? "";
+            
+            Debug.Log($"[MQOImporter] LoadTexture: original='{texturePath}', normalized='{normalizedPath}', baseDir='{normalizedBaseDir}'");
+
+            // 実際のファイルパスを構築
+            string fullPath;
+            if (Path.IsPathRooted(normalizedPath))
+            {
+                fullPath = normalizedPath;
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(normalizedBaseDir))
+                {
+                    fullPath = Path.Combine(normalizedBaseDir, normalizedPath).Replace("\\", "/");
+                }
+                else
+                {
+                    fullPath = normalizedPath;
+                }
+            }
+            
+            Debug.Log($"[MQOImporter] LoadTexture: fullPath='{fullPath}'");
+
+            // アセットパスを構築（Assets/から始まる形式）
+            string assetPath = fullPath;
+            bool isInsideAssets = false;
+            if (!assetPath.StartsWith("Assets/"))
+            {
+                int assetsIdx = assetPath.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
+                if (assetsIdx >= 0)
+                {
+                    assetPath = assetPath.Substring(assetsIdx + 1);
+                    isInsideAssets = true;
+                }
+                else
+                {
+                    assetsIdx = assetPath.IndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
+                    if (assetsIdx >= 0)
+                    {
+                        assetPath = assetPath.Substring(assetsIdx);
+                        isInsideAssets = true;
+                    }
+                }
+            }
+            else
+            {
+                isInsideAssets = true;
+            }
+
+            // 1. まずAssetDatabaseから読み込みを試す
+            Texture2D texture = null;
+            if (isInsideAssets)
+            {
+                texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+            }
+
+            // 2. Assets内の場合のみ、同じbaseDir内でファイル名検索
+            if (texture == null && isInsideAssets)
+            {
+                string fileName = Path.GetFileName(normalizedPath);
+                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                
+                // baseDirをAssets/形式に変換
+                string searchFolder = normalizedBaseDir;
+                if (!searchFolder.StartsWith("Assets/"))
+                {
+                    int idx = searchFolder.IndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
+                    if (idx >= 0)
+                    {
+                        searchFolder = searchFolder.Substring(idx);
+                    }
+                }
+
+                string[] guids = UnityEditor.AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}", 
+                    new[] { searchFolder });
+                foreach (var guid in guids)
+                {
+                    string foundPath = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    if (Path.GetFileName(foundPath).Equals(fileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(foundPath);
+                        if (texture != null)
+                        {
+                            Debug.Log($"[MQOImporter] Texture found in baseDir: {foundPath}");
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 3. それでも失敗した場合、File.ReadAllBytesで直接読み込み
+            if (texture == null && File.Exists(fullPath))
+            {
+                try
+                {
+                    byte[] fileData = File.ReadAllBytes(fullPath);
+                    texture = new Texture2D(2, 2);
+                    if (texture.LoadImage(fileData))
+                    {
+                        texture.name = Path.GetFileNameWithoutExtension(fullPath);
+                        Debug.Log($"[MQOImporter] Texture loaded from file: {fullPath}");
+                    }
+                    else
+                    {
+                        UnityEngine.Object.DestroyImmediate(texture);
+                        texture = null;
+                        Debug.LogWarning($"[MQOImporter] Failed to load image data: {fullPath}");
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[MQOImporter] Failed to read texture file: {fullPath} - {e.Message}");
+                }
+            }
+
+            if (texture == null)
+            {
+                Debug.LogWarning($"[MQOImporter] Texture not found: {fullPath} (original: {texturePath})");
+            }
+
+            return texture;
+        }
+        
+        /// <summary>
+        /// マテリアルにテクスチャを設定
+        /// </summary>
+        private static void SetMaterialTexture(Material material, string urpPropertyName, string standardPropertyName, Texture texture)
+        {
+            if (material == null || texture == null) return;
+
+            if (material.HasProperty(urpPropertyName))
+            {
+                material.SetTexture(urpPropertyName, texture);
+            }
+            else if (material.HasProperty(standardPropertyName))
+            {
+                material.SetTexture(standardPropertyName, texture);
+            }
         }
 
         private static Shader FindBestShader()
@@ -581,10 +1032,10 @@ namespace MeshFactory.MQO
 
         private static int AddOrGetUVIndex(Vertex vertex, Vector2 uv)
         {
-            // 既存のUVを検索（完全一致）
+            // FPXと同じ比較方法: (uvl - uv).Length() == 0
             for (int i = 0; i < vertex.UVs.Count; i++)
             {
-                if (vertex.UVs[i] == uv)
+                if ((vertex.UVs[i] - uv).magnitude == 0f)
                     return i;
             }
 

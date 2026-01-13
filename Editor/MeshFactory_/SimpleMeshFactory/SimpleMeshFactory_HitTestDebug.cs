@@ -18,7 +18,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ヒットテスト検証を有効化（現在は無効化されています）
     /// </summary>
-    [MenuItem("Tools/SimpleMeshFactory/Debug/Toggle HitTest Validation")]
+   // [MenuItem("Tools/SimpleMeshFactory/Debug/Toggle HitTest Validation")]
     public static void ToggleHitTestValidation()
     {
         Debug.Log("[HitTest] Validation is currently disabled.");

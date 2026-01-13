@@ -234,6 +234,33 @@ public partial class SimpleMeshFactory
             // ================================================================
             // エクスポートボタン群
             // ================================================================
+            
+            // Armature/Meshesフォルダ作成オプション（ボーンがある場合のみ表示）
+            bool hasBones = _meshContextList.Any(ctx => ctx?.Type == MeshType.Bone);
+            if (hasBones && !_exportSelectedMeshOnly)
+            {
+                _createArmatureMeshesFolder = EditorGUILayout.Toggle(
+                    L.Get("CreateArmatureMeshesFolder"), 
+                    _createArmatureMeshesFolder);
+                
+                // スキンメッシュで出力（BoneTransform.ExportAsSkinnedを使用）
+                bool currentExportAsSkinned = _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.ExportAsSkinned);
+                bool newExportAsSkinned = EditorGUILayout.Toggle(
+                    L.Get("ExportAsSkinned"), 
+                    currentExportAsSkinned);
+                if (newExportAsSkinned != currentExportAsSkinned)
+                {
+                    // 全MeshContextのBoneTransform.ExportAsSkinnedを更新
+                    foreach (var ctx in _meshContextList)
+                    {
+                        if (ctx?.BoneTransform != null)
+                        {
+                            ctx.BoneTransform.ExportAsSkinned = newExportAsSkinned;
+                        }
+                    }
+                }
+            }
+            
             bool hasAnyMesh = _meshContextList.Count > 0;
             bool canExport = _exportSelectedMeshOnly ? true : hasAnyMesh;  // 選択時は現在のmeshContextが有効
 
@@ -272,6 +299,15 @@ public partial class SimpleMeshFactory
                     else
                     {
                         AddModelToHierarchy();
+                    }
+                }
+                
+                // 上書きエクスポート（選択中のヒエラルキーに同名メッシュを上書き）
+                using (new EditorGUI.DisabledScope(Selection.activeGameObject == null))
+                {
+                    if (GUILayout.Button(L.Get("OverwriteToHierarchy")))
+                    {
+                        OverwriteToHierarchy();
                     }
                 }
             }

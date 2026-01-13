@@ -244,16 +244,22 @@ public partial class SimpleMeshFactory
         
         // オンメモリマテリアル保存用のディレクトリ
         string saveDir = null;
+        string textureDir = null;
         if (_saveOnMemoryMaterials)
         {
             saveDir = GetMaterialSaveDirectory();
+            textureDir = $"{saveDir}/Textures";
             
             // ディレクトリを作成
             if (!System.IO.Directory.Exists(saveDir))
             {
                 System.IO.Directory.CreateDirectory(saveDir);
-                AssetDatabase.Refresh();
             }
+            if (!System.IO.Directory.Exists(textureDir))
+            {
+                System.IO.Directory.CreateDirectory(textureDir);
+            }
+            AssetDatabase.Refresh();
         }
         
         for (int i = 0; i < matRefs.Count; i++)
@@ -280,6 +286,9 @@ public partial class SimpleMeshFactory
             // オンメモリマテリアルの保存処理
             if (_saveOnMemoryMaterials && !matRef.HasAssetPath)
             {
+                // テクスチャの保存処理
+                SaveMaterialTextures(copiedMat, textureDir);
+                
                 // 保存パスを生成
                 string matName = !string.IsNullOrEmpty(copiedMat.name) ? copiedMat.name : $"Material_{i}";
                 matName = SanitizeFileName(matName);
@@ -334,9 +343,79 @@ public partial class SimpleMeshFactory
 
         return result;
     }
+    
+    /// <summary>
+    /// マテリアルのテクスチャをアセットとして保存
+    /// アセットパスを持たないテクスチャのみ保存
+    /// </summary>
+    private void SaveMaterialTextures(Material material, string textureDir)
+    {
+        if (material == null || string.IsNullOrEmpty(textureDir)) return;
+        
+        // 主要なテクスチャプロパティ名
+        string[] textureProperties = new string[]
+        {
+            "_MainTex", "_BaseMap",           // Diffuse/Albedo
+            "_BumpMap", "_NormalMap",         // Normal
+            "_EmissionMap",                   // Emission
+            "_MetallicGlossMap", "_SpecGlossMap", // Metallic/Specular
+            "_OcclusionMap",                  // Occlusion
+            "_ParallaxMap", "_HeightMap",     // Height
+            "_DetailAlbedoMap", "_DetailNormalMap" // Detail
+        };
+        
+        foreach (var propName in textureProperties)
+        {
+            if (!material.HasProperty(propName)) continue;
+            
+            var texture = material.GetTexture(propName) as Texture2D;
+            if (texture == null) continue;
+            
+            // アセットパスがあればスキップ（既にAssets内にある）
+            string existingPath = AssetDatabase.GetAssetPath(texture);
+            if (!string.IsNullOrEmpty(existingPath)) continue;
+            
+            // テクスチャを保存
+            string texName = !string.IsNullOrEmpty(texture.name) ? texture.name : $"Texture_{propName}";
+            texName = SanitizeFileName(texName);
+            string savePath = $"{textureDir}/{texName}.png";
+            
+            // 重複チェック
+            int counter = 1;
+            while (System.IO.File.Exists(savePath))
+            {
+                savePath = $"{textureDir}/{texName}_{counter}.png";
+                counter++;
+            }
+            
+            try
+            {
+                // テクスチャをPNGとして保存
+                byte[] pngData = texture.EncodeToPNG();
+                if (pngData != null)
+                {
+                    System.IO.File.WriteAllBytes(savePath, pngData);
+                    AssetDatabase.ImportAsset(savePath);
+                    
+                    // インポートしたテクスチャをマテリアルに設定
+                    var savedTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(savePath);
+                    if (savedTexture != null)
+                    {
+                        material.SetTexture(propName, savedTexture);
+                        Debug.Log($"[SaveMaterialTextures] Saved texture: {savePath}");
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[SaveMaterialTextures] Failed to save texture {texName}: {e.Message}");
+            }
+        }
+    }
 
     /// <summary>
     /// マテリアル保存先ディレクトリを取得
+    /// 既存フォルダがあれば別名（_1, _2...）を使用
     /// </summary>
     private string GetMaterialSaveDirectory()
     {
@@ -348,7 +427,22 @@ public partial class SimpleMeshFactory
         
         // デフォルト: Assets/SavedMaterials/モデル名
         string modelName = SanitizeFileName(_model.Name ?? "Model");
-        return $"Assets/SavedMaterials/{modelName}";
+        string baseDir = $"Assets/SavedMaterials/{modelName}";
+        
+        // 既存フォルダがあれば別名を使用
+        if (AssetDatabase.IsValidFolder(baseDir))
+        {
+            int counter = 1;
+            string newDir = $"{baseDir}_{counter}";
+            while (AssetDatabase.IsValidFolder(newDir))
+            {
+                counter++;
+                newDir = $"{baseDir}_{counter}";
+            }
+            return newDir;
+        }
+        
+        return baseDir;
     }
     
     /// <summary>

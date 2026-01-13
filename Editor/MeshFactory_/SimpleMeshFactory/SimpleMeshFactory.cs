@@ -170,6 +170,7 @@ public partial class SimpleMeshFactory : EditorWindow
     
     // エクスポート設定
     private bool _exportAsSkinned = false;         // スキンメッシュとしてエクスポート
+    private bool _createArmatureMeshesFolder = true; // Armature/Meshesフォルダを作成
     
     /// <summary>
     /// ツールの状態

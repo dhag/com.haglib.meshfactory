@@ -113,7 +113,7 @@ namespace MeshFactory.Core.Rendering
             _wireframeOverlayShader = Shader.Find("MeshFactory/Wireframe3D_Overlay");
 
             // デバッグ: シェーダーロード状況
-            Debug.Log($"[UnifiedRenderer] Shader load status: Point3D={_pointShader != null}, Wireframe3D={_wireframeShader != null}, Point3D_Overlay={_pointOverlayShader != null}, Wireframe3D_Overlay={_wireframeOverlayShader != null}");
+            //Debug.Log($"[UnifiedRenderer] Shader load status: Point3D={_pointShader != null}, Wireframe3D={_wireframeShader != null}, Point3D_Overlay={_pointOverlayShader != null}, Wireframe3D_Overlay={_wireframeOverlayShader != null}");
 
             if (_pointShader == null || _wireframeShader == null)
             {
@@ -133,7 +133,7 @@ namespace MeshFactory.Core.Rendering
             if (_pointOverlayShader != null)
             {
                 _pointOverlayMaterial = new Material(_pointOverlayShader) { hideFlags = HideFlags.HideAndDontSave };
-                Debug.Log("[UnifiedRenderer] Point overlay material created");
+                //Debug.Log("[UnifiedRenderer] Point overlay material created");
             }
             else
             {
@@ -142,7 +142,7 @@ namespace MeshFactory.Core.Rendering
             if (_wireframeOverlayShader != null)
             {
                 _wireframeOverlayMaterial = new Material(_wireframeOverlayShader) { hideFlags = HideFlags.HideAndDontSave };
-                Debug.Log("[UnifiedRenderer] Wireframe overlay material created");
+                //Debug.Log("[UnifiedRenderer] Wireframe overlay material created");
             }
             else
             {
@@ -545,7 +545,7 @@ namespace MeshFactory.Core.Rendering
                 _pointOverlayMaterial.SetBuffer("_VertexFlagsBuffer", _bufferManager.VertexFlagsBuffer);
                 _pointOverlayMaterial.SetInt("_UseVertexFlagsBuffer", 1);
                 _pointOverlayMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
-                Debug.Log($"[QueuePoints] Overlay: BackfaceCullingEnabled={BackfaceCullingEnabled}");
+                //Debug.Log($"[QueuePoints] Overlay: BackfaceCullingEnabled={BackfaceCullingEnabled}");
                 
                 var overlayMeshCopy = UnityEngine.Object.Instantiate(_pointMesh);
                 overlayMeshCopy.hideFlags = HideFlags.HideAndDontSave;
@@ -553,6 +553,7 @@ namespace MeshFactory.Core.Rendering
                 _pendingMaterials.Add(_pointOverlayMaterial);
             }
         }
+
 
         /// <summary>
         /// ShaderColorSettingsを頂点マテリアルに適用

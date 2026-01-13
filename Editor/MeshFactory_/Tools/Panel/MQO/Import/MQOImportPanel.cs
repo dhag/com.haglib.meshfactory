@@ -73,6 +73,7 @@ namespace MeshFactory.MQO
             // ボーンウェイトCSV
             ["BoneWeight"] = new() { ["en"] = "Bone Weight", ["ja"] = "ボーンウェイト" },
             ["BoneWeightCSV"] = new() { ["en"] = "Bone Weight CSV", ["ja"] = "ボーンウェイトCSV" },
+            ["BoneCSV"] = new() { ["en"] = "Bone CSV (PmxBone)", ["ja"] = "ボーンCSV (PmxBone)" },
             ["Browse"] = new() { ["en"] = "Browse...", ["ja"] = "参照..." },
             ["Clear"] = new() { ["en"] = "Clear", ["ja"] = "クリア" },
             ["CSVNotSet"] = new() { ["en"] = "(Not set)", ["ja"] = "（未設定）" },
@@ -294,13 +295,15 @@ namespace MeshFactory.MQO
 
             EditorGUILayout.Space(3);
 
-            // ボーンウェイトCSV
-            EditorGUILayout.LabelField(T("BoneWeight"), EditorStyles.miniLabel);
-            EditorGUILayout.BeginHorizontal();
+            // ボーンウェイトCSV（ドラッグ&ドロップ対応）
+            EditorGUILayout.LabelField(T("BoneWeightCSV"), EditorStyles.miniLabel);
+
+            // ドラッグ&ドロップエリア
+            Rect dropAreaWeight = EditorGUILayout.BeginHorizontal();
             {
-                // ファイル名表示
-                string displayPath = string.IsNullOrEmpty(_settings.BoneWeightCSVPath) 
-                    ? T("CSVNotSet") 
+                // ファイル名表示（ドロップエリアとしても機能）
+                string displayPath = string.IsNullOrEmpty(_settings.BoneWeightCSVPath)
+                    ? T("CSVNotSet")
                     : Path.GetFileName(_settings.BoneWeightCSVPath);
                 EditorGUILayout.LabelField(displayPath, EditorStyles.textField);
 
@@ -327,7 +330,104 @@ namespace MeshFactory.MQO
             }
             EditorGUILayout.EndHorizontal();
 
+            // ドラッグ&ドロップ処理
+            HandleCSVDragAndDrop(dropAreaWeight, path => _settings.BoneWeightCSVPath = path);
+
+            // ボーンCSV（PmxBone形式、ドラッグ&ドロップ対応）
+            EditorGUILayout.LabelField(T("BoneCSV"), EditorStyles.miniLabel);
+
+            Rect dropAreaBone = EditorGUILayout.BeginHorizontal();
+            {
+                // ファイル名表示
+                string displayPath = string.IsNullOrEmpty(_settings.BoneCSVPath)
+                    ? T("CSVNotSet")
+                    : Path.GetFileName(_settings.BoneCSVPath);
+                EditorGUILayout.LabelField(displayPath, EditorStyles.textField);
+
+                // 参照ボタン
+                if (GUILayout.Button(T("Browse"), GUILayout.Width(60)))
+                {
+                    string path = EditorUtility.OpenFilePanel(
+                        T("BoneCSV"),
+                        string.IsNullOrEmpty(_settings.BoneCSVPath) ? "" : Path.GetDirectoryName(_settings.BoneCSVPath),
+                        "csv");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        _settings.BoneCSVPath = path;
+                    }
+                }
+
+                // クリアボタン
+                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(_settings.BoneCSVPath));
+                if (GUILayout.Button(T("Clear"), GUILayout.Width(50)))
+                {
+                    _settings.BoneCSVPath = "";
+                }
+                EditorGUI.EndDisabledGroup();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // ドラッグ&ドロップ処理
+            HandleCSVDragAndDrop(dropAreaBone, path => _settings.BoneCSVPath = path);
+
+            // BoneScale設定（BoneCSVが指定されている場合のみ表示）
+            if (!string.IsNullOrEmpty(_settings.BoneCSVPath))
+            {
+                EditorGUILayout.Space(4);
+                _settings.BoneScale = EditorGUILayout.FloatField(
+                    new GUIContent("Bone Scale", "PMXボーン座標に適用するスケール（MQOメッシュとの座標系合わせ用、通常10.0）"),
+                    _settings.BoneScale);
+            }
+
             EditorGUI.indentLevel--;
+        }
+
+        /// <summary>
+        /// CSVファイルのドラッグ&ドロップを処理
+        /// </summary>
+        private void HandleCSVDragAndDrop(Rect dropArea, System.Action<string> onDropped)
+        {
+            Event evt = Event.current;
+
+            if (!dropArea.Contains(evt.mousePosition))
+                return;
+
+            switch (evt.type)
+            {
+                case EventType.DragUpdated:
+                    // CSVファイルがドラッグされているか確認
+                    bool hasCSV = false;
+                    foreach (var path in DragAndDrop.paths)
+                    {
+                        if (path.EndsWith(".csv", System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasCSV = true;
+                            break;
+                        }
+                    }
+                    DragAndDrop.visualMode = hasCSV ? DragAndDropVisualMode.Copy : DragAndDropVisualMode.Rejected;
+                    evt.Use();
+                    break;
+
+                case EventType.DragPerform:
+                    DragAndDrop.AcceptDrag();
+                    foreach (var path in DragAndDrop.paths)
+                    {
+                        if (path.EndsWith(".csv", System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Assets内のパスを絶対パスに変換
+                            string fullPath = path;
+                            if (path.StartsWith("Assets/"))
+                            {
+                                fullPath = Path.GetFullPath(path);
+                            }
+                            onDropped?.Invoke(fullPath);
+                            break;
+                        }
+                    }
+                    evt.Use();
+                    break;
+            }
         }
 
         /// <summary>
@@ -336,7 +436,7 @@ namespace MeshFactory.MQO
         private void DrawImportModeToggle()
         {
             EditorGUILayout.BeginHorizontal();
-            
+
             // NewModelボタン（デフォルト）
             bool isNewModel = _settings.ImportMode == MQOImportMode.NewModel;
             GUI.backgroundColor = isNewModel ? new Color(0.6f, 1f, 0.6f) : Color.white;
@@ -344,7 +444,7 @@ namespace MeshFactory.MQO
             {
                 _settings.ImportMode = MQOImportMode.NewModel;
             }
-            
+
             // Appendボタン
             bool isAppend = _settings.ImportMode == MQOImportMode.Append;
             GUI.backgroundColor = isAppend ? new Color(0.6f, 0.8f, 1f) : Color.white;
@@ -352,7 +452,7 @@ namespace MeshFactory.MQO
             {
                 _settings.ImportMode = MQOImportMode.Append;
             }
-            
+
             // Replaceボタン
             bool isReplace = _settings.ImportMode == MQOImportMode.Replace;
             GUI.backgroundColor = isReplace ? new Color(1f, 0.8f, 0.6f) : Color.white;
@@ -360,7 +460,7 @@ namespace MeshFactory.MQO
             {
                 _settings.ImportMode = MQOImportMode.Replace;
             }
-            
+
             GUI.backgroundColor = Color.white;
             EditorGUILayout.EndHorizontal();
         }
@@ -541,6 +641,9 @@ namespace MeshFactory.MQO
                             handled = true;
                         }
 
+                        // ボーンは既にMeshContextsに含まれている（PMXと同じ方式）
+                        // BoneMeshContextsは使用しない
+
                         // NewModelモードではマテリアルを追加（インポート分のみ）
                         if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
                         {
@@ -567,6 +670,9 @@ namespace MeshFactory.MQO
                             _lastResult.ApplyMaterialIndexOffset(existingMaterialCount);
                         }
 
+                        // 既存メッシュ数を取得（ボーンの親インデックス用）
+                        int existingMeshCount = _context.Model?.MeshContextList?.Count ?? 0;
+
                         if (_context.AddMeshContexts != null)
                         {
                             Debug.Log($"[MQOImportPanel] Append mode: Adding {_lastResult.MeshContexts.Count} meshes");
@@ -581,6 +687,9 @@ namespace MeshFactory.MQO
                                 _context.AddMeshContext?.Invoke(meshContext);
                             }
                         }
+
+                        // ボーンは既にMeshContextsに含まれている（PMXと同じ方式）
+                        // BoneMeshContextsは使用しない
 
                         // Appendモードではマテリアルを追加（既存にマージ）
                         if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)

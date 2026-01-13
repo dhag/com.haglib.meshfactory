@@ -153,7 +153,7 @@ namespace MeshFactory.PMX
         // Open
         // ================================================================
 
-        [MenuItem("MeshFactory/Tools/PMX Bone Weight Export...")]
+        //[MenuItem("Tools/MeshFactory/PMX Bone Weight Export...")]
         public static void ShowWindow()
         {
             var window = GetWindow<PMXBoneWeightExportPanel>();
@@ -441,11 +441,26 @@ namespace MeshFactory.PMX
 
         private void DrawExportButton()
         {
-            bool canExport = _pmxVertices != null &&
-                             _mqoImportResult != null &&
-                             _mqoImportResult.Success &&
-                             (_pmxVertices.Count == _mqoExpandedVertexCount ||
-                              _pmxVertices.Count == _mqoExpandedVertexCount * 2);
+            bool vertexCountMatch = _pmxVertices != null &&
+                                    _mqoImportResult != null &&
+                                    _mqoImportResult.Success &&
+                                    _pmxVertices.Count == _mqoExpandedVertexCount;
+
+            bool mirrorMatch = _pmxVertices != null &&
+                               _mqoImportResult != null &&
+                               _mqoImportResult.Success &&
+                               _pmxVertices.Count == _mqoExpandedVertexCount * 2;
+
+            bool canExport = vertexCountMatch || mirrorMatch;
+
+            // 頂点数不一致エラーを表示
+            if (_pmxVertices != null && _mqoImportResult != null && _mqoImportResult.Success && !canExport)
+            {
+                EditorGUILayout.HelpBox(
+                    $"ERROR: 頂点数不一致 PMX={_pmxVertices.Count}, MQO展開後={_mqoExpandedVertexCount}\n" +
+                    $"差分: {Math.Abs(_pmxVertices.Count - _mqoExpandedVertexCount)}",
+                    MessageType.Error);
+            }
 
             EditorGUI.BeginDisabledGroup(!canExport);
 
@@ -572,6 +587,12 @@ namespace MeshFactory.PMX
                 }
 
                 Debug.Log($"[PMXBoneWeightExport] Loaded PMX: {_pmxVertices.Count} vertices, {_pmxFaces.Count} faces, {_pmxMaterials.Count} materials, {_pmxBoneNames.Count} bones");
+
+                // 材質ごとの詳細ログ
+                foreach (var mat in _pmxMaterials)
+                {
+                    Debug.Log($"[PMXBoneWeightExport]   PMX Material '{mat.Name}': verts={mat.UsedVertexIndices.Count}, faces={mat.FaceCount}");
+                }
             }
             catch (Exception ex)
             {
@@ -666,8 +687,56 @@ namespace MeshFactory.PMX
                     // 展開後頂点数を計算
                     CalculateExpandedVertexCount();
 
-                    Debug.Log($"[PMXBoneWeightExport] Loaded MQO: {_mqoImportResult.MeshContexts.Count} objects, " +
-                              $"expanded vertices: {_mqoExpandedVertexCount}");
+                    Debug.Log($"[PMXBoneWeightExport] Loaded MQO: {_mqoImportResult.MeshContexts.Count} objects, expanded vertices: {_mqoExpandedVertexCount}");
+
+                    // 各オブジェクトの詳細
+                    foreach (var meshContext in _mqoImportResult.MeshContexts)
+                    {
+                        var mo = meshContext.MeshObject;
+                        if (mo == null) continue;
+
+                        int uvExpand = 0;
+                        foreach (var v in mo.Vertices)
+                        {
+                            uvExpand += v.UVs.Count > 0 ? v.UVs.Count : 1;
+                        }
+
+                        Debug.Log($"[PMXBoneWeightExport]   {meshContext.Name}: verts={mo.VertexCount}, uvExpand={uvExpand}, mirror={meshContext.IsMirrored}");
+
+                        // UV差分が小さい頂点を検出（UVが2個以上ある頂点について）
+                        var uvDiffs = new List<(int vIdx, int uvA, int uvB, float diff, Vector2 uvValA, Vector2 uvValB)>();
+                        for (int vIdx = 0; vIdx < mo.VertexCount; vIdx++)
+                        {
+                            var vertex = mo.Vertices[vIdx];
+                            if (vertex.UVs.Count >= 2)
+                            {
+                                // 全UV組み合わせの差を計算
+                                for (int i = 0; i < vertex.UVs.Count; i++)
+                                {
+                                    for (int j = i + 1; j < vertex.UVs.Count; j++)
+                                    {
+                                        float diff = (vertex.UVs[i] - vertex.UVs[j]).magnitude;
+                                        uvDiffs.Add((vIdx, i, j, diff, vertex.UVs[i], vertex.UVs[j]));
+                                    }
+                                }
+                            }
+                        }
+
+                        // 差が小さい順にソート
+                        uvDiffs.Sort((a, b) => a.diff.CompareTo(b.diff));
+
+                        // 上位5件を出力
+                        int showCount = Math.Min(5, uvDiffs.Count);
+                        if (showCount > 0)
+                        {
+                            Debug.Log($"[PMXBoneWeightExport]     UV差分小さい順 (top {showCount}):");
+                            for (int i = 0; i < showCount; i++)
+                            {
+                                var d = uvDiffs[i];
+                                Debug.Log($"[PMXBoneWeightExport]       vIdx={d.vIdx}, uv[{d.uvA}]=({d.uvValA.x:R},{d.uvValA.y:R}) vs uv[{d.uvB}]=({d.uvValB.x:R},{d.uvValB.y:R}), diff={d.diff:E}");
+                            }
+                        }
+                    }
                 }
                 else
                 {
@@ -684,7 +753,7 @@ namespace MeshFactory.PMX
 
         /// <summary>
         /// 展開後頂点数を計算
-        /// ToUnityMeshShared と完全に同じロジック
+        /// FPXと同じ：頂点順 → UV順
         /// </summary>
         private void CalculateExpandedVertexCount()
         {
@@ -708,42 +777,19 @@ namespace MeshFactory.PMX
 
         /// <summary>
         /// 単一メッシュの展開後頂点数を計算
+        /// FPXと同じ：各頂点のUV数の合計
         /// </summary>
         private int CalculateExpandedVertexCountForMesh(MeshObject meshObject)
         {
             if (meshObject == null) return 0;
 
-            var vertexMapping = new HashSet<(int vIdx, int uvIdx, int normalIdx)>();
-
-            foreach (var face in meshObject.Faces)
+            int count = 0;
+            foreach (var vertex in meshObject.Vertices)
             {
-                if (face.VertexCount < 3 || face.IsHidden) continue;
-
-                var triangles = face.Triangulate();
-                foreach (var tri in triangles)
-                {
-                    for (int i = 0; i < 3; i++)
-                    {
-                        int vIdx = tri.VertexIndices[i];
-                        if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
-                            continue;
-
-                        var vertex = meshObject.Vertices[vIdx];
-
-                        int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                        if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
-                            uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
-
-                        int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                        if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
-                            normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
-
-                        vertexMapping.Add((vIdx, uvSubIdx, normalSubIdx));
-                    }
-                }
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                count += uvCount;
             }
-
-            return vertexMapping.Count;
+            return count;
         }
 
         /// <summary>
@@ -774,95 +820,39 @@ namespace MeshFactory.PMX
 
             try
             {
-                // PMX頂点Index → PMXVertexData のマップ
-                var pmxVertexMap = _pmxVertices.ToDictionary(v => v.Index, v => v);
-
-                // MQO展開頂点Index → PMX頂点Index のマッピングを構築
-                // PMXはミラーベイク済みなら前半がオリジナル
-                int pmxVertexIndex = 0;
-
-                // MQO頂点 → 最初に対応したPMX頂点Index
-                var mqoToPmx = new Dictionary<(string objName, int vertexIndex), int>();
-
-                foreach (var meshContext in _mqoImportResult.MeshContexts)
-                {
-                    var mo = meshContext.MeshObject;
-                    if (mo == null) continue;
-
-                    // 展開頂点を走査（ToUnityMeshSharedと同じ順序）
-                    var vertexMapping = new Dictionary<(int vIdx, int uvIdx, int normalIdx), int>();
-
-                    foreach (var face in mo.Faces)
-                    {
-                        if (face.VertexCount < 3 || face.IsHidden) continue;
-
-                        var triangles = face.Triangulate();
-                        foreach (var tri in triangles)
-                        {
-                            for (int i = 0; i < 3; i++)
-                            {
-                                int vIdx = tri.VertexIndices[i];
-                                if (vIdx < 0 || vIdx >= mo.Vertices.Count) continue;
-
-                                var vertex = mo.Vertices[vIdx];
-
-                                int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                                if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
-                                    uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
-
-                                int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                                if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
-                                    normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
-
-                                var key = (vIdx, uvSubIdx, normalSubIdx);
-
-                                if (!vertexMapping.ContainsKey(key))
-                                {
-                                    vertexMapping[key] = pmxVertexIndex;
-
-                                    // MQO頂点 → PMX頂点 を記録（最初の出現のみ）
-                                    var mqoKey = (meshContext.Name, vIdx);
-                                    if (!mqoToPmx.ContainsKey(mqoKey))
-                                    {
-                                        mqoToPmx[mqoKey] = pmxVertexIndex;
-                                    }
-
-                                    pmxVertexIndex++;
-                                }
-                            }
-                        }
-                    }
-
-                    // ミラーの場合はミラー分もカウント
-                    if (meshContext.IsMirrored)
-                    {
-                        pmxVertexIndex += vertexMapping.Count;
-                    }
-                }
-
                 // CSV出力
                 var sb = new StringBuilder();
                 sb.AppendLine("MqoObjectName,VertexID,VertexIndex,Bone0,Bone1,Bone2,Bone3,Weight0,Weight1,Weight2,Weight3");
 
                 int exportedRows = 0;
                 int skippedRows = 0;
+                int pmxVertexIndex = 0;
+
+                Debug.Log($"[PMXBoneWeightExport] === Export Start ===");
+                Debug.Log($"[PMXBoneWeightExport] PMX Vertices: {_pmxVertices.Count}");
+                Debug.Log($"[PMXBoneWeightExport] MQO Objects: {_mqoImportResult.MeshContexts.Count}");
 
                 foreach (var meshContext in _mqoImportResult.MeshContexts)
                 {
                     var mo = meshContext.MeshObject;
                     if (mo == null) continue;
 
+                    int objectStartIndex = pmxVertexIndex;
+                    int objectVertexCount = 0;
+                    int objectUVCount = 0;
+
+                    // FPXと同じ順序：頂点順 → UV順
                     for (int vIdx = 0; vIdx < mo.VertexCount; vIdx++)
                     {
                         var vertex = mo.Vertices[vIdx];
-                        var mqoKey = (meshContext.Name, vIdx);
+                        int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                        objectUVCount += uvCount;
 
-                        if (mqoToPmx.TryGetValue(mqoKey, out int pmxIdx))
+                        for (int iuv = 0; iuv < uvCount; iuv++)
                         {
-                            if (pmxIdx < _pmxVertices.Count)
+                            if (pmxVertexIndex < _pmxVertices.Count)
                             {
-                                var pmxV = _pmxVertices[pmxIdx];
-
+                                var pmxV = _pmxVertices[pmxVertexIndex];
                                 int vertexId = vertex.Id != 0 ? vertex.Id : -1;
 
                                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
@@ -880,29 +870,75 @@ namespace MeshFactory.PMX
                                     pmxV.Weights[3]
                                 ));
                                 exportedRows++;
+                                objectVertexCount++;
                             }
                             else
                             {
-                                Debug.LogWarning($"[PMXBoneWeightExport] PMX index out of range: {pmxIdx} >= {_pmxVertices.Count}");
                                 skippedRows++;
                             }
-                        }
-                        else
-                        {
-                            // 孤立頂点
-                            skippedRows++;
+                            pmxVertexIndex++;
                         }
                     }
+
+                    Debug.Log($"[PMXBoneWeightExport] Object '{meshContext.Name}': verts={mo.VertexCount}, uvExpand={objectUVCount}, pmxRange=[{objectStartIndex}..{pmxVertexIndex-1}], mirror={meshContext.IsMirrored}");
+
+                    // ミラーの場合：オブジェクト名に「+」を付けて出力
+                    if (meshContext.IsMirrored)
+                    {
+                        int mirrorStart = pmxVertexIndex;
+                        string mirrorObjectName = meshContext.Name + "+";
+                        int mirrorVertexCount = 0;
+
+                        for (int vIdx = 0; vIdx < mo.VertexCount; vIdx++)
+                        {
+                            var vertex = mo.Vertices[vIdx];
+                            int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                            for (int iuv = 0; iuv < uvCount; iuv++)
+                            {
+                                if (pmxVertexIndex < _pmxVertices.Count)
+                                {
+                                    var pmxV = _pmxVertices[pmxVertexIndex];
+                                    int vertexId = vertex.Id != 0 ? vertex.Id : -1;
+
+                                    sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                                        "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                                        mirrorObjectName,
+                                        vertexId,
+                                        vIdx,
+                                        pmxV.BoneNames[0],
+                                        pmxV.BoneNames[1],
+                                        pmxV.BoneNames[2],
+                                        pmxV.BoneNames[3],
+                                        pmxV.Weights[0],
+                                        pmxV.Weights[1],
+                                        pmxV.Weights[2],
+                                        pmxV.Weights[3]
+                                    ));
+                                    exportedRows++;
+                                    mirrorVertexCount++;
+                                }
+                                else
+                                {
+                                    skippedRows++;
+                                }
+                                pmxVertexIndex++;
+                            }
+                        }
+                        Debug.Log($"[PMXBoneWeightExport]   Mirror '{mirrorObjectName}': [{mirrorStart}..{pmxVertexIndex-1}], exported={mirrorVertexCount}");
+                    }
                 }
+
+                Debug.Log($"[PMXBoneWeightExport] Final pmxVertexIndex: {pmxVertexIndex}, PMX count: {_pmxVertices.Count}, diff: {pmxVertexIndex - _pmxVertices.Count}");
 
                 File.WriteAllText(savePath, sb.ToString(), Encoding.UTF8);
 
                 _lastExportResult = T("ExportSuccess", exportedRows);
                 if (skippedRows > 0)
-                {
                     _lastExportResult += $" (Skipped: {skippedRows})";
-                }
-                Debug.Log($"[PMXBoneWeightExport] Export completed: {savePath} ({exportedRows} rows, {skippedRows} skipped)");
+
+                Debug.Log($"[PMXBoneWeightExport] Export: {exportedRows} rows, {skippedRows} skipped");
+                Debug.Log($"[PMXBoneWeightExport] === Export End ===");
             }
             catch (Exception ex)
             {

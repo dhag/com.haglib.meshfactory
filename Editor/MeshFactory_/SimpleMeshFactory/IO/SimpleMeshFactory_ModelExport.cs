@@ -20,15 +20,19 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// モデル全体をヒエラルキーに追加
     /// HierarchyParentIndexに基づいて親子関係を再現
-    /// _exportAsSkinned が有効な場合は SkinnedMeshRenderer を使用
+    /// BoneTransform.ExportAsSkinned が有効な場合は SkinnedMeshRenderer を使用
     /// </summary>
     private void AddModelToHierarchy()
     {
         if (_meshContextList.Count == 0)
             return;
 
-        // _exportAsSkinned フィールドをチェック
-        if (_exportAsSkinned)
+        // スキンメッシュとして出力するかチェック
+        // いずれかのMeshContextのBoneTransform.ExportAsSkinnedがtrueならSkinnedMeshRendererで出力
+        bool shouldExportAsSkinned = 
+            _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.ExportAsSkinned);
+        
+        if (shouldExportAsSkinned)
         {
             AddModelToHierarchyAsSkinned();
             return;
@@ -50,6 +54,34 @@ public partial class SimpleMeshFactory
             createdRoot = new GameObject(rootName);
             rootParent = createdRoot.transform;
             Undo.RegisterCreatedObjectUndo(createdRoot, $"Create {rootName}");
+        }
+
+        // Armature/Meshes構造を使用するかどうか
+        bool useArmatureMeshesStructure = _createArmatureMeshesFolder;
+        
+        // Armature/Meshes構造用の親オブジェクト
+        GameObject armatureParent = null;
+        GameObject meshesParent = null;
+        
+        // ボーンがあるかどうか確認
+        bool hasBone = _meshContextList.Any(ctx => ctx?.Type == MeshType.Bone);
+        bool hasMesh = _meshContextList.Any(ctx => 
+            ctx?.MeshObject != null && ctx.MeshObject.VertexCount > 0);
+        
+        if (useArmatureMeshesStructure && hasBone)
+        {
+            // Armatureフォルダを作成
+            armatureParent = new GameObject("Armature");
+            armatureParent.transform.SetParent(rootParent, false);
+            Undo.RegisterCreatedObjectUndo(armatureParent, "Create Armature");
+            
+            // Meshesフォルダを作成（メッシュがある場合のみ）
+            if (hasMesh)
+            {
+                meshesParent = new GameObject("Meshes");
+                meshesParent.transform.SetParent(rootParent, false);
+                Undo.RegisterCreatedObjectUndo(meshesParent, "Create Meshes");
+            }
         }
 
         // 共有マテリアル配列を取得
@@ -80,7 +112,7 @@ public partial class SimpleMeshFactory
                 if (_bakeMirror && meshContext.IsMirrored)
                 {
                     meshCopy = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out var usedMatIndices);
-                    materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
+                    materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials, meshContext.MirrorMaterialOffset);
                 }
                 else
                 {
@@ -130,6 +162,8 @@ public partial class SimpleMeshFactory
             if (go == null) continue;
 
             int parentIndex = meshContext.HierarchyParentIndex;
+            bool isBone = (meshContext.Type == MeshType.Bone);
+            bool hasVertices = (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0);
 
             if (parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
             {
@@ -138,8 +172,30 @@ public partial class SimpleMeshFactory
             }
             else
             {
-                // ルートオブジェクト（HierarchyParentIndex == -1 または無効な参照）
-                go.transform.SetParent(rootParent, false);
+                // ルートオブジェクト
+                if (useArmatureMeshesStructure && hasBone)
+                {
+                    if (isBone && armatureParent != null)
+                    {
+                        // ボーンはArmature下に配置
+                        go.transform.SetParent(armatureParent.transform, false);
+                    }
+                    else if (!isBone && meshesParent != null)
+                    {
+                        // ボーン以外（メッシュ）はMeshes下に配置
+                        go.transform.SetParent(meshesParent.transform, false);
+                    }
+                    else
+                    {
+                        // どちらでもない場合はrootParent直下
+                        go.transform.SetParent(rootParent, false);
+                    }
+                }
+                else
+                {
+                    // 従来通りrootParentの子に
+                    go.transform.SetParent(rootParent, false);
+                }
 
                 if (firstRootObject == null)
                 {
@@ -175,6 +231,131 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
+    /// 選択中のヒエラルキーに同名メッシュを上書き
+    /// ヒエラルキーからインポートしたものを編集後、元に戻す用途
+    /// </summary>
+    private void OverwriteToHierarchy()
+    {
+        var targetRoot = Selection.activeGameObject;
+        if (targetRoot == null)
+        {
+            EditorUtility.DisplayDialog("Error", "ヒエラルキーでGameObjectを選択してください", "OK");
+            return;
+        }
+
+        if (_meshContextList.Count == 0)
+        {
+            EditorUtility.DisplayDialog("Error", "エクスポートするメッシュがありません", "OK");
+            return;
+        }
+
+        // 共有マテリアル配列を取得
+        Material[] sharedMaterials = GetMaterialsForSave(null);
+
+        int overwriteCount = 0;
+        int skipCount = 0;
+        var messages = new List<string>();
+
+        foreach (var meshContext in _meshContextList)
+        {
+            if (meshContext?.MeshObject == null || meshContext.MeshObject.VertexCount == 0)
+                continue;
+
+            string meshName = meshContext.Name;
+
+            // 同名のGameObjectを検索（子孫含む）
+            Transform found = FindChildByName(targetRoot.transform, meshName);
+            if (found == null)
+            {
+                skipCount++;
+                continue;
+            }
+
+            GameObject targetGO = found.gameObject;
+
+            // MeshObjectからUnity Meshを生成
+            Mesh newMesh;
+            Material[] materialsToUse;
+            if (_bakeMirror && meshContext.IsMirrored)
+            {
+                newMesh = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out var usedMatIndices);
+                materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials, meshContext.MirrorMaterialOffset);
+            }
+            else
+            {
+                newMesh = meshContext.MeshObject.ToUnityMeshShared(
+                    _model.MaterialCount > 0 ? _model.MaterialCount : meshContext.MeshObject.SubMeshCount);
+                materialsToUse = sharedMaterials;
+            }
+            newMesh.name = meshName;
+
+            // SkinnedMeshRenderer をチェック
+            var smr = targetGO.GetComponent<SkinnedMeshRenderer>();
+            if (smr != null)
+            {
+                Undo.RecordObject(smr, $"Overwrite Mesh {meshName}");
+                smr.sharedMesh = newMesh;
+                smr.sharedMaterials = materialsToUse;
+                overwriteCount++;
+                messages.Add($"[SMR] {meshName}");
+                continue;
+            }
+
+            // MeshFilter をチェック
+            var mf = targetGO.GetComponent<MeshFilter>();
+            if (mf != null)
+            {
+                Undo.RecordObject(mf, $"Overwrite Mesh {meshName}");
+                mf.sharedMesh = newMesh;
+
+                var mr = targetGO.GetComponent<MeshRenderer>();
+                if (mr != null)
+                {
+                    Undo.RecordObject(mr, $"Overwrite Materials {meshName}");
+                    mr.sharedMaterials = materialsToUse;
+                }
+                overwriteCount++;
+                messages.Add($"[MF] {meshName}");
+                continue;
+            }
+
+            // メッシュコンポーネントがない
+            skipCount++;
+        }
+
+        if (overwriteCount > 0)
+        {
+            Debug.Log($"[OverwriteToHierarchy] Overwritten {overwriteCount} meshes:\n" + string.Join("\n", messages));
+        }
+
+        if (skipCount > 0)
+        {
+            Debug.Log($"[OverwriteToHierarchy] Skipped {skipCount} meshes (not found or no mesh component)");
+        }
+
+        EditorUtility.DisplayDialog("完了", 
+            $"上書き: {overwriteCount} メッシュ\nスキップ: {skipCount} メッシュ", "OK");
+    }
+
+    /// <summary>
+    /// 子孫から指定名のTransformを検索（自分自身も含む）
+    /// </summary>
+    private Transform FindChildByName(Transform parent, string name)
+    {
+        if (parent.name == name)
+            return parent;
+
+        foreach (Transform child in parent)
+        {
+            var found = FindChildByName(child, name);
+            if (found != null)
+                return found;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// モデル全体を SkinnedMeshRenderer としてヒエラルキーに追加
     /// 各 MeshContext の HierarchyParentIndex をボーンインデックスとして使用
     /// </summary>
@@ -197,6 +378,34 @@ public partial class SimpleMeshFactory
             createdRoot = new GameObject(rootName);
             rootParent = createdRoot.transform;
             Undo.RegisterCreatedObjectUndo(createdRoot, $"Create {rootName}");
+        }
+
+        // Armature/Meshes構造を使用するかどうか
+        bool useArmatureMeshesStructure = _createArmatureMeshesFolder;
+        
+        // Armature/Meshes構造用の親オブジェクト
+        GameObject armatureParent = null;
+        GameObject meshesParent = null;
+        
+        // ボーンがあるかどうか確認
+        bool hasBone = _meshContextList.Any(ctx => ctx?.Type == MeshType.Bone);
+        bool hasMesh = _meshContextList.Any(ctx => 
+            ctx?.MeshObject != null && ctx.MeshObject.VertexCount > 0);
+        
+        if (useArmatureMeshesStructure && hasBone)
+        {
+            // Armatureフォルダを作成
+            armatureParent = new GameObject("Armature");
+            armatureParent.transform.SetParent(rootParent, false);
+            Undo.RegisterCreatedObjectUndo(armatureParent, "Create Armature");
+            
+            // Meshesフォルダを作成（メッシュがある場合のみ）
+            if (hasMesh)
+            {
+                meshesParent = new GameObject("Meshes");
+                meshesParent.transform.SetParent(rootParent, false);
+                Undo.RegisterCreatedObjectUndo(meshesParent, "Create Meshes");
+            }
         }
 
         // 共有マテリアル配列を取得
@@ -224,15 +433,40 @@ public partial class SimpleMeshFactory
             if (go == null) continue;
 
             int parentIndex = meshContext.HierarchyParentIndex;
+            bool isBone = (meshContext.Type == MeshType.Bone);
+            bool hasVertices = (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0);
 
             if (parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
             {
+                // 親がメッシュリスト内にある場合
                 go.transform.SetParent(createdObjects[parentIndex].transform, false);
             }
             else
             {
-                // ルートオブジェクトはrootParentの子に
-                go.transform.SetParent(rootParent, false);
+                // ルートオブジェクト
+                if (useArmatureMeshesStructure && hasBone)
+                {
+                    if (isBone && armatureParent != null)
+                    {
+                        // ボーンはArmature下に配置
+                        go.transform.SetParent(armatureParent.transform, false);
+                    }
+                    else if (!isBone && meshesParent != null)
+                    {
+                        // ボーン以外（メッシュ）はMeshes下に配置
+                        go.transform.SetParent(meshesParent.transform, false);
+                    }
+                    else
+                    {
+                        // どちらでもない場合はrootParent直下
+                        go.transform.SetParent(rootParent, false);
+                    }
+                }
+                else
+                {
+                    // 従来通りrootParentの子に
+                    go.transform.SetParent(rootParent, false);
+                }
 
                 if (firstRootObject == null)
                 {
@@ -265,10 +499,23 @@ public partial class SimpleMeshFactory
             if (createdObjects[i] != null)
             {
                 bones[i] = createdObjects[i].transform;
-                // バインドポーズ = ワールド→ローカル変換行列
-                bindPoses[i] = bones[i].worldToLocalMatrix;
+                
+                // MeshContext.BindPoseが設定されていればそれを使用、なければ計算
+                var meshContext = _meshContextList[i];
+                if (meshContext != null && meshContext.BindPose != Matrix4x4.identity)
+                {
+                    bindPoses[i] = meshContext.BindPose;
+                }
+                else
+                {
+                    // バインドポーズ = ワールド→ローカル変換行列
+                    bindPoses[i] = bones[i].worldToLocalMatrix;
+                }
             }
         }
+        
+        // デバッグ: ボーン配列のサマリー
+        Debug.Log($"[ExportSkinned] Bone Array: {bones.Length} total");
 
         // === Pass 4: 各メッシュに対して SkinnedMeshRenderer をセットアップ ===
         for (int i = 0; i < _meshContextList.Count; i++)
@@ -287,7 +534,7 @@ public partial class SimpleMeshFactory
             if (_bakeMirror && meshContext.IsMirrored)
             {
                 meshCopy = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out var usedMatIndices);
-                materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
+                materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials, meshContext.MirrorMaterialOffset);
             }
             else
             {
@@ -407,7 +654,7 @@ public partial class SimpleMeshFactory
                 // マテリアル設定（ベイク時は使用マテリアルのみ）
                 if (_bakeMirror && meshContext.IsMirrored && usedMatIndices != null)
                 {
-                    mr.sharedMaterials = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
+                    mr.sharedMaterials = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials, meshContext.MirrorMaterialOffset);
                 }
                 else
                 {

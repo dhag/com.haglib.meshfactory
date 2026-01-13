@@ -99,8 +99,18 @@ namespace MeshFactory.Data
         /// </summary>
         public BoneWeight? BoneWeight = null;
 
+        /// <summary>
+        /// ミラー側ボーンウェイト（ミラーオブジェクト用）
+        /// ミラー展開時に使用される
+        /// null = ミラーウェイトなし（実体側と同じか、ミラーなし）
+        /// </summary>
+        public BoneWeight? MirrorBoneWeight = null;
+
         /// <summary>スキニングデータを持つか</summary>
         public bool HasBoneWeight => BoneWeight.HasValue;
+
+        /// <summary>ミラー側スキニングデータを持つか</summary>
+        public bool HasMirrorBoneWeight => MirrorBoneWeight.HasValue;
 
         // === コンストラクタ ===
 
@@ -219,6 +229,7 @@ namespace MeshFactory.Data
             clone.Normals = new List<Vector3>(this.Normals);
             clone.Flags = this.Flags;
             clone.BoneWeight = this.BoneWeight;
+            clone.MirrorBoneWeight = this.MirrorBoneWeight;
             return clone;
         }
 
@@ -925,17 +936,52 @@ namespace MeshFactory.Data
             // サブメッシュ数を計算（materialCount指定時はそれを使用）
             int subMeshCount = materialCount > 0 ? materialCount : SubMeshCount;
 
-            // === 頂点データ展開 ===
-            // MeshObject: 頂点は1つ、UV/法線は面ごとに異なる場合がある
-            // Unity: 頂点は展開される（同じ位置でもUV/法線が異なれば別頂点）
+            // === FPX仕様: 頂点順 → UV順 で頂点を展開 ===
+            // キー: (頂点インデックス, UVサブインデックス)
+            // 値:  Unity頂点インデックス
+            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
 
             var unityVerts = new List<Vector3>();
             var unityUVs = new List<Vector2>();
             var unityNormals = new List<Vector3>();
-            var unityBoneWeights = new List<BoneWeight>();  // BoneWeight対応
-            bool hasBoneWeights = IsSkinned;  // スキニングデータがあるか
+            var unityBoneWeights = new List<BoneWeight>();
+            bool hasBoneWeights = IsSkinned;
 
-            // サブメッシュごとの三角形インデックス
+            // パス1: 頂点順 → UV順 で頂点データを作成
+            for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
+            {
+                var vertex = Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                {
+                    int unityIdx = unityVerts.Count;
+                    vertexMapping[(vIdx, uvIdx)] = unityIdx;
+
+                    // 位置
+                    unityVerts.Add(vertex.Position);
+
+                    // UV
+                    if (uvIdx < vertex.UVs.Count)
+                        unityUVs.Add(vertex.UVs[uvIdx]);
+                    else
+                        unityUVs.Add(Vector2.zero);
+
+                    // 法線（最初の法線を使用、なければデフォルト）
+                    if (vertex.Normals.Count > 0)
+                        unityNormals.Add(vertex.Normals[0]);
+                    else
+                        unityNormals.Add(Vector3.up);
+
+                    // BoneWeight
+                    if (hasBoneWeights)
+                    {
+                        unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                    }
+                }
+            }
+
+            // パス2: 面の三角形インデックスを構築
             var subMeshTriangles = new List<int>[subMeshCount];
             for (int i = 0; i < subMeshCount; i++)
                 subMeshTriangles[i] = new List<int>();
@@ -958,37 +1004,18 @@ namespace MeshFactory.Data
                         if (vIdx < 0 || vIdx >= Vertices.Count)
                             continue;
 
+                        // UVサブインデックスを取得（なければ0）
+                        int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
                         var vertex = Vertices[vIdx];
+                        if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                            uvSubIdx = vertex.UVs.Count > 0 ? 0 : 0;
 
-                        // 位置
-                        unityVerts.Add(vertex.Position);
-
-                        // UV
-                        int uvIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                        if (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
-                            unityUVs.Add(vertex.UVs[uvIdx]);
-                        else if (vertex.UVs.Count > 0)
-                            unityUVs.Add(vertex.UVs[0]);
-                        else
-                            unityUVs.Add(Vector2.zero);
-
-                        // 法線
-                        int nIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                        if (nIdx >= 0 && nIdx < vertex.Normals.Count)
-                            unityNormals.Add(vertex.Normals[nIdx]);
-                        else if (vertex.Normals.Count > 0)
-                            unityNormals.Add(vertex.Normals[0]);
-                        else
-                            unityNormals.Add(Vector3.up);
-
-                        // BoneWeight（スキニングデータがある場合）
-                        if (hasBoneWeights)
+                        // マッピングからUnity頂点インデックスを取得
+                        var key = (vIdx, uvSubIdx);
+                        if (vertexMapping.TryGetValue(key, out int unityIdx))
                         {
-                            unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                            subMeshTriangles[subMesh].Add(unityIdx);
                         }
-
-                        // インデックス追加
-                        subMeshTriangles[subMesh].Add(unityVerts.Count - 1);
                     }
                 }
             }
@@ -1038,6 +1065,11 @@ namespace MeshFactory.Data
             // サブメッシュ数を計算
             int subMeshCount = materialCount > 0 ? materialCount : SubMeshCount;
 
+            // === 頂点データ（共有版） ===
+            // キー: (頂点インデックス, UVサブインデックス, 法線サブインデックス)
+            // 値:  Unity頂点インデックス
+            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+
             var unityVerts = new List<Vector3>();
             var unityUVs = new List<Vector2>();
             var unityNormals = new List<Vector3>();
@@ -1069,39 +1101,59 @@ namespace MeshFactory.Data
 
                         var vertex = Vertices[vIdx];
 
-                        // 位置を変換
-                        Vector3 transformedPos = transform.MultiplyPoint3x4(vertex.Position);
-                        unityVerts.Add(transformedPos);
+                        // UVサブインデックスを取得（なければ0）
+                        int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
+                        if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                            uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
 
-                        // UV
-                        int uvIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                        if (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
-                            unityUVs.Add(vertex.UVs[uvIdx]);
-                        else if (vertex.UVs.Count > 0)
-                            unityUVs.Add(vertex.UVs[0]);
-                        else
-                            unityUVs.Add(Vector2.zero);
+                        // 法線サブインデックスを取得（なければ0）
+                        int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
+                        if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
+                            normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
 
-                        // 法線を変換
-                        int nIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                        Vector3 normal;
-                        if (nIdx >= 0 && nIdx < vertex.Normals.Count)
-                            normal = vertex.Normals[nIdx];
-                        else if (vertex.Normals.Count > 0)
-                            normal = vertex.Normals[0];
-                        else
-                            normal = Vector3.up;
-                        
-                        Vector3 transformedNormal = normalMatrix.MultiplyVector(normal).normalized;
-                        unityNormals.Add(transformedNormal);
+                        // キーを作成
+                        var key = (vIdx, uvSubIdx, normalSubIdx);
 
-                        // BoneWeight
-                        if (hasBoneWeights)
+                        // 既存の頂点があるか確認
+                        if (!vertexMapping.TryGetValue(key, out int unityIdx))
                         {
-                            unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                            // 新しいUnity頂点を作成
+                            unityIdx = unityVerts.Count;
+                            vertexMapping[key] = unityIdx;
+
+                            // 位置を変換
+                            Vector3 transformedPos = transform.MultiplyPoint3x4(vertex.Position);
+                            unityVerts.Add(transformedPos);
+
+                            // UV
+                            if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
+                                unityUVs.Add(vertex.UVs[uvSubIdx]);
+                            else if (vertex.UVs.Count > 0)
+                                unityUVs.Add(vertex.UVs[0]);
+                            else
+                                unityUVs.Add(Vector2.zero);
+
+                            // 法線を変換
+                            Vector3 normal;
+                            if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
+                                normal = vertex.Normals[normalSubIdx];
+                            else if (vertex.Normals.Count > 0)
+                                normal = vertex.Normals[0];
+                            else
+                                normal = Vector3.up;
+                            
+                            Vector3 transformedNormal = normalMatrix.MultiplyVector(normal).normalized;
+                            unityNormals.Add(transformedNormal);
+
+                            // BoneWeight
+                            if (hasBoneWeights)
+                            {
+                                unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                            }
                         }
 
-                        subMeshTriangles[subMesh].Add(unityVerts.Count - 1);
+                        // 三角形インデックスを追加
+                        subMeshTriangles[subMesh].Add(unityIdx);
                     }
                 }
             }
@@ -1153,10 +1205,10 @@ namespace MeshFactory.Data
             // サブメッシュ数を計算
             int subMeshCount = materialCount > 0 ? materialCount : SubMeshCount;
 
-            // === 頂点データ（共有版） ===
-            // キー: (頂点インデックス, UVサブインデックス, 法線サブインデックス)
+            // === FPX仕様: 頂点順 → UV順 で頂点を展開 ===
+            // キー: (頂点インデックス, UVサブインデックス)
             // 値:  Unity頂点インデックス
-            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
 
             var unityVerts = new List<Vector3>();
             var unityUVs = new List<Vector2>();
@@ -1164,7 +1216,41 @@ namespace MeshFactory.Data
             var unityBoneWeights = new List<BoneWeight>();
             bool hasBoneWeights = IsSkinned;
 
-            // サブメッシュごとの三角形インデックス
+            // パス1: 頂点順 → UV順 で頂点データを作成
+            for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
+            {
+                var vertex = Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                {
+                    int unityIdx = unityVerts.Count;
+                    vertexMapping[(vIdx, uvIdx)] = unityIdx;
+
+                    // 位置
+                    unityVerts.Add(vertex.Position);
+
+                    // UV
+                    if (uvIdx < vertex.UVs.Count)
+                        unityUVs.Add(vertex.UVs[uvIdx]);
+                    else
+                        unityUVs.Add(Vector2.zero);
+
+                    // 法線（最初の法線を使用、なければデフォルト）
+                    if (vertex.Normals.Count > 0)
+                        unityNormals.Add(vertex.Normals[0]);
+                    else
+                        unityNormals.Add(Vector3.up);
+
+                    // BoneWeight
+                    if (hasBoneWeights)
+                    {
+                        unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                    }
+                }
+            }
+
+            // パス2: 面の三角形インデックスを構築
             var subMeshTriangles = new List<int>[subMeshCount];
             for (int i = 0; i < subMeshCount; i++)
                 subMeshTriangles[i] = new List<int>();
@@ -1187,56 +1273,18 @@ namespace MeshFactory.Data
                         if (vIdx < 0 || vIdx >= Vertices.Count)
                             continue;
 
-                        var vertex = Vertices[vIdx];
-
                         // UVサブインデックスを取得（なければ0）
                         int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
+                        var vertex = Vertices[vIdx];
                         if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
-                            uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
+                            uvSubIdx = vertex.UVs.Count > 0 ? 0 : 0;
 
-                        // 法線サブインデックスを取得（なければ0）
-                        int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                        if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
-                            normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
-
-                        // キーを作成
-                        var key = (vIdx, uvSubIdx, normalSubIdx);
-
-                        // 既存の頂点があるか確認
-                        if (!vertexMapping.TryGetValue(key, out int unityIdx))
+                        // マッピングからUnity頂点インデックスを取得
+                        var key = (vIdx, uvSubIdx);
+                        if (vertexMapping.TryGetValue(key, out int unityIdx))
                         {
-                            // 新しいUnity頂点を作成
-                            unityIdx = unityVerts.Count;
-                            vertexMapping[key] = unityIdx;
-
-                            // 位置
-                            unityVerts.Add(vertex.Position);
-
-                            // UV
-                            if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
-                                unityUVs.Add(vertex.UVs[uvSubIdx]);
-                            else if (vertex.UVs.Count > 0)
-                                unityUVs.Add(vertex.UVs[0]);
-                            else
-                                unityUVs.Add(Vector2.zero);
-
-                            // 法線
-                            if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
-                                unityNormals.Add(vertex.Normals[normalSubIdx]);
-                            else if (vertex.Normals.Count > 0)
-                                unityNormals.Add(vertex.Normals[0]);
-                            else
-                                unityNormals.Add(Vector3.up);
-
-                            // BoneWeight
-                            if (hasBoneWeights)
-                            {
-                                unityBoneWeights.Add(vertex.BoneWeight ?? default);
-                            }
+                            subMeshTriangles[subMesh].Add(unityIdx);
                         }
-
-                        // 三角形インデックスを追加
-                        subMeshTriangles[subMesh].Add(unityIdx);
                     }
                 }
             }

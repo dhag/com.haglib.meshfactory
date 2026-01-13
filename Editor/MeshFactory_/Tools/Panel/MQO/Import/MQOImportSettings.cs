@@ -50,7 +50,7 @@ namespace MeshFactory.MQO
 
         /// <summary>UV V座標反転</summary>
         [Tooltip("UV座標のV成分を反転する")]
-        public bool FlipUV_V = false;
+        public bool FlipUV_V = true;
 
         // ================================================================
         // インポートオプション
@@ -95,6 +95,25 @@ namespace MeshFactory.MQO
 
         /// <summary>ボーンウェイトCSVを使用するか</summary>
         public bool UseBoneWeightCSV => !string.IsNullOrEmpty(BoneWeightCSVPath);
+
+        /// <summary>ボーン定義CSVファイルパス（PmxBone形式）</summary>
+        [Tooltip("ボーン定義を含むCSVファイル（PmxBone形式）")]
+        public string BoneCSVPath = "";
+
+        /// <summary>ボーンCSVを使用するか</summary>
+        public bool UseBoneCSV => !string.IsNullOrEmpty(BoneCSVPath);
+
+        /// <summary>ボーンスケール（PMXボーン座標に適用、デフォルト1.0）</summary>
+        [Tooltip("PMXボーン座標に適用するスケール（MQOと同じScaleを使う場合は1.0）")]
+        public float BoneScale = 1.0f;
+
+        // ================================================================
+        // テクスチャ読み込み用
+        // ================================================================
+
+        /// <summary>MQOファイルのベースディレクトリ（テクスチャ相対パス解決用）</summary>
+        [NonSerialized]
+        public string BaseDir = "";
 
         // ================================================================
         // ファクトリメソッド

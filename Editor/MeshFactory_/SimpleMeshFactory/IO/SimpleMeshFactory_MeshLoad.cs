@@ -169,9 +169,43 @@ public partial class SimpleMeshFactory
         }
         else
         {
-            // 通常メッシュは即座にインポート
-            LoadHierarchyFromGameObject(selected, null);
+            // Armatureフォルダを検出（エクスポートしたモデルの再インポート用）
+            Transform armatureRoot = DetectArmatureFolder(selected.transform);
+            if (armatureRoot != null)
+            {
+                // Armatureフォルダが見つかった → ボーン取り込みダイアログを表示
+                int boneCount = CountDescendants(armatureRoot) + 1;
+                var dialog = SkinnedMeshImportDialog.Show(selected, armatureRoot, boneCount, 0);
+                dialog.OnImport = (importMesh, importBones, selectedRootBone) =>
+                {
+                    LoadHierarchyFromGameObject(selected, importBones ? selectedRootBone : null);
+                };
+            }
+            else
+            {
+                // 通常メッシュは即座にインポート
+                LoadHierarchyFromGameObject(selected, null);
+            }
         }
+    }
+    
+    /// <summary>
+    /// Armatureフォルダを検出（エクスポートしたモデルの再インポート用）
+    /// </summary>
+    private Transform DetectArmatureFolder(Transform root)
+    {
+        if (root == null) return null;
+        
+        // 直接の子から「Armature」という名前のオブジェクトを検索
+        foreach (Transform child in root)
+        {
+            if (child.name == "Armature")
+            {
+                return child;
+            }
+        }
+        
+        return null;
     }
 
     /// <summary>

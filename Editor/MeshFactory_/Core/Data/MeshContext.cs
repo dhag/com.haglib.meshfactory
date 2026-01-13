@@ -515,6 +515,12 @@ namespace MeshFactory.Data
         /// <summary>ミラー距離</summary>
         public float MirrorDistance { get; set; } = 0f;
 
+        /// <summary>
+        /// ミラー側マテリアルのオフセット
+        /// ミラー側マテリアルインデックス = 実体側インデックス + MirrorMaterialOffset
+        /// </summary>
+        public int MirrorMaterialOffset { get; set; } = 0;
+
         /// <summary>ミラーが有効か</summary>
         public bool IsMirrored => MirrorType > 0;
 

@@ -128,17 +128,7 @@ namespace MeshFactory.MQO
                 }
             }
 
-            Debug.Log($"[MQOBoneWeightCSV] === Parse Summary ===");
-            Debug.Log($"[MQOBoneWeightCSV]   Total objects: {result.ObjectWeights.Count}");
-            Debug.Log($"[MQOBoneWeightCSV]   Total bones: {result.AllBoneNames.Count}");
-            Debug.Log($"[MQOBoneWeightCSV]   Parse errors: {parseErrors}");
-            
-            foreach (var kvp in result.ObjectWeights)
-            {
-                var objWeights = kvp.Value;
-                string mode = objWeights.AllVertexIDsValid ? "VertexID" : "VertexIndex";
-                Debug.Log($"[MQOBoneWeightCSV]   '{kvp.Key}': {objWeights.Entries.Count} entries, mode={mode}");
-            }
+            Debug.Log($"[MQOBoneWeightCSV] Parsed: {result.ObjectWeights.Count} objects, {result.AllBoneNames.Count} bones");
 
             return result;
         }
@@ -196,6 +186,13 @@ namespace MeshFactory.MQO
         /// <param name="objectWeights">ボーンウェイトデータ</param>
         /// <param name="boneNameToIndex">ボーン名→インデックスのマッピング</param>
         /// <returns>適用された頂点数</returns>
+        /// <summary>
+        /// メッシュオブジェクトにボーンウェイトを適用
+        /// </summary>
+        /// <param name="meshObject">対象のメッシュオブジェクト</param>
+        /// <param name="objectWeights">CSVからパースしたウェイトデータ</param>
+        /// <param name="boneNameToIndex">ボーン名→インデックスのマッピング</param>
+        /// <returns>適用された頂点数</returns>
         public static int ApplyBoneWeights(
             Data.MeshObject meshObject,
             MQOObjectBoneWeights objectWeights,
@@ -210,8 +207,7 @@ namespace MeshFactory.MQO
             bool useVertexID = objectWeights.AllVertexIDsValid;
 
             Debug.Log($"[MQOBoneWeight] === Applying to '{meshObject.Name}' ===");
-            Debug.Log($"[MQOBoneWeight]   Mode: {(useVertexID ? "VertexID" : "VertexIndex")}");
-            Debug.Log($"[MQOBoneWeight]   CSV entries: {objectWeights.Entries.Count}, Mesh vertices: {meshObject.Vertices.Count}");
+            Debug.Log($"[MQOBoneWeight]   Mode: {(useVertexID ? "VertexID" : "VertexIndex")}, CSV: {objectWeights.Entries.Count}, Mesh: {meshObject.Vertices.Count}");
 
             for (int i = 0; i < meshObject.Vertices.Count; i++)
             {
@@ -318,6 +314,131 @@ namespace MeshFactory.MQO
         }
 
         /// <summary>
+        /// MeshObjectにミラー側ボーンウェイトを適用
+        /// </summary>
+        /// <param name="meshObject">対象のMeshObject</param>
+        /// <param name="objectWeights">ミラー側ボーンウェイトデータ（オブジェクト名+"+"）</param>
+        /// <param name="boneNameToIndex">ボーン名→インデックスのマッピング</param>
+        /// <returns>適用された頂点数</returns>
+        public static int ApplyMirrorBoneWeights(
+            Data.MeshObject meshObject,
+            MQOObjectBoneWeights objectWeights,
+            Dictionary<string, int> boneNameToIndex)
+        {
+            if (meshObject == null || objectWeights == null || objectWeights.Entries.Count == 0)
+                return 0;
+
+            int appliedCount = 0;
+            int skippedCount = 0;
+            int unmatchedBoneCount = 0;
+            bool useVertexID = objectWeights.AllVertexIDsValid;
+
+            Debug.Log($"[MQOBoneWeight] === Applying Mirror to '{meshObject.Name}' ===");
+            Debug.Log($"[MQOBoneWeight]   Mode: {(useVertexID ? "VertexID" : "VertexIndex")}, CSV: {objectWeights.Entries.Count}, Mesh: {meshObject.Vertices.Count}");
+
+            for (int i = 0; i < meshObject.Vertices.Count; i++)
+            {
+                var vertex = meshObject.Vertices[i];
+                
+                // マッチングするエントリを検索
+                BoneWeightEntry entry;
+                if (useVertexID)
+                {
+                    entry = objectWeights.FindByVertexID(vertex.Id);
+                    if (entry == null)
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+                }
+                else
+                {
+                    entry = objectWeights.FindByVertexIndex(i);
+                    if (entry == null)
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+                }
+
+                // MirrorBoneWeightを構築
+                var boneWeight = new BoneWeight();
+                
+                // Bone0
+                if (!string.IsNullOrEmpty(entry.BoneNames[0]))
+                {
+                    if (boneNameToIndex.TryGetValue(entry.BoneNames[0], out int idx0))
+                    {
+                        boneWeight.boneIndex0 = idx0;
+                        boneWeight.weight0 = entry.Weights[0];
+                    }
+                    else
+                    {
+                        unmatchedBoneCount++;
+                    }
+                }
+                
+                // Bone1
+                if (!string.IsNullOrEmpty(entry.BoneNames[1]))
+                {
+                    if (boneNameToIndex.TryGetValue(entry.BoneNames[1], out int idx1))
+                    {
+                        boneWeight.boneIndex1 = idx1;
+                        boneWeight.weight1 = entry.Weights[1];
+                    }
+                    else
+                    {
+                        unmatchedBoneCount++;
+                    }
+                }
+                
+                // Bone2
+                if (!string.IsNullOrEmpty(entry.BoneNames[2]))
+                {
+                    if (boneNameToIndex.TryGetValue(entry.BoneNames[2], out int idx2))
+                    {
+                        boneWeight.boneIndex2 = idx2;
+                        boneWeight.weight2 = entry.Weights[2];
+                    }
+                    else
+                    {
+                        unmatchedBoneCount++;
+                    }
+                }
+                
+                // Bone3
+                if (!string.IsNullOrEmpty(entry.BoneNames[3]))
+                {
+                    if (boneNameToIndex.TryGetValue(entry.BoneNames[3], out int idx3))
+                    {
+                        boneWeight.boneIndex3 = idx3;
+                        boneWeight.weight3 = entry.Weights[3];
+                    }
+                    else
+                    {
+                        unmatchedBoneCount++;
+                    }
+                }
+
+                vertex.MirrorBoneWeight = boneWeight;
+                appliedCount++;
+            }
+
+            Debug.Log($"[MQOBoneWeight]   Mirror Result: Applied={appliedCount}, Skipped={skippedCount}, UnmatchedBones={unmatchedBoneCount}");
+            
+            if (skippedCount > 0)
+            {
+                Debug.LogWarning($"[MQOBoneWeight] Mirror '{meshObject.Name}': {skippedCount} vertices had no matching CSV entry");
+            }
+            if (unmatchedBoneCount > 0)
+            {
+                Debug.LogWarning($"[MQOBoneWeight] Mirror '{meshObject.Name}': {unmatchedBoneCount} bone name lookups failed");
+            }
+
+            return appliedCount;
+        }
+
+        /// <summary>
         /// ボーン名リストからボーン名→インデックスマッピングを作成
         /// </summary>
         public static Dictionary<string, int> CreateBoneNameToIndexMap(IEnumerable<string> boneNames)
@@ -332,11 +453,7 @@ namespace MeshFactory.MQO
                 }
             }
             
-            Debug.Log($"[MQOBoneWeight] Bone name to index mapping ({map.Count} bones):");
-            foreach (var kvp in map)
-            {
-                Debug.Log($"[MQOBoneWeight]   [{kvp.Value}] {kvp.Key}");
-            }
+            Debug.Log($"[MQOBoneWeight] Created bone name mapping: {map.Count} bones");
             
             return map;
         }

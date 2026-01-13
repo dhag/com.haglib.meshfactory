@@ -43,7 +43,7 @@ namespace MeshFactory.MQO
                 RegexOptions.Compiled);
 
             public static readonly Regex ParamPattern = new Regex(
-                @"(?<key>\w+)\((?:""(?<val>.*)""|(?<val>[^\)]+))\)",
+                @"(?<key>\w+)\((?:""(?<val>[^""]*)""|(?<val>[^\)]+))\)",
                 RegexOptions.Compiled);
 
             public static readonly Regex FaceHeader = new Regex(
