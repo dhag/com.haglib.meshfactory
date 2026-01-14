@@ -154,6 +154,9 @@ namespace Poly_Ling.Serialization
         /// <summary>編集禁止（ロック）</summary>
         public bool isLocked = false;
 
+        /// <summary>折りたたみ状態（MQO互換）</summary>
+        public bool isFolding = false;
+
         // ================================================================
         // ミラー設定
         // ================================================================

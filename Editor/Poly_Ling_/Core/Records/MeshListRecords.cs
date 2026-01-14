@@ -56,6 +56,7 @@ namespace Poly_Ling.UndoSystem
         public int Depth;
         public bool IsVisible;
         public bool IsLocked;
+        public bool IsFolding;
 
         // ミラー設定
         public int MirrorType;
@@ -107,6 +108,7 @@ namespace Poly_Ling.UndoSystem
                 Depth = meshContext.Depth,
                 IsVisible = meshContext.IsVisible,
                 IsLocked = meshContext.IsLocked,
+                IsFolding = meshContext.IsFolding,
                 // ミラー設定
                 MirrorType = meshContext.MirrorType,
                 MirrorAxis = meshContext.MirrorAxis,
@@ -174,6 +176,7 @@ namespace Poly_Ling.UndoSystem
                 Depth = Depth,
                 IsVisible = IsVisible,
                 IsLocked = IsLocked,
+                IsFolding = IsFolding,
                 // ミラー設定
                 MirrorType = MirrorType,
                 MirrorAxis = MirrorAxis,

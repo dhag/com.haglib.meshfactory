@@ -21,6 +21,7 @@ Shader "Poly_Ling/Wireframe3D_Overlay"
             
             #define FLAG_MESH_SELECTED 2
             #define FLAG_HOVERED 256
+            #define FLAG_HIDDEN 4096       // 1 << 12
             #define FLAG_CULLED 16384
             
             struct appdata
@@ -49,8 +50,17 @@ Shader "Poly_Ling/Wireframe3D_Overlay"
                     uint idx = (uint)v.uv.x;
                     uint flags = _LineFlagsBuffer[idx];
                     bool isMeshSelected = (flags & FLAG_MESH_SELECTED) != 0;
+                    bool isHidden = (flags & FLAG_HIDDEN) != 0;
                     bool isCulled = (flags & FLAG_CULLED) != 0;
                     bool isHovered = (flags & FLAG_HOVERED) != 0;
+                    
+                    // 非表示メッシュをスキップ
+                    if (isHidden)
+                    {
+                        o.pos = float4(99999, 99999, 99999, 1);
+                        o.color = 0;
+                        return o;
+                    }
                     
                     // 選択メッシュでない場合は非表示
                     if (!isMeshSelected)

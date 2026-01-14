@@ -24,314 +24,315 @@ public partial class PolyLing
     // ================================================================
     private void DrawVertexEditor()
     {
-        using (new EditorGUILayout.VerticalScope(GUILayout.Width(_rightPaneWidth)))
+        EditorGUILayout.BeginVertical(GUILayout.Width(_rightPaneWidth));
+        EditorGUILayout.LabelField(L.Get("VertexEditor"), EditorStyles.boldLabel);
+
+        // スクロール開始
+        _rightPaneScroll = EditorGUILayout.BeginScrollView(_rightPaneScroll);
+
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext == null)
         {
-            EditorGUILayout.LabelField(L.Get("VertexEditor"), EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(L.Get("SelectMesh"), MessageType.Info);
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+            return;
+        }
 
-            // スクロール開始
-            _rightPaneScroll = EditorGUILayout.BeginScrollView(_rightPaneScroll);
+        var meshObject = meshContext.MeshObject;
 
-            var meshContext = _model.CurrentMeshContext;
-            if (meshContext == null)
+        if (meshObject == null)
+        {
+            EditorGUILayout.HelpBox(L.Get("InvalidMeshData"), MessageType.Warning);
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+            return;
+        }
+
+        // メッシュ情報表示
+        EditorGUILayout.LabelField($"{L.Get("Vertices")}: {meshObject.VertexCount}");
+        EditorGUILayout.LabelField($"{L.Get("Faces")}: {meshObject.FaceCount}");
+        EditorGUILayout.LabelField($"{L.Get("Triangles")}: {meshObject.TriangleCount}");
+
+        // 面タイプ内訳
+        int triCount = meshObject.Faces.Count(f => f.IsTriangle);
+        int quadCount = meshObject.Faces.Count(f => f.IsQuad);
+        int nGonCount = meshObject.FaceCount - triCount - quadCount;
+        EditorGUILayout.LabelField($"  ({L.Get("Tri")}:{triCount}, {L.Get("Quad")}:{quadCount}, {L.Get("NGon")}:{nGonCount})", EditorStyles.miniLabel);
+
+        EditorGUILayout.Space(5);
+
+        if (GUILayout.Button(L.Get("ResetToOriginal")))
+        {
+            MeshObjectSnapshot before = _undoController?.CaptureMeshObjectSnapshot();
+
+            ResetMesh(meshContext);
+
+            if (_undoController != null && before != null)
             {
-                EditorGUILayout.HelpBox(L.Get("SelectMesh"), MessageType.Info);
-                EditorGUILayout.EndScrollView();
-                return;
+                MeshObjectSnapshot after = _undoController.CaptureMeshObjectSnapshot();
+                _undoController.RecordTopologyChange(before, after, "Reset UnityMesh");
+            }
+        }
+
+        EditorGUILayout.Space(5);
+
+        // ================================================================
+        // マテリアル管理機能（マルチマテリアル対応）
+        // ================================================================
+        DrawMaterialUI(meshContext);
+
+        EditorGUILayout.Space(5);
+
+        // ================================================================
+        // 保存機能
+        // ================================================================
+        EditorGUILayout.LabelField(L.Get("Save"), EditorStyles.miniBoldLabel);
+
+        // Export Transform設定（メッシュコンテキストごと）
+        if (meshContext.BoneTransform != null)
+        {
+            BoneTransformUI.DrawUI(meshContext.BoneTransform);
+            EditorGUILayout.Space(4);
+        }
+
+        // ================================================================
+        // 選択メッシュのみ チェックボックス（Undo対応）
+        // ================================================================
+        EditorGUI.BeginChangeCheck();
+        bool newExportSelectedOnly = EditorGUILayout.Toggle(L.Get("ExportSelectedMeshOnly"), _exportSelectedMeshOnly);
+        if (EditorGUI.EndChangeCheck() && newExportSelectedOnly != _exportSelectedMeshOnly)
+        {
+            if (_undoController != null)
+            {
+                _undoController.BeginEditorStateDrag();
             }
 
-            var meshObject = meshContext.MeshObject;
+            _exportSelectedMeshOnly = newExportSelectedOnly;
 
-            if (meshObject == null)
+            if (_undoController != null)
             {
-                EditorGUILayout.HelpBox(L.Get("InvalidMeshData"), MessageType.Warning);
-                EditorGUILayout.EndScrollView();
-                return;
+                _undoController.EditorState.ExportSelectedMeshOnly = _exportSelectedMeshOnly;
+                _undoController.EndEditorStateDrag("Toggle Export Selected Mesh Only");
+            }
+        }
+
+        // ================================================================
+        // 対称をベイク チェックボックス（Undo対応）
+        // ================================================================
+        EditorGUI.BeginChangeCheck();
+        bool newBakeMirror = EditorGUILayout.Toggle(L.Get("BakeMirror"), _bakeMirror);
+        if (EditorGUI.EndChangeCheck() && newBakeMirror != _bakeMirror)
+        {
+            if (_undoController != null)
+            {
+                _undoController.BeginEditorStateDrag();
             }
 
-            // メッシュ情報表示
-            EditorGUILayout.LabelField($"{L.Get("Vertices")}: {meshObject.VertexCount}");
-            EditorGUILayout.LabelField($"{L.Get("Faces")}: {meshObject.FaceCount}");
-            EditorGUILayout.LabelField($"{L.Get("Triangles")}: {meshObject.TriangleCount}");
+            _bakeMirror = newBakeMirror;
 
-            // 面タイプ内訳
-            int triCount = meshObject.Faces.Count(f => f.IsTriangle);
-            int quadCount = meshObject.Faces.Count(f => f.IsQuad);
-            int nGonCount = meshObject.FaceCount - triCount - quadCount;
-            EditorGUILayout.LabelField($"  ({L.Get("Tri")}:{triCount}, {L.Get("Quad")}:{quadCount}, {L.Get("NGon")}:{nGonCount})", EditorStyles.miniLabel);
-
-            EditorGUILayout.Space(5);
-
-            if (GUILayout.Button(L.Get("ResetToOriginal")))
+            if (_undoController != null)
             {
-                MeshObjectSnapshot before = _undoController?.CaptureMeshObjectSnapshot();
-
-                ResetMesh(meshContext);
-
-                if (_undoController != null && before != null)
-                {
-                    MeshObjectSnapshot after = _undoController.CaptureMeshObjectSnapshot();
-                    _undoController.RecordTopologyChange(before, after, "Reset UnityMesh");
-                }
+                _undoController.EditorState.BakeMirror = _bakeMirror;
+                _undoController.EndEditorStateDrag("Toggle Bake Mirror");
             }
+        }
 
-            EditorGUILayout.Space(5);
-
-            // ================================================================
-            // マテリアル管理機能（マルチマテリアル対応）
-            // ================================================================
-            DrawMaterialUI(meshContext);
-
-            EditorGUILayout.Space(5);
-
-            // ================================================================
-            // 保存機能
-            // ================================================================
-            EditorGUILayout.LabelField(L.Get("Save"), EditorStyles.miniBoldLabel);
-
-            // Export Transform設定（メッシュコンテキストごと）
-            if (meshContext.BoneTransform != null)
-            {
-                BoneTransformUI.DrawUI(meshContext.BoneTransform);
-                EditorGUILayout.Space(4);
-            }
-
-            // ================================================================
-            // 選択メッシュのみ チェックボックス（Undo対応）
-            // ================================================================
+        // UV U反転（対称ベイク時のみ有効）
+        using (new EditorGUI.DisabledScope(!_bakeMirror))
+        {
+            EditorGUI.indentLevel++;
             EditorGUI.BeginChangeCheck();
-            bool newExportSelectedOnly = EditorGUILayout.Toggle(L.Get("ExportSelectedMeshOnly"), _exportSelectedMeshOnly);
-            if (EditorGUI.EndChangeCheck() && newExportSelectedOnly != _exportSelectedMeshOnly)
+            bool newMirrorFlipU = EditorGUILayout.Toggle(L.Get("MirrorFlipU"), _mirrorFlipU);
+            if (EditorGUI.EndChangeCheck() && newMirrorFlipU != _mirrorFlipU)
             {
                 if (_undoController != null)
                 {
                     _undoController.BeginEditorStateDrag();
                 }
 
-                _exportSelectedMeshOnly = newExportSelectedOnly;
+                _mirrorFlipU = newMirrorFlipU;
 
                 if (_undoController != null)
                 {
-                    _undoController.EditorState.ExportSelectedMeshOnly = _exportSelectedMeshOnly;
-                    _undoController.EndEditorStateDrag("Toggle Export Selected Mesh Only");
+                    _undoController.EditorState.MirrorFlipU = _mirrorFlipU;
+                    _undoController.EndEditorStateDrag("Toggle Mirror Flip U");
                 }
             }
+            EditorGUI.indentLevel--;
+        }
 
-            // ================================================================
-            // 対称をベイク チェックボックス（Undo対応）
-            // ================================================================
+        // ================================================================
+        // オンメモリマテリアル保存オプション（オンメモリマテリアルがある場合のみ表示）
+        // ================================================================
+        if (_model.HasOnMemoryMaterials())
+        {
             EditorGUI.BeginChangeCheck();
-            bool newBakeMirror = EditorGUILayout.Toggle(L.Get("BakeMirror"), _bakeMirror);
-            if (EditorGUI.EndChangeCheck() && newBakeMirror != _bakeMirror)
+            bool newSaveOnMemoryMaterials = EditorGUILayout.Toggle(L.Get("SaveOnMemoryMaterials"), _saveOnMemoryMaterials);
+            if (EditorGUI.EndChangeCheck() && newSaveOnMemoryMaterials != _saveOnMemoryMaterials)
             {
-                if (_undoController != null)
-                {
-                    _undoController.BeginEditorStateDrag();
-                }
-
-                _bakeMirror = newBakeMirror;
-
-                if (_undoController != null)
-                {
-                    _undoController.EditorState.BakeMirror = _bakeMirror;
-                    _undoController.EndEditorStateDrag("Toggle Bake Mirror");
-                }
+                _saveOnMemoryMaterials = newSaveOnMemoryMaterials;
             }
 
-            // UV U反転（対称ベイク時のみ有効）
-            using (new EditorGUI.DisabledScope(!_bakeMirror))
+            // 保存オプション（SaveOnMemoryMaterialsがONの場合のみ表示）
+            if (_saveOnMemoryMaterials)
             {
                 EditorGUI.indentLevel++;
+
+                // 上書きオプション
                 EditorGUI.BeginChangeCheck();
-                bool newMirrorFlipU = EditorGUILayout.Toggle(L.Get("MirrorFlipU"), _mirrorFlipU);
-                if (EditorGUI.EndChangeCheck() && newMirrorFlipU != _mirrorFlipU)
+                bool newOverwrite = EditorGUILayout.Toggle("Overwrite Existing", _overwriteExistingAssets);
+                if (EditorGUI.EndChangeCheck())
                 {
-                    if (_undoController != null)
-                    {
-                        _undoController.BeginEditorStateDrag();
-                    }
+                    _overwriteExistingAssets = newOverwrite;
+                }
 
-                    _mirrorFlipU = newMirrorFlipU;
+                // 保存先フォルダ
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Save Folder", GUILayout.Width(80));
 
-                    if (_undoController != null)
+                // フォルダパス表示（短縮）
+                string displayPath = string.IsNullOrEmpty(_materialSaveFolder)
+                    ? "(Default)"
+                    : TruncatePath(_materialSaveFolder, 20);
+                EditorGUILayout.LabelField(displayPath, EditorStyles.miniLabel);
+
+                // 選択ボタン
+                if (GUILayout.Button("...", GUILayout.Width(25)))
+                {
+                    string defaultPath = string.IsNullOrEmpty(_materialSaveFolder)
+                        ? "Assets/SavedMaterials"
+                        : _materialSaveFolder;
+                    string selectedPath = EditorUtility.OpenFolderPanel("Select Material Save Folder", defaultPath, "");
+                    if (!string.IsNullOrEmpty(selectedPath))
                     {
-                        _undoController.EditorState.MirrorFlipU = _mirrorFlipU;
-                        _undoController.EndEditorStateDrag("Toggle Mirror Flip U");
+                        // プロジェクト相対パスに変換
+                        if (selectedPath.StartsWith(Application.dataPath))
+                        {
+                            _materialSaveFolder = "Assets" + selectedPath.Substring(Application.dataPath.Length);
+                        }
+                        else
+                        {
+                            EditorUtility.DisplayDialog("Error", "Assetsフォルダ内を選択してください。", "OK");
+                        }
                     }
                 }
+
+                // クリアボタン
+                if (GUILayout.Button("×", GUILayout.Width(20)))
+                {
+                    _materialSaveFolder = "";
+                }
+
+                EditorGUILayout.EndHorizontal();
+
                 EditorGUI.indentLevel--;
             }
-
-            // ================================================================
-            // オンメモリマテリアル保存オプション（オンメモリマテリアルがある場合のみ表示）
-            // ================================================================
-            if (_model.HasOnMemoryMaterials())
-            {
-                EditorGUI.BeginChangeCheck();
-                bool newSaveOnMemoryMaterials = EditorGUILayout.Toggle(L.Get("SaveOnMemoryMaterials"), _saveOnMemoryMaterials);
-                if (EditorGUI.EndChangeCheck() && newSaveOnMemoryMaterials != _saveOnMemoryMaterials)
-                {
-                    _saveOnMemoryMaterials = newSaveOnMemoryMaterials;
-                }
-
-                // 保存オプション（SaveOnMemoryMaterialsがONの場合のみ表示）
-                if (_saveOnMemoryMaterials)
-                {
-                    EditorGUI.indentLevel++;
-                    
-                    // 上書きオプション
-                    EditorGUI.BeginChangeCheck();
-                    bool newOverwrite = EditorGUILayout.Toggle("Overwrite Existing", _overwriteExistingAssets);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        _overwriteExistingAssets = newOverwrite;
-                    }
-
-                    // 保存先フォルダ
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField("Save Folder", GUILayout.Width(80));
-                    
-                    // フォルダパス表示（短縮）
-                    string displayPath = string.IsNullOrEmpty(_materialSaveFolder) 
-                        ? "(Default)" 
-                        : TruncatePath(_materialSaveFolder, 20);
-                    EditorGUILayout.LabelField(displayPath, EditorStyles.miniLabel);
-                    
-                    // 選択ボタン
-                    if (GUILayout.Button("...", GUILayout.Width(25)))
-                    {
-                        string defaultPath = string.IsNullOrEmpty(_materialSaveFolder) 
-                            ? "Assets/SavedMaterials" 
-                            : _materialSaveFolder;
-                        string selectedPath = EditorUtility.OpenFolderPanel("Select Material Save Folder", defaultPath, "");
-                        if (!string.IsNullOrEmpty(selectedPath))
-                        {
-                            // プロジェクト相対パスに変換
-                            if (selectedPath.StartsWith(Application.dataPath))
-                            {
-                                _materialSaveFolder = "Assets" + selectedPath.Substring(Application.dataPath.Length);
-                            }
-                            else
-                            {
-                                EditorUtility.DisplayDialog("Error", "Assetsフォルダ内を選択してください。", "OK");
-                            }
-                        }
-                    }
-                    
-                    // クリアボタン
-                    if (GUILayout.Button("×", GUILayout.Width(20)))
-                    {
-                        _materialSaveFolder = "";
-                    }
-                    
-                    EditorGUILayout.EndHorizontal();
-                    
-                    EditorGUI.indentLevel--;
-                }
-            }
-
-            EditorGUILayout.Space(2);
-
-            // ================================================================
-            // エクスポートボタン群
-            // ================================================================
-            
-            // Armature/Meshesフォルダ作成オプション（ボーンがある場合のみ表示）
-            bool hasBones = _meshContextList.Any(ctx => ctx?.Type == MeshType.Bone);
-            if (hasBones && !_exportSelectedMeshOnly)
-            {
-                _createArmatureMeshesFolder = EditorGUILayout.Toggle(
-                    L.Get("CreateArmatureMeshesFolder"), 
-                    _createArmatureMeshesFolder);
-                
-                // スキンメッシュで出力（BoneTransform.ExportAsSkinnedを使用）
-                bool currentExportAsSkinned = _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.ExportAsSkinned);
-                bool newExportAsSkinned = EditorGUILayout.Toggle(
-                    L.Get("ExportAsSkinned"), 
-                    currentExportAsSkinned);
-                if (newExportAsSkinned != currentExportAsSkinned)
-                {
-                    // 全MeshContextのBoneTransform.ExportAsSkinnedを更新
-                    foreach (var ctx in _meshContextList)
-                    {
-                        if (ctx?.BoneTransform != null)
-                        {
-                            ctx.BoneTransform.ExportAsSkinned = newExportAsSkinned;
-                        }
-                    }
-                }
-            }
-            
-            bool hasAnyMesh = _meshContextList.Count > 0;
-            bool canExport = _exportSelectedMeshOnly ? true : hasAnyMesh;  // 選択時は現在のmeshContextが有効
-
-            using (new EditorGUI.DisabledScope(!canExport))
-            {
-                if (GUILayout.Button(L.Get("SaveMeshAsset")))
-                {
-                    if (_exportSelectedMeshOnly)
-                    {
-                        SaveMesh(meshContext);
-                    }
-                    else
-                    {
-                        SaveModelMeshAssets();
-                    }
-                }
-
-                if (GUILayout.Button(L.Get("SaveAsPrefab")))
-                {
-                    if (_exportSelectedMeshOnly)
-                    {
-                        SaveAsPrefab(meshContext);
-                    }
-                    else
-                    {
-                        SaveModelAsPrefab();
-                    }
-                }
-
-                if (GUILayout.Button(L.Get("AddToHierarchy")))
-                {
-                    if (_exportSelectedMeshOnly)
-                    {
-                        AddToHierarchy(meshContext);
-                    }
-                    else
-                    {
-                        AddModelToHierarchy();
-                    }
-                }
-                
-                // 上書きエクスポート（選択中のヒエラルキーに同名メッシュを上書き）
-                using (new EditorGUI.DisabledScope(Selection.activeGameObject == null))
-                {
-                    if (GUILayout.Button(L.Get("OverwriteToHierarchy")))
-                    {
-                        OverwriteToHierarchy();
-                    }
-                }
-            }
-
-            EditorGUILayout.Space(10);
-
-            // ================================================================
-            // モデル保存/読み込み
-            // ================================================================
-            EditorGUILayout.LabelField(L.Get("ModelFile"), EditorStyles.miniBoldLabel);
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(L.Get("ExportModel")))
-            {
-                ExportModel();
-            }
-            if (GUILayout.Button(L.Get("ImportModel")))
-            {
-                ImportModel();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.EndScrollView();
         }
+
+        EditorGUILayout.Space(2);
+
+        // ================================================================
+        // エクスポートボタン群
+        // ================================================================
+
+        // Armature/Meshesフォルダ作成オプション（ボーンがある場合のみ表示）
+        bool hasBones = _meshContextList.Any(ctx => ctx?.Type == MeshType.Bone);
+        if (hasBones && !_exportSelectedMeshOnly)
+        {
+            _createArmatureMeshesFolder = EditorGUILayout.Toggle(
+                L.Get("CreateArmatureMeshesFolder"),
+                _createArmatureMeshesFolder);
+
+            // スキンメッシュで出力（BoneTransform.ExportAsSkinnedを使用）
+            bool currentExportAsSkinned = _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.ExportAsSkinned);
+            bool newExportAsSkinned = EditorGUILayout.Toggle(
+                L.Get("ExportAsSkinned"),
+                currentExportAsSkinned);
+            if (newExportAsSkinned != currentExportAsSkinned)
+            {
+                // 全MeshContextのBoneTransform.ExportAsSkinnedを更新
+                foreach (var ctx in _meshContextList)
+                {
+                    if (ctx?.BoneTransform != null)
+                    {
+                        ctx.BoneTransform.ExportAsSkinned = newExportAsSkinned;
+                    }
+                }
+            }
+        }
+
+        bool hasAnyMesh = _meshContextList.Count > 0;
+        bool canExport = _exportSelectedMeshOnly ? true : hasAnyMesh;  // 選択時は現在のmeshContextが有効
+
+        using (new EditorGUI.DisabledScope(!canExport))
+        {
+            if (GUILayout.Button(L.Get("SaveMeshAsset")))
+            {
+                if (_exportSelectedMeshOnly)
+                {
+                    SaveMesh(meshContext);
+                }
+                else
+                {
+                    SaveModelMeshAssets();
+                }
+            }
+
+            if (GUILayout.Button(L.Get("SaveAsPrefab")))
+            {
+                if (_exportSelectedMeshOnly)
+                {
+                    SaveAsPrefab(meshContext);
+                }
+                else
+                {
+                    SaveModelAsPrefab();
+                }
+            }
+
+            if (GUILayout.Button(L.Get("AddToHierarchy")))
+            {
+                if (_exportSelectedMeshOnly)
+                {
+                    AddToHierarchy(meshContext);
+                }
+                else
+                {
+                    AddModelToHierarchy();
+                }
+            }
+
+            // 上書きエクスポート（選択中のヒエラルキーに同名メッシュを上書き）
+            using (new EditorGUI.DisabledScope(Selection.activeGameObject == null))
+            {
+                if (GUILayout.Button(L.Get("OverwriteToHierarchy")))
+                {
+                    OverwriteToHierarchy();
+                }
+            }
+        }
+
+        EditorGUILayout.Space(10);
+
+        // ================================================================
+        // モデル保存/読み込み
+        // ================================================================
+        EditorGUILayout.LabelField(L.Get("ModelFile"), EditorStyles.miniBoldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button(L.Get("ExportModel")))
+        {
+            ExportModel();
+        }
+        if (GUILayout.Button(L.Get("ImportModel")))
+        {
+            ImportModel();
+        }
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.EndScrollView();
+        EditorGUILayout.EndVertical();
     }
 
     // ================================================================
@@ -893,7 +894,7 @@ public partial class PolyLing
     {
         if (string.IsNullOrEmpty(path) || path.Length <= maxLength)
             return path;
-        
+
         // 末尾を優先して表示
         return "..." + path.Substring(path.Length - maxLength + 3);
     }

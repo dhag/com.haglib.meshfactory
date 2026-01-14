@@ -62,7 +62,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>非表示オブジェクトをスキップ</summary>
         [Tooltip("MQOで非表示に設定されているオブジェクトをスキップする")]
-        public bool SkipHiddenObjects = true;
+        public bool SkipHiddenObjects = false;
 
         /// <summary>空のオブジェクトをスキップ</summary>
         [Tooltip("頂点や面を持たないオブジェクト（グループ用ダミー等）をスキップする")]
@@ -103,9 +103,9 @@ namespace Poly_Ling.MQO
         /// <summary>ボーンCSVを使用するか</summary>
         public bool UseBoneCSV => !string.IsNullOrEmpty(BoneCSVPath);
 
-        /// <summary>ボーンスケール（PMXボーン座標に適用、デフォルト10.0）</summary>
+        /// <summary>ボーンスケール（PMXボーン座標に適用、デフォルト1.0）</summary>
         [Tooltip("PMXボーン座標に適用するスケール（MQOと同じScaleを使う場合は1.0）")]
-        public float BoneScale = 10.0f;
+        public float BoneScale = 1.0f;
 
         // ================================================================
         // テクスチャ読み込み用

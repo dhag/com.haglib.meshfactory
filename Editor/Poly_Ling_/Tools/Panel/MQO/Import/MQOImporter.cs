@@ -659,6 +659,7 @@ namespace Poly_Ling.MQO
                 Depth = mqoObj.Depth,
                 IsVisible = mqoObj.IsVisible,
                 IsLocked = mqoObj.IsLocked,
+                IsFolding = mqoObj.IsFolding,
                 // ミラー設定をコピー
                 MirrorType = mqoObj.MirrorMode,
                 MirrorAxis = mqoObj.MirrorAxis,

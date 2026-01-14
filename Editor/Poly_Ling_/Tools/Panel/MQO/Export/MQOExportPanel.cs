@@ -50,9 +50,22 @@ namespace Poly_Ling.MQO
             ["SkipEmptyObjects"] = new() { ["en"] = "Skip Empty Objects", ["ja"] = "空オブジェクトをスキップ" },
             ["ExportSelectedOnly"] = new() { ["en"] = "Selected Mesh Only", ["ja"] = "選択メッシュのみ" },
             ["MergeAllObjects"] = new() { ["en"] = "Merge All Objects", ["ja"] = "全オブジェクト統合" },
+            ["PreserveObjectAttributes"] = new() { ["en"] = "Preserve Object Attributes", ["ja"] = "オブジェクト属性を保持" },
+            ["TextureFolder"] = new() { ["en"] = "Texture Folder", ["ja"] = "テクスチャフォルダ" },
             ["Format"] = new() { ["en"] = "Format", ["ja"] = "出力形式" },
             ["DecimalPrecision"] = new() { ["en"] = "Decimal Precision", ["ja"] = "小数点以下桁数" },
             ["UseShiftJIS"] = new() { ["en"] = "Shift-JIS Encoding", ["ja"] = "Shift-JISエンコード" },
+
+            // ボーン・ウェイト出力
+            ["BoneWeightExport"] = new() { ["en"] = "Bone/Weight CSV", ["ja"] = "ボーン/ウェイトCSV" },
+            ["ExportBoneCSV"] = new() { ["en"] = "Export Bone CSV", ["ja"] = "ボーンCSV出力" },
+            ["ExportWeightCSV"] = new() { ["en"] = "Export Weight CSV", ["ja"] = "ウェイトCSV出力" },
+            ["BoneCSVPath"] = new() { ["en"] = "Bone CSV Path", ["ja"] = "ボーンCSVパス" },
+            ["WeightCSVPath"] = new() { ["en"] = "Weight CSV Path", ["ja"] = "ウェイトCSVパス" },
+            ["NoBones"] = new() { ["en"] = "No bones in model", ["ja"] = "モデルにボーンがありません" },
+            ["NoWeights"] = new() { ["en"] = "No bone weights in model", ["ja"] = "モデルにボーンウェイトがありません" },
+            ["BoneExportSuccess"] = new() { ["en"] = "Exported {0} bones", ["ja"] = "{0}ボーン出力完了" },
+            ["WeightExportSuccess"] = new() { ["en"] = "Exported {0} vertex weights", ["ja"] = "{0}頂点ウェイト出力完了" },
 
             // 結果セクション
             ["Result"] = new() { ["en"] = "Result", ["ja"] = "結果" },
@@ -83,7 +96,15 @@ namespace Poly_Ling.MQO
         private Vector2 _scrollPosition;
 
         private bool _foldSettings = true;
+        private bool _foldBoneWeight = false;
         private bool _foldResult = false;
+
+        // ボーン/ウェイトCSV
+        private bool _exportBoneCSV = false;
+        private bool _exportWeightCSV = false;
+        private string _boneCSVPath = "";
+        private string _weightCSVPath = "";
+        private string _boneWeightExportResult = "";
 
         // ================================================================
         // Open
@@ -120,6 +141,9 @@ namespace Poly_Ling.MQO
             EditorGUILayout.Space(5);
 
             DrawSettingsSection();
+            EditorGUILayout.Space(5);
+
+            DrawBoneWeightSection();
             EditorGUILayout.Space(5);
 
             DrawResultSection();
@@ -257,6 +281,12 @@ namespace Poly_Ling.MQO
             _settings.SkipEmptyObjects = EditorGUILayout.Toggle(T("SkipEmptyObjects"), _settings.SkipEmptyObjects);
             _settings.ExportSelectedOnly = EditorGUILayout.Toggle(T("ExportSelectedOnly"), _settings.ExportSelectedOnly);
             _settings.MergeObjects = EditorGUILayout.Toggle(T("MergeAllObjects"), _settings.MergeObjects);
+            _settings.PreserveObjectAttributes = EditorGUILayout.Toggle(T("PreserveObjectAttributes"), _settings.PreserveObjectAttributes);
+
+            EditorGUILayout.Space(3);
+
+            // テクスチャ
+            _settings.TextureFolder = EditorGUILayout.TextField(T("TextureFolder"), _settings.TextureFolder);
 
             EditorGUILayout.Space(3);
 
@@ -266,6 +296,114 @@ namespace Poly_Ling.MQO
             _settings.UseShiftJIS = EditorGUILayout.Toggle(T("UseShiftJIS"), _settings.UseShiftJIS);
 
             EditorGUI.indentLevel--;
+        }
+
+        // ================================================================
+        // ボーン/ウェイトセクション
+        // ================================================================
+
+        private void DrawBoneWeightSection()
+        {
+            _foldBoneWeight = EditorGUILayout.Foldout(_foldBoneWeight, T("BoneWeightExport"), true);
+            if (!_foldBoneWeight) return;
+
+            EditorGUI.indentLevel++;
+
+            bool hasBones = HasBones();
+            bool hasWeights = HasBoneWeights();
+
+            // ボーンCSV出力
+            using (new EditorGUI.DisabledScope(!hasBones))
+            {
+                _exportBoneCSV = EditorGUILayout.Toggle(T("ExportBoneCSV"), _exportBoneCSV);
+                
+                if (_exportBoneCSV)
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        _boneCSVPath = EditorGUILayout.TextField(_boneCSVPath);
+                        if (GUILayout.Button("...", GUILayout.Width(30)))
+                        {
+                            string dir = string.IsNullOrEmpty(_boneCSVPath)
+                                ? (string.IsNullOrEmpty(_lastFilePath) ? Application.dataPath : Path.GetDirectoryName(_lastFilePath))
+                                : Path.GetDirectoryName(_boneCSVPath);
+                            string defaultName = GetDefaultFileName() + "_bones.csv";
+                            string path = EditorUtility.SaveFilePanel("Save Bone CSV", dir, defaultName, "csv");
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                _boneCSVPath = path;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!hasBones)
+            {
+                EditorGUILayout.HelpBox(T("NoBones"), MessageType.Info);
+            }
+
+            EditorGUILayout.Space(3);
+
+            // ウェイトCSV出力
+            using (new EditorGUI.DisabledScope(!hasWeights))
+            {
+                _exportWeightCSV = EditorGUILayout.Toggle(T("ExportWeightCSV"), _exportWeightCSV);
+                
+                if (_exportWeightCSV)
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        _weightCSVPath = EditorGUILayout.TextField(_weightCSVPath);
+                        if (GUILayout.Button("...", GUILayout.Width(30)))
+                        {
+                            string dir = string.IsNullOrEmpty(_weightCSVPath)
+                                ? (string.IsNullOrEmpty(_lastFilePath) ? Application.dataPath : Path.GetDirectoryName(_lastFilePath))
+                                : Path.GetDirectoryName(_weightCSVPath);
+                            string defaultName = GetDefaultFileName() + "_weights.csv";
+                            string path = EditorUtility.SaveFilePanel("Save Weight CSV", dir, defaultName, "csv");
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                _weightCSVPath = path;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!hasWeights)
+            {
+                EditorGUILayout.HelpBox(T("NoWeights"), MessageType.Info);
+            }
+
+            // 結果表示
+            if (!string.IsNullOrEmpty(_boneWeightExportResult))
+            {
+                EditorGUILayout.Space(3);
+                EditorGUILayout.HelpBox(_boneWeightExportResult, MessageType.Info);
+            }
+
+            EditorGUI.indentLevel--;
+        }
+
+        private bool HasBones()
+        {
+            if (_context?.Model?.MeshContextList == null) return false;
+            foreach (var mc in _context.Model.MeshContextList)
+            {
+                if (mc != null && mc.Type == MeshType.Bone)
+                    return true;
+            }
+            return false;
+        }
+
+        private bool HasBoneWeights()
+        {
+            if (_context?.Model?.MeshContextList == null) return false;
+            foreach (var mc in _context.Model.MeshContextList)
+            {
+                if (mc?.MeshObject != null && mc.Type == MeshType.Mesh && mc.MeshObject.IsSkinned)
+                    return true;
+            }
+            return false;
         }
 
         // ================================================================
@@ -338,9 +476,51 @@ namespace Poly_Ling.MQO
             if (_lastResult.Success)
             {
                 _foldResult = true;
+
+                // ボーン/ウェイトCSV出力
+                ExportBoneWeightCSV();
             }
 
             Repaint();
+        }
+
+        private void ExportBoneWeightCSV()
+        {
+            if (_context?.Model == null) return;
+
+            var results = new List<string>();
+
+            // ボーンCSV出力
+            if (_exportBoneCSV && !string.IsNullOrEmpty(_boneCSVPath))
+            {
+                try
+                {
+                    int count = MQOBoneWeightCSVWriter.ExportBoneCSV(_boneCSVPath, _context.Model);
+                    results.Add(T("BoneExportSuccess", count));
+                }
+                catch (System.Exception ex)
+                {
+                    results.Add($"Bone CSV Error: {ex.Message}");
+                    Debug.LogError($"[MQOExportPanel] Bone CSV export failed: {ex.Message}");
+                }
+            }
+
+            // ウェイトCSV出力
+            if (_exportWeightCSV && !string.IsNullOrEmpty(_weightCSVPath))
+            {
+                try
+                {
+                    int count = MQOBoneWeightCSVWriter.ExportWeightCSV(_weightCSVPath, _context.Model);
+                    results.Add(T("WeightExportSuccess", count));
+                }
+                catch (System.Exception ex)
+                {
+                    results.Add($"Weight CSV Error: {ex.Message}");
+                    Debug.LogError($"[MQOExportPanel] Weight CSV export failed: {ex.Message}");
+                }
+            }
+
+            _boneWeightExportResult = string.Join("\n", results);
         }
     }
 }

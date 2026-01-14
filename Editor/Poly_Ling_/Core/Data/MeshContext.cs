@@ -396,6 +396,9 @@ namespace Poly_Ling.Data
         /// <summary>編集禁止（ロック）</summary>
         public bool IsLocked { get; set; } = false;
 
+        /// <summary>折りたたみ状態（MQO互換）</summary>
+        public bool IsFolding { get; set; } = false;
+
         // ================================================================
         // モーフ基準データ（Phase: Morph対応）
         // ================================================================

@@ -42,7 +42,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>空のオブジェクトをスキップ</summary>
         [Tooltip("頂点や面を持たないオブジェクトをスキップ")]
-        public bool SkipEmptyObjects = true;
+        public bool SkipEmptyObjects = false;
 
         /// <summary>選択中のメッシュのみエクスポート</summary>
         [Tooltip("選択中のメッシュのみエクスポート（OFFで全メッシュ）")]
@@ -51,6 +51,18 @@ namespace Poly_Ling.MQO
         /// <summary>全メッシュを1つのオブジェクトに統合</summary>
         [Tooltip("全メッシュを1つのオブジェクトに統合")]
         public bool MergeObjects = false;
+
+        /// <summary>オブジェクト属性を保持（depth, visible, mirror等）</summary>
+        [Tooltip("オブジェクトの階層・表示・ミラー設定を保持")]
+        public bool PreserveObjectAttributes = true;
+
+        // ================================================================
+        // テクスチャ
+        // ================================================================
+
+        /// <summary>テクスチャフォルダパス（マテリアルのtexに付加）</summary>
+        [Tooltip("テクスチャファイルのフォルダパス（例: textures/）")]
+        public string TextureFolder = "";
 
         // ================================================================
         // 出力形式
@@ -81,6 +93,8 @@ namespace Poly_Ling.MQO
                 SkipEmptyObjects = this.SkipEmptyObjects,
                 ExportSelectedOnly = this.ExportSelectedOnly,
                 MergeObjects = this.MergeObjects,
+                PreserveObjectAttributes = this.PreserveObjectAttributes,
+                TextureFolder = this.TextureFolder,
                 DecimalPrecision = this.DecimalPrecision,
                 UseShiftJIS = this.UseShiftJIS,
             };
@@ -97,6 +111,8 @@ namespace Poly_Ling.MQO
                    SkipEmptyObjects != o.SkipEmptyObjects ||
                    ExportSelectedOnly != o.ExportSelectedOnly ||
                    MergeObjects != o.MergeObjects ||
+                   PreserveObjectAttributes != o.PreserveObjectAttributes ||
+                   TextureFolder != o.TextureFolder ||
                    DecimalPrecision != o.DecimalPrecision ||
                    UseShiftJIS != o.UseShiftJIS;
         }
@@ -112,6 +128,8 @@ namespace Poly_Ling.MQO
             SkipEmptyObjects = o.SkipEmptyObjects;
             ExportSelectedOnly = o.ExportSelectedOnly;
             MergeObjects = o.MergeObjects;
+            PreserveObjectAttributes = o.PreserveObjectAttributes;
+            TextureFolder = o.TextureFolder;
             DecimalPrecision = o.DecimalPrecision;
             UseShiftJIS = o.UseShiftJIS;
         }

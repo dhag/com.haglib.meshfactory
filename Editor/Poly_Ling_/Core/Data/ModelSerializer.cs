@@ -442,6 +442,7 @@ namespace Poly_Ling.Serialization
                     HierarchyParentIndex = meshContextData.hierarchyParentIndex,
                     IsVisible = meshContextData.isVisible,
                     IsLocked = meshContextData.isLocked,
+                    IsFolding = meshContextData.isFolding,
                     // ミラー設定
                     MirrorType = meshContextData.mirrorType,
                     MirrorAxis = meshContextData.mirrorAxis,
@@ -560,6 +561,7 @@ namespace Poly_Ling.Serialization
                 contextData.hierarchyParentIndex = meshContext.HierarchyParentIndex;
                 contextData.isVisible = meshContext.IsVisible;
                 contextData.isLocked = meshContext.IsLocked;
+                contextData.isFolding = meshContext.IsFolding;
 
                 // ミラー設定
                 contextData.mirrorType = meshContext.MirrorType;
@@ -610,6 +612,7 @@ namespace Poly_Ling.Serialization
                 Depth = meshDTO.depth,
                 IsVisible = meshDTO.isVisible,
                 IsLocked = meshDTO.isLocked,
+                IsFolding = meshDTO.isFolding,
                 // ミラー設定
                 MirrorType = meshDTO.mirrorType,
                 MirrorAxis = meshDTO.mirrorAxis,

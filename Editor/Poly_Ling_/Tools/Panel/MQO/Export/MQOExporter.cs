@@ -200,7 +200,7 @@ namespace Poly_Ling.MQO
                         if (!materialMap.ContainsKey(mat))
                         {
                             materialMap[mat] = document.Materials.Count;
-                            document.Materials.Add(ConvertMaterial(mat));
+                            document.Materials.Add(ConvertMaterial(mat, settings.TextureFolder));
                         }
                     }
                     else
@@ -247,11 +247,17 @@ namespace Poly_Ling.MQO
                 // 個別にエクスポート
                 foreach (var mc in meshContexts)
                 {
-                    if (mc?.MeshObject == null) continue;
+                    if (mc == null) continue;
 
-                    // 空オブジェクトスキップ
-                    if (settings.SkipEmptyObjects && mc.MeshObject.VertexCount == 0 && mc.MeshObject.FaceCount == 0)
-                        continue;
+                    // 空オブジェクトスキップ（SkipEmptyObjectsがtrueかつMeshObjectがnullまたは空の場合）
+                    if (settings.SkipEmptyObjects)
+                    {
+                        if (mc.MeshObject == null || 
+                            (mc.MeshObject.VertexCount == 0 && mc.MeshObject.FaceCount == 0))
+                        {
+                            continue;
+                        }
+                    }
 
                     var mqoObj = ConvertObject(mc, materialCount, settings, stats);
                     if (mqoObj != null)
@@ -292,7 +298,7 @@ namespace Poly_Ling.MQO
                         if (mat != null && !materialMap.ContainsKey(mat))
                         {
                             materialMap[mat] = document.Materials.Count;
-                            document.Materials.Add(ConvertMaterial(mat));
+                            document.Materials.Add(ConvertMaterial(mat, settings.TextureFolder));
                         }
                     }
                 }
@@ -328,11 +334,17 @@ namespace Poly_Ling.MQO
                 // 個別にエクスポート
                 foreach (var mc in meshContexts)
                 {
-                    if (mc?.MeshObject == null) continue;
+                    if (mc == null) continue;
 
-                    // 空オブジェクトスキップ
-                    if (settings.SkipEmptyObjects && mc.MeshObject.VertexCount == 0 && mc.MeshObject.FaceCount == 0)
-                        continue;
+                    // 空オブジェクトスキップ（SkipEmptyObjectsがtrueかつMeshObjectがnullまたは空の場合）
+                    if (settings.SkipEmptyObjects)
+                    {
+                        if (mc.MeshObject == null || 
+                            (mc.MeshObject.VertexCount == 0 && mc.MeshObject.FaceCount == 0))
+                        {
+                            continue;
+                        }
+                    }
 
                     var mqoObj = ConvertObject(mc, materialCount, settings, stats);
                     if (mqoObj != null)
@@ -358,7 +370,7 @@ namespace Poly_Ling.MQO
             return scene;
         }
 
-        private static MQOMaterial ConvertMaterial(Material mat)
+        private static MQOMaterial ConvertMaterial(Material mat, string textureFolder)
         {
             var mqoMat = new MQOMaterial
             {
@@ -370,10 +382,27 @@ namespace Poly_Ling.MQO
                 Power = mat.HasProperty("_Shininess") ? mat.GetFloat("_Shininess") : 5f,
             };
 
-            // テクスチャパス
+            // テクスチャパス（フォルダを付加）
             if (mat.HasProperty("_MainTex") && mat.mainTexture != null)
             {
-                mqoMat.TexturePath = mat.mainTexture.name;
+                string texName = mat.mainTexture.name;
+                // 拡張子がなければ.pngを追加
+                if (!texName.Contains("."))
+                {
+                    texName += ".png";
+                }
+                // フォルダパスを付加
+                if (!string.IsNullOrEmpty(textureFolder))
+                {
+                    // フォルダパスの末尾にスラッシュがなければ追加
+                    string folder = textureFolder;
+                    if (!folder.EndsWith("/") && !folder.EndsWith("\\"))
+                    {
+                        folder += "/";
+                    }
+                    texName = folder + texName;
+                }
+                mqoMat.TexturePath = texName;
             }
 
             return mqoMat;
@@ -390,86 +419,130 @@ namespace Poly_Ling.MQO
             MQOExportStats stats)
         {
             var meshObject = meshContext.MeshObject;
-            if (meshObject == null) return null;
-
+            
+            // 空オブジェクトでも属性は出力する（階層構造保持のため）
             var mqoObj = new MQOObject
             {
                 Name = meshContext.Name ?? "Object",
             };
 
-            // 属性設定
-            mqoObj.Attributes.Add(new MQOAttribute("visible", 15));
-            mqoObj.Attributes.Add(new MQOAttribute("locking", 0));
+            // 属性設定（オブジェクト属性を保持する場合）
+            if (settings.PreserveObjectAttributes)
+            {
+                // depth（階層深度）
+                if (meshContext.Depth > 0)
+                {
+                    mqoObj.Attributes.Add(new MQOAttribute("depth", meshContext.Depth));
+                }
+                
+                // folding（折りたたみ状態）
+                if (meshContext.IsFolding)
+                {
+                    mqoObj.Attributes.Add(new MQOAttribute("folding", 1));
+                }
+                
+                // visible（表示状態）
+                // MQOのvisible: 15=表示, 0=非表示
+                int visibleValue = meshContext.IsVisible ? 15 : 0;
+                mqoObj.Attributes.Add(new MQOAttribute("visible", visibleValue));
+                
+                // locking（ロック状態）
+                int lockingValue = meshContext.IsLocked ? 1 : 0;
+                mqoObj.Attributes.Add(new MQOAttribute("locking", lockingValue));
+                
+                // mirror（ミラー設定）
+                if (meshContext.MirrorType > 0)
+                {
+                    mqoObj.Attributes.Add(new MQOAttribute("mirror", meshContext.MirrorType));
+                    mqoObj.Attributes.Add(new MQOAttribute("mirror_axis", meshContext.MirrorAxis));
+                    if (meshContext.MirrorDistance != 0f)
+                    {
+                        mqoObj.Attributes.Add(new MQOAttribute("mirror_dis", meshContext.MirrorDistance));
+                    }
+                }
+            }
+            else
+            {
+                // デフォルト属性
+                mqoObj.Attributes.Add(new MQOAttribute("visible", 15));
+                mqoObj.Attributes.Add(new MQOAttribute("locking", 0));
+            }
+            
+            // 共通属性
             mqoObj.Attributes.Add(new MQOAttribute("shading", 1));
             mqoObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
             mqoObj.Attributes.Add(new MQOAttribute("color", 1, 1, 1));
             mqoObj.Attributes.Add(new MQOAttribute("color_type", 0));
 
-            // 頂点変換
-            foreach (var v in meshObject.Vertices)
+            // MeshObjectがある場合のみ頂点・面を出力
+            if (meshObject != null)
             {
-                var mqoVert = new MQOVertex
+                // 頂点変換
+                foreach (var v in meshObject.Vertices)
                 {
-                    Position = ConvertPosition(v.Position, settings),
-                    Index = mqoObj.Vertices.Count,
-                };
-                mqoObj.Vertices.Add(mqoVert);
-                stats.TotalVertices++;
-            }
-
-            // 面変換
-            foreach (var face in meshObject.Faces)
-            {
-                if (face.VertexIndices == null || face.VertexIndices.Count == 0)
-                    continue;
-
-                var mqoFace = new MQOFace
-                {
-                    VertexIndices = face.VertexIndices.ToArray(),
-                    // Phase 5: Face.MaterialIndexはグローバルインデックス
-                    MaterialIndex = (face.MaterialIndex >= 0 && face.MaterialIndex < materialCount) 
-                        ? face.MaterialIndex : 0,
-                };
-
-                // UV変換
-                if (face.UVIndices != null && face.UVIndices.Count > 0)
-                {
-                    var uvs = new Vector2[face.UVIndices.Count];
-                    for (int i = 0; i < face.UVIndices.Count; i++)
+                    var mqoVert = new MQOVertex
                     {
-                        int vertIdx = face.VertexIndices[i];
-                        int uvIdx = face.UVIndices[i];
-                        if (vertIdx >= 0 && vertIdx < meshObject.Vertices.Count)
-                        {
-                            var vertex = meshObject.Vertices[vertIdx];
-                            // UVインデックスが有効範囲内か確認
-                            Vector2 uv = (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
-                                ? vertex.UVs[uvIdx]
-                                : (vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero);
-                            uvs[i] = ConvertUV(uv, settings);
-                        }
-                    }
-                    mqoFace.UVs = uvs;
+                        Position = ConvertPosition(v.Position, settings),
+                        Index = mqoObj.Vertices.Count,
+                    };
+                    mqoObj.Vertices.Add(mqoVert);
+                    stats.TotalVertices++;
                 }
 
-                mqoObj.Faces.Add(mqoFace);
-                stats.TotalFaces++;
-            }
-
-            // 頂点ID用の特殊面を追加（ID != -1 の頂点のみ）
-            // フォーマット: 3 V(idx idx idx) M(0) COL(1 1 vertexId)
-            for (int i = 0; i < meshObject.Vertices.Count; i++)
-            {
-                var vertex = meshObject.Vertices[i];
-                if (vertex.Id != -1)
+                // 面変換
+                foreach (var face in meshObject.Faces)
                 {
-                    var specialFace = new MQOFace
+                    if (face.VertexIndices == null || face.VertexIndices.Count == 0)
+                        continue;
+
+                    var mqoFace = new MQOFace
                     {
-                        VertexIndices = new int[] { i, i, i },
-                        MaterialIndex = 0,
-                        VertexColors = new uint[] { 1, 1, (uint)vertex.Id }
+                        VertexIndices = face.VertexIndices.ToArray(),
+                        // Phase 5: Face.MaterialIndexはグローバルインデックス
+                        MaterialIndex = (face.MaterialIndex >= 0 && face.MaterialIndex < materialCount) 
+                            ? face.MaterialIndex : 0,
                     };
-                    mqoObj.Faces.Add(specialFace);
+
+                    // UV変換
+                    if (face.UVIndices != null && face.UVIndices.Count > 0)
+                    {
+                        var uvs = new Vector2[face.UVIndices.Count];
+                        for (int i = 0; i < face.UVIndices.Count; i++)
+                        {
+                            int vertIdx = face.VertexIndices[i];
+                            int uvIdx = face.UVIndices[i];
+                            if (vertIdx >= 0 && vertIdx < meshObject.Vertices.Count)
+                            {
+                                var vertex = meshObject.Vertices[vertIdx];
+                                // UVインデックスが有効範囲内か確認
+                                Vector2 uv = (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
+                                    ? vertex.UVs[uvIdx]
+                                    : (vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero);
+                                uvs[i] = ConvertUV(uv, settings);
+                            }
+                        }
+                        mqoFace.UVs = uvs;
+                    }
+
+                    mqoObj.Faces.Add(mqoFace);
+                    stats.TotalFaces++;
+                }
+
+                // 頂点ID用の特殊面を追加（ID != -1 の頂点のみ）
+                // フォーマット: 3 V(idx idx idx) M(0) COL(1 1 vertexId)
+                for (int i = 0; i < meshObject.Vertices.Count; i++)
+                {
+                    var vertex = meshObject.Vertices[i];
+                    if (vertex.Id != -1)
+                    {
+                        var specialFace = new MQOFace
+                        {
+                            VertexIndices = new int[] { i, i, i },
+                            MaterialIndex = 0,
+                            VertexColors = new uint[] { 1, 1, (uint)vertex.Id }
+                        };
+                        mqoObj.Faces.Add(specialFace);
+                    }
                 }
             }
 

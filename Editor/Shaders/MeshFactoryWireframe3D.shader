@@ -25,7 +25,8 @@ Shader "Poly_Ling/Wireframe3D"
             #include "UnityCG.cginc"
             
             #define FLAG_MESH_SELECTED 2  // 1 << 1
-            #define FLAG_CULLED 16384  // 1 << 14
+            #define FLAG_HIDDEN 4096      // 1 << 12
+            #define FLAG_CULLED 16384     // 1 << 14
             
             struct appdata
             {
@@ -55,7 +56,16 @@ Shader "Poly_Ling/Wireframe3D"
                     uint bufferIndex = (uint)v.uv.x;
                     uint flags = _LineFlagsBuffer[bufferIndex];
                     bool isMeshSelected = (flags & FLAG_MESH_SELECTED) != 0;
+                    bool isHidden = (flags & FLAG_HIDDEN) != 0;
                     bool isCulled = (flags & FLAG_CULLED) != 0;
+                    
+                    // 非表示メッシュをスキップ
+                    if (isHidden)
+                    {
+                        o.pos = float4(99999, 99999, 99999, 1);
+                        o.color = float4(0, 0, 0, 0);
+                        return o;
+                    }
                     
                     // 選択メッシュのセグメントは非表示（オーバーレイで描画するため）
                     if (isMeshSelected)
