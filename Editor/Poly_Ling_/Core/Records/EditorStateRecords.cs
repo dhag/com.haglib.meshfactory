@@ -13,6 +13,7 @@ namespace Poly_Ling.UndoSystem
 
     /// <summary>
     /// エディタ状態コンテキスト（カメラ、表示設定、編集モード）
+    /// Single Source of Truth: PolyLing.csはこのクラスを唯一のデータソースとして参照する
     /// </summary>
     public class EditorStateContext
     {
@@ -26,14 +27,16 @@ namespace Poly_Ling.UndoSystem
         public bool ShowWireframe = true;
         public bool ShowVertices = true;
         public bool ShowMesh = true;                    // メッシュ本体表示
-        public bool ShowSelectedMeshOnly = true;
+        public bool ShowSelectedMeshOnly = false;       // 選択メッシュのみ表示
         public bool ShowVertexIndices = true;
         public bool ShowUnselectedWireframe = true;     // 非選択メッシュのワイヤフレーム
         public bool ShowUnselectedVertices = true;      // 非選択メッシュの頂点
         public bool BackfaceCullingEnabled = true;
+        public bool ShowBones = false;                  // ボーン表示
+        public bool ShowWorkPlaneGizmo = true;          // WorkPlaneギズモ表示
 
         // 編集モード
-        public bool VertexEditMode = false;
+        public bool VertexEditMode = true;              // 頂点編集モード
 
         // 現在のツール
         public string CurrentToolName = "Select";
@@ -47,6 +50,7 @@ namespace Poly_Ling.UndoSystem
         public bool ExportSelectedMeshOnly = false;
         public bool BakeMirror = false;
         public bool MirrorFlipU = true;
+        public bool ExportAsSkinned = false;            // スキンメッシュとしてエクスポート
 
         // トランスフォーム表示モード
         public bool ShowLocalTransform = false;   // 自身のBoneTransformを反映
@@ -96,6 +100,8 @@ namespace Poly_Ling.UndoSystem
                 ShowUnselectedWireframe = ShowUnselectedWireframe,
                 ShowUnselectedVertices = ShowUnselectedVertices,
                 BackfaceCullingEnabled = BackfaceCullingEnabled,
+                ShowBones = ShowBones,
+                ShowWorkPlaneGizmo = ShowWorkPlaneGizmo,
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
                 AddToCurrentMesh = AddToCurrentMesh,
@@ -104,6 +110,7 @@ namespace Poly_Ling.UndoSystem
                 ExportSelectedMeshOnly = ExportSelectedMeshOnly,
                 BakeMirror = BakeMirror,
                 MirrorFlipU = MirrorFlipU,
+                ExportAsSkinned = ExportAsSkinned,
                 ShowLocalTransform = ShowLocalTransform,
                 ShowWorldTransform = ShowWorldTransform,
                 RecordFoldoutChanges = RecordFoldoutChanges,
@@ -133,6 +140,8 @@ namespace Poly_Ling.UndoSystem
             ShowUnselectedWireframe = snapshot.ShowUnselectedWireframe;
             ShowUnselectedVertices = snapshot.ShowUnselectedVertices;
             BackfaceCullingEnabled = snapshot.BackfaceCullingEnabled;
+            ShowBones = snapshot.ShowBones;
+            ShowWorkPlaneGizmo = snapshot.ShowWorkPlaneGizmo;
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
             AddToCurrentMesh = snapshot.AddToCurrentMesh;
@@ -141,6 +150,7 @@ namespace Poly_Ling.UndoSystem
             ExportSelectedMeshOnly = snapshot.ExportSelectedMeshOnly;
             BakeMirror = snapshot.BakeMirror;
             MirrorFlipU = snapshot.MirrorFlipU;
+            ExportAsSkinned = snapshot.ExportAsSkinned;
             ShowLocalTransform = snapshot.ShowLocalTransform;
             ShowWorldTransform = snapshot.ShowWorldTransform;
             RecordFoldoutChanges = snapshot.RecordFoldoutChanges;
@@ -180,6 +190,8 @@ namespace Poly_Ling.UndoSystem
         public bool ShowSelectedMeshOnly, ShowVertexIndices;
         public bool ShowUnselectedWireframe, ShowUnselectedVertices;
         public bool BackfaceCullingEnabled;
+        public bool ShowBones;
+        public bool ShowWorkPlaneGizmo;
         public string CurrentToolName;
 
         // メッシュ作成設定
@@ -191,6 +203,7 @@ namespace Poly_Ling.UndoSystem
         public bool ExportSelectedMeshOnly;
         public bool BakeMirror;
         public bool MirrorFlipU;
+        public bool ExportAsSkinned;
 
         // トランスフォーム表示モード
         public bool ShowLocalTransform;
@@ -218,6 +231,8 @@ namespace Poly_Ling.UndoSystem
                 ShowUnselectedWireframe != other.ShowUnselectedWireframe ||
                 ShowUnselectedVertices != other.ShowUnselectedVertices ||
                 BackfaceCullingEnabled != other.BackfaceCullingEnabled ||
+                ShowBones != other.ShowBones ||
+                ShowWorkPlaneGizmo != other.ShowWorkPlaneGizmo ||
                 VertexEditMode != other.VertexEditMode ||
                 CurrentToolName != other.CurrentToolName ||
                 AddToCurrentMesh != other.AddToCurrentMesh ||
@@ -226,6 +241,7 @@ namespace Poly_Ling.UndoSystem
                 ExportSelectedMeshOnly != other.ExportSelectedMeshOnly ||
                 BakeMirror != other.BakeMirror ||
                 MirrorFlipU != other.MirrorFlipU ||
+                ExportAsSkinned != other.ExportAsSkinned ||
                 ShowLocalTransform != other.ShowLocalTransform ||
                 ShowWorldTransform != other.ShowWorldTransform ||
                 RecordFoldoutChanges != other.RecordFoldoutChanges)

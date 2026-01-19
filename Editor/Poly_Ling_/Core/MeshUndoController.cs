@@ -723,34 +723,24 @@ namespace Poly_Ling.UndoSystem
 
         /// <summary>
         /// カメラ変更を記録（後方互換）
+        /// Capture()を使用して完全なスナップショットを取得し、カメラ値のみ上書き
         /// </summary>
         public void RecordViewChange(
             float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
             float newRotX, float newRotY, float newDist, Vector3 newTarget)
         {
-            EditorStateSnapshot before = new EditorStateSnapshot
-            {
-                RotationX = oldRotX,
-                RotationY = oldRotY,
-                CameraDistance = oldDist,
-                CameraTarget = oldTarget,
-                ShowWireframe = _editorStateContext.ShowWireframe,
-                ShowVertices = _editorStateContext.ShowVertices,
-                VertexEditMode = _editorStateContext.VertexEditMode
-            };
-            //before.knifeProperty = _editorStateContext.knifeProperty;
+            // 完全なスナップショットを取得してカメラ値のみ上書き
+            EditorStateSnapshot before = _editorStateContext.Capture();
+            before.RotationX = oldRotX;
+            before.RotationY = oldRotY;
+            before.CameraDistance = oldDist;
+            before.CameraTarget = oldTarget;
 
-            EditorStateSnapshot after = new EditorStateSnapshot
-            {
-                RotationX = newRotX,
-                RotationY = newRotY,
-                CameraDistance = newDist,
-                CameraTarget = newTarget,
-                ShowWireframe = _editorStateContext.ShowWireframe,
-                ShowVertices = _editorStateContext.ShowVertices,
-                VertexEditMode = _editorStateContext.VertexEditMode
-            };
-            //after.knifeProperty = _editorStateContext.knifeProperty;
+            EditorStateSnapshot after = _editorStateContext.Capture();
+            after.RotationX = newRotX;
+            after.RotationY = newRotY;
+            after.CameraDistance = newDist;
+            after.CameraTarget = newTarget;
 
             var record = new EditorStateChangeRecord(before, after);
             _editorStateStack.Record(record, "Change View");
@@ -760,6 +750,7 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// カメラ変更を記録（WorkPlane連動）
         /// CameraParallelモードでカメラ姿勢に連動してWorkPlane軸もUndo/Redoされる
+        /// Capture()を使用して完全なスナップショットを取得し、カメラ値のみ上書き
         /// </summary>
         public void RecordViewChangeWithWorkPlane(
             float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
@@ -767,29 +758,18 @@ namespace Poly_Ling.UndoSystem
             WorkPlaneSnapshot? oldWorkPlane,
             WorkPlaneSnapshot? newWorkPlane)
         {
-            EditorStateSnapshot before = new EditorStateSnapshot
-            {
-                RotationX = oldRotX,
-                RotationY = oldRotY,
-                CameraDistance = oldDist,
-                CameraTarget = oldTarget,
-                ShowWireframe = _editorStateContext.ShowWireframe,
-                ShowVertices = _editorStateContext.ShowVertices,
-                VertexEditMode = _editorStateContext.VertexEditMode
-            };
-            //before.knifeProperty = _editorStateContext.knifeProperty;
+            // 完全なスナップショットを取得してカメラ値のみ上書き
+            EditorStateSnapshot before = _editorStateContext.Capture();
+            before.RotationX = oldRotX;
+            before.RotationY = oldRotY;
+            before.CameraDistance = oldDist;
+            before.CameraTarget = oldTarget;
 
-            EditorStateSnapshot after = new EditorStateSnapshot
-            {
-                RotationX = newRotX,
-                RotationY = newRotY,
-                CameraDistance = newDist,
-                CameraTarget = newTarget,
-                ShowWireframe = _editorStateContext.ShowWireframe,
-                ShowVertices = _editorStateContext.ShowVertices,
-                VertexEditMode = _editorStateContext.VertexEditMode
-            };
-            //after.knifeProperty = _editorStateContext.knifeProperty;
+            EditorStateSnapshot after = _editorStateContext.Capture();
+            after.RotationX = newRotX;
+            after.RotationY = newRotY;
+            after.CameraDistance = newDist;
+            after.CameraTarget = newTarget;
 
             var record = new EditorStateChangeRecord(before, after, oldWorkPlane, newWorkPlane);
             _editorStateStack.Record(record, "Change View");

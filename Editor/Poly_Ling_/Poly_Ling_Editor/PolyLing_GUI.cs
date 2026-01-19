@@ -119,6 +119,7 @@ public partial class PolyLing
                         _undoController.BeginEditorStateDrag();
                     }
 
+                    // Single Source of Truth: プロパティ経由でEditorStateに直接書き込み
                     _showMesh = newShowMesh;
                     _showWireframe = newShowWireframe;
                     _showVertices = newShowVertices;
@@ -129,10 +130,8 @@ public partial class PolyLing
 
                     if (_undoController != null)
                     {
-                        _undoController.EditorState.ShowWireframe = _showWireframe;
-                        _undoController.EditorState.ShowVertices = _showVertices;
-                        _undoController.EditorState.ShowSelectedMeshOnly = _showSelectedMeshOnly;
-                        _undoController.EditorState.ShowVertexIndices = _showVertexIndices;
+                        // プロパティ経由で既にEditorStateに書き込み済みのため、
+                        // 手動コピーは不要
                         _undoController.EndEditorStateDrag("Change Display Settings");
                     }
                 }

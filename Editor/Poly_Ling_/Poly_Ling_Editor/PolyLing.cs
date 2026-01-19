@@ -88,36 +88,74 @@ public partial class PolyLing : EditorWindow
     // プレビュー
     // ================================================================
     private PreviewRenderUtility _preview;
-    private float _rotationY = 0f;
-    private float _rotationX = 20f;
+    
+    // カメラ状態: EditorStateContext を Single Source of Truth として参照
+    // RotationZはEditorStateに含まれないためローカルで管理
     private float _rotationZ = 0f;  // Z軸回転（Ctrl+右ドラッグ）
-    private float _cameraDistance = 2f;
-    private Vector3 _cameraTarget = Vector3.zero;
+    
+    // カメラ状態プロパティ（EditorStateContext への委譲）
+    private float _rotationX
+    {
+        get => _undoController?.EditorState?.RotationX ?? 20f;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.RotationX = value; }
+    }
+    private float _rotationY
+    {
+        get => _undoController?.EditorState?.RotationY ?? 0f;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.RotationY = value; }
+    }
+    private float _cameraDistance
+    {
+        get => _undoController?.EditorState?.CameraDistance ?? 2f;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.CameraDistance = value; }
+    }
+    private Vector3 _cameraTarget
+    {
+        get => _undoController?.EditorState?.CameraTarget ?? Vector3.zero;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.CameraTarget = value; }
+    }
 
     // ============================================================================
-    // === メッシュ追加モード ===
+    // === メッシュ追加モード（EditorStateContext への委譲） ===
     // ============================================================================
-    // 
-    [SerializeField]
-    private bool _addToCurrentMesh = true;  // デフォルトでON
+    private bool _addToCurrentMesh
+    {
+        get => _undoController?.EditorState?.AddToCurrentMesh ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.AddToCurrentMesh = value; }
+    }
 
-    [SerializeField]
-    private bool _autoMergeOnCreate = true;  // 生成時に自動マージ
+    private bool _autoMergeOnCreate
+    {
+        get => _undoController?.EditorState?.AutoMergeOnCreate ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.AutoMergeOnCreate = value; }
+    }
 
-    [SerializeField]
-    private float _autoMergeThreshold = 0.001f;  // マージしきい値
+    private float _autoMergeThreshold
+    {
+        get => _undoController?.EditorState?.AutoMergeThreshold ?? 0.001f;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.AutoMergeThreshold = value; }
+    }
 
     // ============================================================================
-    // === エクスポート設定 ===
+    // === エクスポート設定（EditorStateContext への委譲） ===
     // ============================================================================
-    [SerializeField]
-    private bool _exportSelectedMeshOnly = false;  // 選択メッシュのみエクスポート（デフォルトOFF=モデル全体）
+    private bool _exportSelectedMeshOnly
+    {
+        get => _undoController?.EditorState?.ExportSelectedMeshOnly ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ExportSelectedMeshOnly = value; }
+    }
 
-    [SerializeField]
-    private bool _bakeMirror = false;  // 対称をベイク
+    private bool _bakeMirror
+    {
+        get => _undoController?.EditorState?.BakeMirror ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.BakeMirror = value; }
+    }
 
-    [SerializeField]
-    private bool _mirrorFlipU = true;  // ベイク時にUV U反転
+    private bool _mirrorFlipU
+    {
+        get => _undoController?.EditorState?.MirrorFlipU ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.MirrorFlipU = value; }
+    }
 
     [SerializeField]
     private bool _saveOnMemoryMaterials = true;  // オンメモリマテリアルをアセットとして保存
@@ -156,21 +194,61 @@ public partial class PolyLing : EditorWindow
     private Vector2 _boxSelectEnd;            // 矩形選択終了点
     private const float DragThreshold = 0f;   // ドラッグ判定の閾値（ピクセル）
 
-    // 表示設定
-    private bool _showWireframe = true;
-    private bool _showVertices = true;
-    private bool _showMesh = true;              // メッシュ本体表示
-    private bool _vertexEditMode = true;  // Show Verticesと連動  
-    private bool _showSelectedMeshOnly = false;  // 
-    private bool _showVertexIndices = true;     // 
-    private bool _showUnselectedWireframe = true;  // 非選択メッシュのワイヤフレーム表示
-    private bool _showUnselectedVertices = true;   // 非選択メッシュの頂点表示
-    private bool _showBones = false;               // ボーン表示（デフォルト非表示）
+    // 表示設定（EditorStateContext への委譲）
+    private bool _showWireframe
+    {
+        get => _undoController?.EditorState?.ShowWireframe ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowWireframe = value; }
+    }
+    private bool _showVertices
+    {
+        get => _undoController?.EditorState?.ShowVertices ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowVertices = value; }
+    }
+    private bool _showMesh
+    {
+        get => _undoController?.EditorState?.ShowMesh ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowMesh = value; }
+    }
+    private bool _vertexEditMode
+    {
+        get => _undoController?.EditorState?.VertexEditMode ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.VertexEditMode = value; }
+    }
+    private bool _showSelectedMeshOnly
+    {
+        get => _undoController?.EditorState?.ShowSelectedMeshOnly ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowSelectedMeshOnly = value; }
+    }
+    private bool _showVertexIndices
+    {
+        get => _undoController?.EditorState?.ShowVertexIndices ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowVertexIndices = value; }
+    }
+    private bool _showUnselectedWireframe
+    {
+        get => _undoController?.EditorState?.ShowUnselectedWireframe ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowUnselectedWireframe = value; }
+    }
+    private bool _showUnselectedVertices
+    {
+        get => _undoController?.EditorState?.ShowUnselectedVertices ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowUnselectedVertices = value; }
+    }
+    private bool _showBones
+    {
+        get => _undoController?.EditorState?.ShowBones ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowBones = value; }
+    }
     private HashSet<int> _foldedBoneRoots = new HashSet<int>();  // 折りたたまれたボーンルートのインデックス
     
-    // エクスポート設定
-    private bool _exportAsSkinned = false;         // スキンメッシュとしてエクスポート
-    private bool _createArmatureMeshesFolder = true; // Armature/Meshesフォルダを作成
+    // エクスポート設定（EditorStateContext への委譲）
+    private bool _exportAsSkinned
+    {
+        get => _undoController?.EditorState?.ExportAsSkinned ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ExportAsSkinned = value; }
+    }
+    private bool _createArmatureMeshesFolder = true; // Armature/Meshesフォルダを作成（EditorStateに含めない）
     
     /// <summary>
     /// ツールの状態
@@ -199,8 +277,12 @@ public partial class PolyLing : EditorWindow
     //private bool _foldWorkPlane = false;  // WorkPlaneセクション
     private Vector2 _leftPaneScroll;  // 左ペインのスクロール位置
 
-    // WorkPlane表示設定
-    private bool _showWorkPlaneGizmo = true;
+    // WorkPlane表示設定（EditorStateContext への委譲）
+    private bool _showWorkPlaneGizmo
+    {
+        get => _undoController?.EditorState?.ShowWorkPlaneGizmo ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowWorkPlaneGizmo = value; }
+    }
 
     // ================================================================
     // Undoシステム統合
@@ -339,23 +421,8 @@ public partial class PolyLing : EditorWindow
         // Show Verticesと編集モードを同期
         //_vertexEditMode = _showVertices;
 
-        // EditorStateにローカル変数の初期値を設定
-        if (_undoController != null)
-        {
-            _undoController.EditorState.ShowWireframe = _showWireframe;
-            _undoController.EditorState.ShowVertices = _showVertices;
-            _undoController.EditorState.ShowMesh = _showMesh;
-            _undoController.EditorState.ShowSelectedMeshOnly = _showSelectedMeshOnly;
-            _undoController.EditorState.ShowVertexIndices = _showVertexIndices;
-            _undoController.EditorState.ShowUnselectedWireframe = _showUnselectedWireframe;
-            _undoController.EditorState.ShowUnselectedVertices = _showUnselectedVertices;
-            _undoController.EditorState.AddToCurrentMesh = _addToCurrentMesh;
-            _undoController.EditorState.AutoMergeOnCreate = _autoMergeOnCreate;
-            _undoController.EditorState.AutoMergeThreshold = _autoMergeThreshold;
-            _undoController.EditorState.ExportSelectedMeshOnly = _exportSelectedMeshOnly;
-            _undoController.EditorState.BakeMirror = _bakeMirror;
-            _undoController.EditorState.MirrorFlipU = _mirrorFlipU;
-        }
+        // Single Source of Truth: EditorStateContext が唯一のデータソースのため、
+        // ローカル変数への初期化コピーは不要（プロパティ経由で直接参照）
 
         // Selection System 初期化（ツールより先に初期化）
         InitializeSelectionSystem();
@@ -585,33 +652,13 @@ public partial class PolyLing : EditorWindow
         _defaultCurrentMaterialIndex = ctxForDefault.DefaultCurrentMaterialIndex;
         _autoSetDefaultMaterials = ctxForDefault.AutoSetDefaultMaterials;
 
-        // EditorStateContextからUI状態を復元
+        // Single Source of Truth: EditorStateContext が唯一のデータソースのため、
+        // ローカル変数への復元コピーは不要（プロパティ経由で直接参照）
+        // カメラ復元フラグのリセットのみ実行
+        _cameraRestoredByRecord = false;
+
+        // ツール復元
         var editorState = _undoController.EditorState;
-
-        // カメラ状態はMeshSelectionChangeRecord等から既に復元されている場合はスキップ
-        if (!_cameraRestoredByRecord)
-        {
-            _rotationX = editorState.RotationX;
-            _rotationY = editorState.RotationY;
-            _cameraDistance = editorState.CameraDistance;
-            _cameraTarget = editorState.CameraTarget;
-        }
-        _cameraRestoredByRecord = false; // フラグをリセット
-
-        _showWireframe = editorState.ShowWireframe;
-        _showVertices = editorState.ShowVertices;
-        _showMesh = editorState.ShowMesh;
-        _showSelectedMeshOnly = editorState.ShowSelectedMeshOnly;
-        _showVertexIndices = editorState.ShowVertexIndices;
-        _showUnselectedWireframe = editorState.ShowUnselectedWireframe;
-        _showUnselectedVertices = editorState.ShowUnselectedVertices;
-        _addToCurrentMesh = editorState.AddToCurrentMesh;
-        _autoMergeOnCreate = editorState.AutoMergeOnCreate;
-        _autoMergeThreshold = editorState.AutoMergeThreshold;
-        _exportSelectedMeshOnly = editorState.ExportSelectedMeshOnly;
-        _bakeMirror = editorState.BakeMirror;
-        _mirrorFlipU = editorState.MirrorFlipU;
-
         RestoreToolFromName(editorState.CurrentToolName);
 
         //ナイフツールの固有設定----
@@ -1030,9 +1077,8 @@ public partial class PolyLing : EditorWindow
                 _rotationX, _rotationY, _cameraDistance, _cameraTarget,
                 oldWorkPlane, newWorkPlane);
 
-            _undoController.SetEditorState(
-                _rotationX, _rotationY, _cameraDistance, _cameraTarget,
-                _showWireframe, _showVertices, _vertexEditMode);
+            // Single Source of Truth: プロパティ経由でEditorStateを直接参照しているため、
+            // SetEditorState呼び出しは不要
         }
 
         _cameraStartWorkPlaneSnapshot = null;
