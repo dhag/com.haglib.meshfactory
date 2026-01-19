@@ -118,7 +118,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>ボーンスケール（PMXボーン座標に適用、デフォルト1.0）</summary>
         [Tooltip("PMXボーン座標に適用するスケール（MQOと同じScaleを使う場合は1.0）")]
-        public float BoneScale = 1.0f;
+        public float BoneScale = 10.0f;
 
         // ================================================================
         // ミラー設定
@@ -126,7 +126,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>ミラーをベイク（実体化）</summary>
         [Tooltip("ミラー属性を持つメッシュのミラー側を実体メッシュとして生成する")]
-        public bool BakeMirror = false;
+        public bool BakeMirror = true;
 
         // ================================================================
         // 頂点デバッグ設定
