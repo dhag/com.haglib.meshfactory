@@ -370,9 +370,11 @@ namespace Poly_Ling.MQO
                     continue;
                 }
 
-                // vertexattr
-                if (line.StartsWith("vertexattr "))
+                // vertexattr（スペースあり/なし両対応）
+                if (line.StartsWith("vertexattr"))
                 {
+                    // "vertexattr {" の場合、ブロック開始済みなのでそのままパース
+                    // "vertexattr {...}" の場合も同様
                     obj.VertexAttrRaw = ParseVertexAttr(queue);
                     continue;
                 }
@@ -529,18 +531,22 @@ namespace Poly_Ling.MQO
         private static string ParseVertexAttr(Queue<string> queue)
         {
             var sb = new StringBuilder();
+            int depth = 1;  // 既に { の後から開始
 
-            while (queue.Count > 0)
+            while (queue.Count > 0 && depth > 0)
             {
                 string line = queue.Dequeue();
                 sb.AppendLine(line);
 
-                if (line.Trim().EndsWith("}"))
-                {
-                    // ネストを考慮
-                    // 簡易実装: 最初の } で終了
-                    return sb.ToString();
-                }
+                string trimmed = line.Trim();
+                
+                // { をカウント
+                if (trimmed.EndsWith("{"))
+                    depth++;
+                
+                // } をカウント
+                if (trimmed.EndsWith("}"))
+                    depth--;
             }
 
             return sb.ToString();

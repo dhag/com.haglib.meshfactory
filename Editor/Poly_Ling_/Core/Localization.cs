@@ -197,6 +197,22 @@ namespace Poly_Ling.Localization
             ["Delete"] = new() { ["en"] = "Delete", ["ja"] = "削除", ["hi"] = "けす" },
             ["Cancel"] = new() { ["en"] = "Cancel", ["ja"] = "キャンセル", ["hi"] = "やめる" },
 
+            // ============================================================
+            // Selection Sets セクション
+            // ============================================================
+            ["SelectionSets"] = new() { ["en"] = "Selection Sets", ["ja"] = "選択セット", ["hi"] = "せんたくせっと" },
+            ["SaveSelection"] = new() { ["en"] = "Save", ["ja"] = "保存", ["hi"] = "ほぞん" },
+            ["Load"] = new() { ["en"] = "Load", ["ja"] = "読込", ["hi"] = "よみこみ" },
+            ["Add"] = new() { ["en"] = "Add", ["ja"] = "追加", ["hi"] = "ついか" },
+            ["Subtract"] = new() { ["en"] = "Sub", ["ja"] = "除外", ["hi"] = "のぞく" },
+            ["NoSelectionSets"] = new() { ["en"] = "No selection sets saved", ["ja"] = "保存された選択セットはありません", ["hi"] = "せっとがない" },
+            ["DeleteSelectionSet"] = new() { ["en"] = "Delete Selection Set", ["ja"] = "選択セットを削除", ["hi"] = "せっとをけす" },
+            ["DeleteSelectionSetConfirm"] = new() { ["en"] = "Delete selection set '{0}'?", ["ja"] = "選択セット '{0}' を削除しますか？", ["hi"] = "'{0}' をけす？" },
+            ["SaveToFile"] = new() { ["en"] = "JSON", ["ja"] = "JSON", ["hi"] = "JSON" },
+            ["LoadFromFile"] = new() { ["en"] = "JSON", ["ja"] = "JSON", ["hi"] = "JSON" },
+            ["ExportCSV"] = new() { ["en"] = "CSV↑", ["ja"] = "CSV↑", ["hi"] = "CSV↑" },
+            ["ImportCSV"] = new() { ["en"] = "CSV↓", ["ja"] = "CSV↓", ["hi"] = "CSV↓" },
+
 
             // ============================================================
             // Symmetryセクション

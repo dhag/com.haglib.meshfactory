@@ -184,67 +184,10 @@ public partial class PolyLing
     }
 
     // ================================================================
-    // ToolPanels セクション（Phase 4追加）
+    // ToolPanels セクション
     // ================================================================
 
     private bool _foldToolPanel = true;  // 起動時に開いた状態
 
-    /// <summary>
-    /// ToolPanelsセクションを描画
-    /// </summary>
-    private void DrawToolPanelsSection()
-    {
-        _foldToolPanel = DrawFoldoutWithUndo("ToolPanels", L.Get("ToolPanels"), true);  // デフォルト開く
-        if (!_foldToolPanel)
-            return;
-
-        EditorGUI.indentLevel++;
-
-        // UnityMesh List Window（統合版）
-        if (GUILayout.Button(L.Get("Window_MeshContextList")))
-        {
-            MeshListPanel.Open(_toolManager?.toolContext);
-        }
-
-        // Simple Morph
-        if (GUILayout.Button(L.Get("Window_SimpleMorph")))
-        {
-            SimpleMorphPanel.Open(_toolManager?.toolContext);
-        }
-
-        // === Import/Export ===
-        //EditorGUILayout.Space(5);
-        //EditorGUILayout.LabelField("Import / Export", EditorStyles.miniLabel);
-
-        if (GUILayout.Button("MQO Import..."))
-        {
-            Poly_Ling.MQO.MQOImportPanel.Open(_toolManager?.toolContext);
-        }
-
-        if (GUILayout.Button("PMX Import..."))
-        {
-            Poly_Ling.PMX.PMXImportPanel.Open(_toolManager?.toolContext);
-        }
-
-        if (GUILayout.Button("PMX Bone Weight Export..."))
-        {
-            Poly_Ling.PMX.PMXBoneWeightExportPanel.ShowWindow();
-        }
-
-        if (GUILayout.Button("Avatar Creator..."))
-        {
-            Poly_Ling.MISC.AvatarCreatorPanel.ShowWindow();
-        }
-
-        EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);
-        if (GUILayout.Button("MQO Export"))
-        {
-            Poly_Ling.MQO.MQOExportPanel.Open(_toolManager?.toolContext);
-        }
-        EditorGUI.EndDisabledGroup();
-
-
-        EditorGUI.indentLevel--;
-    }
 
 }

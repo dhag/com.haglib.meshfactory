@@ -282,5 +282,69 @@ namespace Poly_Ling.Tools
         /// 現在の選択モードを取得
         /// </summary>
         public MeshSelectMode CurrentSelectMode => SelectionState?.Mode ?? MeshSelectMode.Vertex;
+
+        // ================================================================
+        // トポロジカル変更時の選択状態管理
+        // ================================================================
+        // 
+        // 【方針】
+        // トポロジカル変更後の選択状態は以下のルールで処理する：
+        // 
+        // 1. 削除を伴う変更 → 選択をクリア
+        //    例: MergeVertices, DeleteVertex, DeleteFace
+        //    理由: インデックスがずれるため追跡が困難
+        // 
+        // 2. 後ろに追加する変更 → 選択を維持
+        //    例: AddVertex, AddFace, Extrude（新規要素を末尾に追加）
+        //    理由: 既存インデックスは変わらない
+        // 
+        // 3. 挿入を伴う変更 → クリアか維持を都度判断
+        //    例: Subdivide, InsertEdgeLoop
+        //    困難な場合はすぐにクリアで妥協する
+        // 
+        // 【実装ルール】
+        // - 削除を伴うツールは OnTopologyChanged() を使用
+        // - 追加のみのツールは SyncMesh() + Repaint() を使用
+        // - 個別に選択を調整する必要がある場合のみカスタム処理
+        // 
+        // 【GPUバッファ更新について】
+        // 現状、SyncMesh（SyncMeshFromData）は頂点位置の軽量更新のみ。
+        // トポロジカル変更（頂点数/面数の変化）時はGPUバッファの再構築が必要。
+        // これはNotifyTopologyChangedコールバック経由で行う。
+        // 
+        // 【将来の改善】
+        // 現在は暫定的な実装。理想的にはダーティフラグ方式で
+        // 必要な部分だけ更新すべきだが、バグが多く複雑なため保留中。
+        // まず現状のバグを全て取り除いてから、ダーティフラグ方式への
+        // 移行を検討する。
+        // ================================================================
+
+        /// <summary>
+        /// GPUバッファのトポロジ再構築を通知するコールバック
+        /// トポロジカル変更（頂点数/面数の変化）時に呼び出す
+        /// SyncMeshは位置更新のみで軽量、これは重い処理
+        /// </summary>
+        public Action NotifyTopologyChanged { get; set; }
+
+        /// <summary>
+        /// トポロジカル変更後の標準処理（削除を伴う場合）
+        /// すべての選択をクリアし、メッシュを更新して再描画
+        /// </summary>
+        public void OnTopologyChanged()
+        {
+            ClearAllSelections();
+            SyncMesh?.Invoke();
+            NotifyTopologyChanged?.Invoke();  // GPUバッファ再構築（重い）
+            Repaint?.Invoke();
+        }
+
+        /// <summary>
+        /// すべての選択状態をクリア
+        /// </summary>
+        public void ClearAllSelections()
+        {
+            SelectedVertices?.Clear();
+            SelectionState?.ClearAll();
+        }
     }
 }

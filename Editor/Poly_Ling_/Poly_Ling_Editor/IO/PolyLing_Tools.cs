@@ -237,6 +237,10 @@ public partial class PolyLing : EditorWindow
         ctx.UndoController = _undoController;
         ctx.WorkPlane = _undoController?.WorkPlane;
         ctx.SyncMesh = () => SyncMeshFromData(_model?.CurrentMeshContext);
+        
+        // GPUバッファのトポロジ再構築コールバック
+        // SyncMeshは位置更新のみで軽量、これはトポロジ変更時のみ呼ぶ（重い）
+        ctx.NotifyTopologyChanged = () => _unifiedAdapter?.NotifyTopologyChanged();
 
         // マルチマテリアル対応
         ctx.CurrentMaterialIndex = meshContext?.CurrentMaterialIndex ?? 0;

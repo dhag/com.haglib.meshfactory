@@ -107,6 +107,9 @@ public partial class PolyLing
             _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 
+        // 統合システムにトポロジー変更を通知
+        _unifiedAdapter?.NotifyTopologyChanged();
+
         Repaint();
     }
 
@@ -199,6 +202,9 @@ public partial class PolyLing
 
         Debug.Log($"[AddMeshObjectToCurrent] Added {name} to {meshContext.Name}, total vertices={meshContext.MeshObject.VertexCount}, faces={meshContext.MeshObject.FaceCount}");
 
+        // 統合システムにトポロジー変更を通知
+        _unifiedAdapter?.NotifyTopologyChanged();
+
         Repaint();
     }
 
@@ -286,6 +292,9 @@ public partial class PolyLing
             _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
             _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
+
+        // 統合システムにトポロジー変更を通知
+        _unifiedAdapter?.NotifyTopologyChanged();
 
         Repaint();
     }

@@ -118,7 +118,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>ボーンスケール（PMXボーン座標に適用、デフォルト1.0）</summary>
         [Tooltip("PMXボーン座標に適用するスケール（MQOと同じScaleを使う場合は1.0）")]
-        public float BoneScale = 10.0f;
+        public float BoneScale = 10.0f;//pmx由来のボーン位置をMQOスケールに合わせるためのデフォルト値
 
         // ================================================================
         // ミラー設定

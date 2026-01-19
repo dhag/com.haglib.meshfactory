@@ -470,6 +470,9 @@ public partial class PolyLing : EditorWindow
         {
             _meshTopology.SetMeshObject(null);
         }
+
+        // 統合システムにもトポロジー変更を通知
+        _unifiedAdapter?.NotifyTopologyChanged();
     }
 
 
@@ -800,6 +803,9 @@ public partial class PolyLing : EditorWindow
         InvalidateSymmetryCache();
         // ★GPUバッファの位置情報を更新
         NotifyUnifiedTransformChanged();
+        // ★GPUバッファを再構築（トポロジ変更対応）
+        // 頂点数/面数が変わる可能性があるため、常にトポロジ変更として扱う
+        //_unifiedAdapter?.NotifyTopologyChanged();
     }
 
 

@@ -38,7 +38,8 @@ namespace Poly_Ling.Tools
             () => new AddFaceTool(),
             () => new KnifeTool(),
             () => new EdgeTopologyTool(),
-            () => new MergeVerticesTool(),
+            //() => new MergeVerticesTool(),
+            //() => new AlignVerticesTool(),
             () => new EdgeExtrudeTool(),
             () => new FaceExtrudeTool(),
             () => new LineExtrudeTool(),
@@ -75,37 +76,5 @@ namespace Poly_Ling.Tools
             // デフォルトツールを設定
             //manager.SetDefault("Move");
         }
-        /*
-        /// <summary>
-        /// 指定カテゴリのツールのみ登録
-        /// </summary>
-        public static void RegisterCategory(ToolManager manager, ToolCategory category)
-        {
-            if (manager == null)
-                throw new ArgumentNullException(nameof(manager));
-
-            foreach (var factory in ToolFactories)
-            {
-                var tool = factory();
-                if (tool.Category == category)
-                {
-                    manager.Register(tool);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 全ツールのインスタンスを生成して返す（UI用）
-        /// </summary>
-        public static List<IEditTool> CreateAllTools()
-        {
-            var tools = new List<IEditTool>();
-            foreach (var factory in ToolFactories)
-            {
-                tools.Add(factory());
-            }
-            return tools;
-        }
-        */    
     }
 }

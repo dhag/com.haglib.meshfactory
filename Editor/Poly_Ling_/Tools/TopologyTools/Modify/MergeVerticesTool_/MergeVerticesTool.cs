@@ -1,6 +1,11 @@
 // Tools/MergeVerticesTool.cs
 // 頂点マージツール - 選択頂点のうち距離がしきい値以下のものを統合
 // Phase 4: MeshMergeHelper使用に変更
+// Phase 5: OnTopologyChanged()による標準的な選択クリア処理
+//
+// 【トポロジカル変更の分類】
+// このツールは「削除を伴う変更」に該当するため、
+// 実行後は ctx.OnTopologyChanged() で全選択をクリアする。
 
 using System;
 using System.Collections.Generic;
@@ -275,8 +280,8 @@ namespace Poly_Ling.Tools
 
             if (result.Success)
             {
-                // 選択をクリア
-                ctx.SelectedVertices.Clear();
+                // トポロジカル変更後の標準処理（削除を伴うため選択クリア）
+                ctx.OnTopologyChanged();
 
                 // Undo記録
                 if (ctx.UndoController != null)

@@ -62,7 +62,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>ベイクミラーを削除</summary>
         [Tooltip("ベイクされたミラーメッシュ（Type=BakedMirror）を出力しない")]
-        public bool SkipBakedMirror = false;
+        public bool SkipBakedMirror = true;
 
         // ================================================================
         // テクスチャ
