@@ -77,7 +77,7 @@ public partial class PolyLing
         // レンダリングモード設定
         _unifiedAdapter.UseUnifiedRendering = true;
 
-        Debug.Log("[PolyLing] Unified system initialized");
+        //Debug.Log("[PolyLing] Unified system initialized");
         return true;
     }
 

@@ -39,7 +39,7 @@ public partial class PolyLing
         var meshContext = _model?.CurrentMeshContext;
         if (meshContext == null) return;
 
-        _foldSelectionSets = EditorGUILayout.Foldout(_foldSelectionSets, L.Get("SelectionSets"), true);
+        _foldSelectionSets = EditorGUILayout.Foldout(_foldSelectionSets, L.Get("SelectionDics"), true);
         if (!_foldSelectionSets) return;
 
         EditorGUI.indentLevel++;
@@ -58,7 +58,7 @@ public partial class PolyLing
 
         using (new EditorGUI.DisabledScope(!hasSelection))
         {
-            if (GUILayout.Button(L.Get("SaveSelection"), GUILayout.Width(80)))
+            if (GUILayout.Button(L.Get("HashingSelection"), GUILayout.Width(80)))
             {
                 SaveCurrentSelectionAsSet(meshContext);
             }
@@ -94,7 +94,7 @@ public partial class PolyLing
 
             using (new EditorGUI.DisabledScope(_selectedSelectionSetIndex < 0))
             {
-                if (GUILayout.Button(L.Get("Load"), GUILayout.Width(45)))
+                if (GUILayout.Button(L.Get("To Current"), GUILayout.Width(45)))
                 {
                     LoadSelectedSelectionSet(meshContext);
                 }
@@ -120,22 +120,22 @@ public partial class PolyLing
             EditorGUILayout.BeginHorizontal();
 
             // JSON書出
-            if (GUILayout.Button("JSON↑", GUILayout.Width(50)))
+            if (GUILayout.Button("JSON↓", GUILayout.Width(50)))
             {
                 SaveSelectionSetsToFile(meshContext);
             }
             // JSON読込
-            if (GUILayout.Button("JSON↓", GUILayout.Width(50)))
+            if (GUILayout.Button("JSON↑", GUILayout.Width(50)))
             {
                 LoadSelectionSetsFromFile(meshContext);
             }
             // CSV書出
-            if (GUILayout.Button("CSV↑", GUILayout.Width(45)))
+            if (GUILayout.Button("CSV↓", GUILayout.Width(45)))
             {
                 ExportSelectionSetsToCSV(meshContext);
             }
             // CSV読込
-            if (GUILayout.Button("CSV↓", GUILayout.Width(45)))
+            if (GUILayout.Button("CSV↑", GUILayout.Width(45)))
             {
                 ImportSelectionSetFromCSV(meshContext);
             }
@@ -148,11 +148,11 @@ public partial class PolyLing
 
             // セットがなくてもファイル読み込みは可能
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("JSON↓", GUILayout.Width(50)))
+            if (GUILayout.Button("JSON↑", GUILayout.Width(50)))
             {
                 LoadSelectionSetsFromFile(meshContext);
             }
-            if (GUILayout.Button("CSV↓", GUILayout.Width(45)))
+            if (GUILayout.Button("CSV↑", GUILayout.Width(45)))
             {
                 ImportSelectionSetFromCSV(meshContext);
             }

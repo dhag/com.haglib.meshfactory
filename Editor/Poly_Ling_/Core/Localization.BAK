@@ -154,7 +154,7 @@ namespace Poly_Ling.Localization
             // ============================================================
             // ウィンドウ・タイトル
             // ============================================================
-            ["Poly_Ling"] = new() { ["en"] = "Poly Ling", ["ja"] = "ポリーリング/ぽりりん", ["hi"] = "ぽりりん" },
+            ["Poly_Ling"] = new() { ["en"] = "Poly Ling", ["ja"] = "ポリーリング", ["hi"] = "ぽりりん" },
             
             // ============================================================
             // セクション名
@@ -198,11 +198,11 @@ namespace Poly_Ling.Localization
             ["Cancel"] = new() { ["en"] = "Cancel", ["ja"] = "キャンセル", ["hi"] = "やめる" },
 
             // ============================================================
-            // Selection Dics セクション
+            // Selection Sets セクション
             // ============================================================
-            ["SelectionDics"] = new() { ["en"] = "Selection Dictionary", ["ja"] = "選択辞書", ["hi"] = "せんたくじしょ" },
-            ["HashingSelection"] = new() { ["en"] = "Hashing", ["ja"] = "辞書化", ["hi"] = "じしょにする" },
-            ["To Current"] = new() { ["en"] = "To Current", ["ja"] = "呼出し", ["hi"] = "よびだし" },
+            ["SelectionSets"] = new() { ["en"] = "Selection Sets", ["ja"] = "選択セット", ["hi"] = "せんたくせっと" },
+            ["SaveSelection"] = new() { ["en"] = "Save", ["ja"] = "保存", ["hi"] = "ほぞん" },
+            ["Load"] = new() { ["en"] = "Load", ["ja"] = "読込", ["hi"] = "よみこみ" },
             ["Add"] = new() { ["en"] = "Add", ["ja"] = "追加", ["hi"] = "ついか" },
             ["Subtract"] = new() { ["en"] = "Sub", ["ja"] = "除外", ["hi"] = "のぞく" },
             ["NoSelectionSets"] = new() { ["en"] = "No selection sets saved", ["ja"] = "保存された選択セットはありません", ["hi"] = "せっとがない" },
