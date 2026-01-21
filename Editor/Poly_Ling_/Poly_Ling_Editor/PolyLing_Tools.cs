@@ -14,6 +14,7 @@ using Poly_Ling.Transforms;
 using Poly_Ling.Tools;
 using Poly_Ling.Serialization;
 using Poly_Ling.Selection;
+using Poly_Ling.Commands;
 
 
 public partial class PolyLing : EditorWindow
@@ -115,6 +116,10 @@ public partial class PolyLing : EditorWindow
         ctx.SelectMeshContext = SelectMeshContentWithUndo;
         ctx.DuplicateMeshContent = DuplicateMeshContentWithUndo;
         ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
+        ctx.UpdateMeshAttributes = (changes) =>
+        {
+            _commandQueue?.Enqueue(new UpdateMeshAttributesCommand(changes, UpdateMeshAttributesWithUndo));
+        };
         ctx.ClearAllMeshContexts = ClearAllMeshContextsWithUndo;  // ★ImportMode用
         ctx.ReplaceAllMeshContexts = ReplaceAllMeshContextsWithUndo;  // ★1回のUndoで戻せるReplace
 
@@ -262,6 +267,10 @@ public partial class PolyLing : EditorWindow
         ctx.SelectMeshContext = SelectMeshContentWithUndo;
         ctx.DuplicateMeshContent = DuplicateMeshContentWithUndo;
         ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
+        ctx.UpdateMeshAttributes = (changes) =>
+        {
+            _commandQueue?.Enqueue(new UpdateMeshAttributesCommand(changes, UpdateMeshAttributesWithUndo));
+        };
         ctx.ClearAllMeshContexts = ClearAllMeshContextsWithUndo;
         ctx.ReplaceAllMeshContexts = ReplaceAllMeshContextsWithUndo;
 
@@ -561,6 +570,9 @@ public partial class PolyLing : EditorWindow
         LoadMeshContextToUndoController(_model.CurrentMeshContext); 
         UpdateTopology();  // ← これを追加
         Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
     }
     /// <summary>
     /// メッシュコンテキストを複数追加（Undo対応・バッチ）
@@ -623,6 +635,9 @@ public partial class PolyLing : EditorWindow
         LoadMeshContextToUndoController(_model.CurrentMeshContext);
         UpdateTopology();
         Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
     }
 
     /// <summary>
@@ -695,6 +710,9 @@ public partial class PolyLing : EditorWindow
 
         UpdateTopology();
         Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
     }
 
     /// <summary>
@@ -792,6 +810,9 @@ public partial class PolyLing : EditorWindow
         LoadMeshContextToUndoController(_model.CurrentMeshContext);
         UpdateTopology();
         Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
     }
 
 
@@ -856,6 +877,9 @@ public partial class PolyLing : EditorWindow
         }
 
         Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
     }
 
     /// <summary>
@@ -898,6 +922,9 @@ public partial class PolyLing : EditorWindow
         }
 
         Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
     }
 
     /// <summary>
@@ -963,6 +990,9 @@ public partial class PolyLing : EditorWindow
 
         LoadMeshContextToUndoController(_model.CurrentMeshContext);
         Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
     }
 
     /// <summary>
@@ -1001,6 +1031,53 @@ public partial class PolyLing : EditorWindow
             _undoController.RecordMeshContextReorder(meshContext, fromIndex, toIndex, oldSelectedIndex, _selectedIndex);
         }
 
+        Repaint();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// メッシュ属性を変更（Undo対応）
+    /// </summary>
+    private void UpdateMeshAttributesWithUndo(IList<MeshAttributeChange> changes)
+    {
+        if (changes == null || changes.Count == 0) return;
+
+        // 変更前の値を保存（Undo用）
+        var oldValues = new List<MeshAttributeChange>();
+        
+        foreach (var change in changes)
+        {
+            if (change.Index < 0 || change.Index >= _meshContextList.Count) continue;
+            
+            var ctx = _meshContextList[change.Index];
+            var oldValue = new MeshAttributeChange { Index = change.Index };
+            
+            // 変更前の値を記録
+            if (change.IsVisible.HasValue) oldValue.IsVisible = ctx.IsVisible;
+            if (change.IsLocked.HasValue) oldValue.IsLocked = ctx.IsLocked;
+            if (change.MirrorType.HasValue) oldValue.MirrorType = ctx.MirrorType;
+            if (change.Name != null) oldValue.Name = ctx.Name;
+            
+            oldValues.Add(oldValue);
+            
+            // 値を変更
+            if (change.IsVisible.HasValue) ctx.IsVisible = change.IsVisible.Value;
+            if (change.IsLocked.HasValue) ctx.IsLocked = change.IsLocked.Value;
+            if (change.MirrorType.HasValue) ctx.MirrorType = change.MirrorType.Value;
+            if (change.Name != null) ctx.Name = change.Name;
+        }
+
+        // Undo記録
+        if (_undoController != null && oldValues.Count > 0)
+        {
+            var record = new MeshAttributesBatchChangeRecord(oldValues, changes.ToList());
+            _undoController.MeshListStack.Record(record, "属性変更");
+        }
+
+        _model.IsDirty = true;
+        _model?.OnListChanged?.Invoke();
         Repaint();
     }
 }

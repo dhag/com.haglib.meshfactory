@@ -1,5 +1,6 @@
 // MeshAttributeChangeRecord.cs
-// メッシュ属性変更のUndo/Redo記録用クラス
+// メッシュ選択・順序変更のUndo/Redo記録用クラス
+// Note: 属性変更はMeshAttributesBatchChangeRecord（MeshListRecords.cs）に統合
 
 using System;
 using System.Collections.Generic;
@@ -9,107 +10,6 @@ using Poly_Ling.Model;
 
 namespace Poly_Ling.UndoSystem
 {
-    /// <summary>
-    /// メッシュ属性（IsVisible, IsLocked, MirrorType等）の変更を記録するレコード。
-    /// MeshListStackで使用される。
-    /// </summary>
-    [Serializable]
-    public class MeshAttributeChangeRecord : IUndoRecord<ModelContext>
-    {
-        /// <summary>操作のメタ情報</summary>
-        public UndoOperationInfo Info { get; set; }
-
-        /// <summary>対象メッシュのインデックス</summary>
-        public int MeshIndex { get; set; }
-
-        /// <summary>変更されたプロパティ名</summary>
-        public string PropertyName { get; set; }
-
-        /// <summary>変更前の値</summary>
-        public object OldValue { get; set; }
-
-        /// <summary>変更後の値</summary>
-        public object NewValue { get; set; }
-
-        /// <summary>
-        /// Undo実行：変更前の値に戻す
-        /// </summary>
-        public void Undo(ModelContext context)
-        {
-            ApplyValue(context, OldValue);
-        }
-
-        /// <summary>
-        /// Redo実行：変更後の値を再適用
-        /// </summary>
-        public void Redo(ModelContext context)
-        {
-            ApplyValue(context, NewValue);
-        }
-
-        /// <summary>
-        /// 値を適用
-        /// </summary>
-        private void ApplyValue(ModelContext context, object value)
-        {
-            if (context == null) return;
-            if (MeshIndex < 0 || MeshIndex >= context.MeshContextCount) return;
-
-            var meshContext = context.GetMeshContext(MeshIndex);
-            if (meshContext == null) return;
-
-            switch (PropertyName)
-            {
-                case "IsVisible":
-                    if (value is bool visible)
-                        meshContext.IsVisible = visible;
-                    break;
-
-                case "IsLocked":
-                    if (value is bool locked)
-                        meshContext.IsLocked = locked;
-                    break;
-
-                case "MirrorType":
-                    if (value is int mirrorType)
-                        meshContext.MirrorType = mirrorType;
-                    break;
-
-                case "Name":
-                    if (value is string name)
-                        meshContext.Name = name;
-                    break;
-
-                // 必要に応じて他のプロパティを追加
-            }
-        }
-
-        /// <summary>
-        /// 同じ属性変更をマージ可能か判定
-        /// </summary>
-        public bool CanMergeWith(MeshAttributeChangeRecord other)
-        {
-            return other != null &&
-                   MeshIndex == other.MeshIndex &&
-                   PropertyName == other.PropertyName;
-        }
-
-        /// <summary>
-        /// 別のレコードをマージ（連続した同一属性変更を統合）
-        /// </summary>
-        public void MergeWith(MeshAttributeChangeRecord other)
-        {
-            if (other == null) return;
-            // OldValueは最初の値を維持、NewValueは最新の値に更新
-            NewValue = other.NewValue;
-        }
-
-        public override string ToString()
-        {
-            return $"MeshAttributeChange[{MeshIndex}].{PropertyName}: {OldValue} → {NewValue}";
-        }
-    }
-
     /// <summary>
     /// 複数メッシュの選択変更を記録するレコード
     /// </summary>

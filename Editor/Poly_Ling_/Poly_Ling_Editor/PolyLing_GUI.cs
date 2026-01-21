@@ -20,15 +20,15 @@ public partial class PolyLing
     {
         using (new EditorGUILayout.VerticalScope(GUILayout.Width(_leftPaneWidth)))
         {
-            EditorGUILayout.LabelField("UnityMesh Factory", EditorStyles.boldLabel);
-
-            // ★Phase 2: モデル選択UI
-            DrawModelSelector();
-
-            // ================================================================
-            // Undo/Redo ボタン（上部固定）
-            // ================================================================
-            EditorGUILayout.BeginHorizontal();
+              EditorGUILayout.LabelField("UnityMesh Factory", EditorStyles.boldLabel);
+       
+              // ★Phase 2: モデル選択UI
+              DrawModelSelector();
+        
+        // ================================================================
+        // Undo/Redo ボタン（上部固定）
+        // ================================================================
+        EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanUndo))
             {
                 if (GUILayout.Button(L.Get("Undo")))
@@ -75,7 +75,7 @@ public partial class PolyLing
                 EditorGUI.indentLevel++;
 
                 EditorGUI.BeginChangeCheck();
-
+                
                 // メッシュ表示
                 bool newShowMesh = EditorGUILayout.Toggle(L.Get("ShowMesh"), _showMesh);
                 EditorGUI.indentLevel++;
@@ -83,7 +83,7 @@ public partial class PolyLing
                 bool newShowSelectedMeshOnly = !EditorGUILayout.Toggle(L.Get("ShowUnselected"), !_showSelectedMeshOnly);
                 EditorGUI.EndDisabledGroup();
                 EditorGUI.indentLevel--;
-
+                
                 // ワイヤフレーム表示
                 bool newShowWireframe = EditorGUILayout.Toggle(L.Get("Wireframe"), _showWireframe);
                 EditorGUI.indentLevel++;
@@ -91,7 +91,7 @@ public partial class PolyLing
                 bool newShowUnselectedWireframe = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedWireframe);
                 EditorGUI.EndDisabledGroup();
                 EditorGUI.indentLevel--;
-
+                
                 // 頂点表示
                 bool newShowVertices = EditorGUILayout.Toggle(L.Get("ShowVertices"), _showVertices);
                 EditorGUI.indentLevel++;
@@ -99,7 +99,7 @@ public partial class PolyLing
                 bool newShowUnselectedVertices = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedVertices);
                 EditorGUI.EndDisabledGroup();
                 EditorGUI.indentLevel--;
-
+                
                 // 頂点インデックス（選択メッシュのみ）
                 bool newShowVertexIndices = EditorGUILayout.Toggle(L.Get("ShowVertexIndices"), _showVertexIndices);
 
@@ -156,15 +156,15 @@ public partial class PolyLing
                 // === トランスフォーム表示設定 ===
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField(L.Get("TransformDisplay"), EditorStyles.miniLabel);
-
-
+                
+                
                 EditorGUI.BeginChangeCheck();
                 bool currentShowLocal = _undoController?.EditorState.ShowLocalTransform ?? false;
                 bool currentShowWorld = _undoController?.EditorState.ShowWorldTransform ?? false;
-
+                
                 bool newShowLocal = EditorGUILayout.Toggle(L.Get("ShowLocalTransform"), currentShowLocal);
                 bool newShowWorld = EditorGUILayout.Toggle(L.Get("ShowWorldTransform"), currentShowWorld);
-
+                
                 if (EditorGUI.EndChangeCheck())
                 {
                     if (_undoController != null)
@@ -407,16 +407,16 @@ public partial class PolyLing
             for (int i = 0; i < _meshContextList.Count; i++)
             {
                 var ctx = _meshContextList[i];
-
+                
                 // ボーンの場合の表示制御
                 if (ctx.Type == MeshType.Bone)
                 {
                     // ボーン非表示モードならスキップ
                     if (!_showBones) continue;
-
+                    
                     // ボーンルートかどうか判定
                     bool isRoot = IsBoneRoot(i);
-
+                    
                     if (isRoot)
                     {
                         // ルートボーン: 折りたたみヘッダー表示
@@ -428,13 +428,13 @@ public partial class PolyLing
                         int rootIndex = FindBoneRootIndex(i);
                         if (rootIndex >= 0 && _foldedBoneRoots.Contains(rootIndex))
                             continue;
-
+                        
                         // インデント付きで表示
                         DrawBoneChildItem(i, ctx);
                     }
                     continue;
                 }
-
+                
                 // 通常メッシュの描画
                 DrawMeshListItem(i, ctx);
             }
@@ -450,14 +450,14 @@ public partial class PolyLing
     {
         var ctx = _meshContextList[index];
         if (ctx.Type != MeshType.Bone) return false;
-
+        
         // ParentIndexまたはHierarchyParentIndexをチェック
         int parentIdx = ctx.ParentIndex >= 0 ? ctx.ParentIndex : ctx.HierarchyParentIndex;
-
+        
         // 親がいない場合はルート
         if (parentIdx < 0) return true;
         if (parentIdx >= _meshContextList.Count) return true;
-
+        
         // 親がボーンでない場合はルート
         return _meshContextList[parentIdx].Type != MeshType.Bone;
     }
@@ -518,9 +518,9 @@ public partial class PolyLing
     {
         bool isFolded = _foldedBoneRoots.Contains(index);
         int boneCount = CountBonesInGroup(index);
-
+        
         EditorGUILayout.BeginHorizontal();
-
+        
         // 折りたたみトグル
         string foldIcon = isFolded ? "▶" : "▼";
         if (GUILayout.Button(foldIcon, GUILayout.Width(20)))
@@ -530,17 +530,17 @@ public partial class PolyLing
             else
                 _foldedBoneRoots.Add(index);
         }
-
+        
         // 選択ボタン
         bool isSelected = (index == _selectedIndex);
         string label = $"🦴 {ctx.Name} ({boneCount})";
         bool newSelected = GUILayout.Toggle(isSelected, label, "Button");
-
+        
         if (newSelected && !isSelected)
         {
             SelectMeshAtIndex(index);
         }
-
+        
         // 削除ボタン（ボーングループ全体を削除）
         if (GUILayout.Button("×", GUILayout.Width(20)))
         {
@@ -548,7 +548,7 @@ public partial class PolyLing
             RemoveBoneGroup(index);
             return;
         }
-
+        
         EditorGUILayout.EndHorizontal();
     }
 
@@ -558,22 +558,22 @@ public partial class PolyLing
     private void DrawBoneChildItem(int index, MeshContext ctx)
     {
         int depth = GetBoneDepth(index);
-
+        
         EditorGUILayout.BeginHorizontal();
-
+        
         // インデント
         GUILayout.Space(20 + depth * 12);
-
+        
         // 選択ボタン
         bool isSelected = (index == _selectedIndex);
         string label = $"├ {ctx.Name}";
         bool newSelected = GUILayout.Toggle(isSelected, label, "Button");
-
+        
         if (newSelected && !isSelected)
         {
             SelectMeshAtIndex(index);
         }
-
+        
         EditorGUILayout.EndHorizontal();
     }
 
@@ -615,9 +615,11 @@ public partial class PolyLing
             : new GUIContent(@"−", "Click to show");
         if (GUILayout.Button(visibleContent, GUILayout.Width(22)))
         {
-            ctx.IsVisible = !ctx.IsVisible;
-            _model?.OnListChanged?.Invoke();
-            Repaint();
+            // コマンド発行（Undoは本体で記録）
+            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+            {
+                new MeshAttributeChange { Index = index, IsVisible = !ctx.IsVisible }
+            });
         }
 
         // 対称トグルボタン
@@ -626,9 +628,11 @@ public partial class PolyLing
             : new GUIContent(@"·", "Mirror OFF - Click to enable");
         if (GUILayout.Button(mirrorContent, GUILayout.Width(22)))
         {
-            ctx.MirrorType = ctx.IsMirrored ? 0 : 1;
-            _model?.OnListChanged?.Invoke();
-            Repaint();
+            // コマンド発行（Undoは本体で記録）
+            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+            {
+                new MeshAttributeChange { Index = index, MirrorType = ctx.IsMirrored ? 0 : 1 }
+            });
         }
 
         // メッシュ名ボタン（選択用）
@@ -684,7 +688,7 @@ public partial class PolyLing
 
         // メッシュ選択変更をUndo記録
         _undoController?.RecordMeshSelectionChange(oldIndex, _selectedIndex, oldCamera, newCamera);
-
+        
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
     }
@@ -703,15 +707,15 @@ public partial class PolyLing
             if (IsBoneRoot(endIndex)) break;
             endIndex++;
         }
-
+        
         int count = endIndex - rootIndex;
-
+        
         // 削除（後ろから）
         for (int i = endIndex - 1; i >= rootIndex; i--)
         {
             RemoveMesh(i);
         }
-
+        
         Debug.Log($"[RemoveBoneGroup] Removed {count} bones starting at index {rootIndex}");
     }
 

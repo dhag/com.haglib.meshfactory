@@ -365,21 +365,17 @@ namespace Poly_Ling.UI
                     if (_selectedAdapters.Count == 1)
                     {
                         var adapter = _selectedAdapters[0];
-                        if (adapter.MeshContext != null && !string.IsNullOrEmpty(evt.newValue))
+                        int index = adapter.GetCurrentIndex();
+                        if (index >= 0 && !string.IsNullOrEmpty(evt.newValue))
                         {
-                            string oldName = evt.previousValue;
                             string newName = evt.newValue;
                             
-                            // Undo記録
-                            RecordAttributeChange(adapter, "Name", oldName, newName, "名前変更");
+                            // コマンド発行（Undoは本体で記録）
+                            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+                            {
+                                new MeshAttributeChange { Index = index, Name = newName }
+                            });
                             
-                            // 値を変更
-                            adapter.MeshContext.Name = newName;
-                            
-                            // 本体エディタに反映
-                            NotifyMeshContextChanged(adapter);
-                            
-                            RefreshTree();
                             Log($"名前変更: {newName}");
                         }
                     }
@@ -681,37 +677,33 @@ namespace Poly_Ling.UI
 
         private void OnVisibilityToggle(MeshTreeAdapter adapter)
         {
-            bool oldValue = adapter.IsVisible;
-            bool newValue = !oldValue;
+            int index = adapter.GetCurrentIndex();
+            if (index < 0) return;
             
-            // Undo記録
-            RecordAttributeChange(adapter, "IsVisible", oldValue, newValue, "可視性変更");
+            bool newValue = !adapter.IsVisible;
             
-            // 値を変更
-            adapter.IsVisible = newValue;
+            // コマンド発行（Undoは本体で記録）
+            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+            {
+                new MeshAttributeChange { Index = index, IsVisible = newValue }
+            });
             
-            // 本体エディタに反映
-            NotifyMeshContextChanged(adapter);
-            
-            RefreshTree();
             Log($"可視性: {adapter.DisplayName} → {(newValue ? "表示" : "非表示")}");
         }
 
         private void OnLockToggle(MeshTreeAdapter adapter)
         {
-            bool oldValue = adapter.IsLocked;
-            bool newValue = !oldValue;
+            int index = adapter.GetCurrentIndex();
+            if (index < 0) return;
             
-            // Undo記録
-            RecordAttributeChange(adapter, "IsLocked", oldValue, newValue, "ロック変更");
+            bool newValue = !adapter.IsLocked;
             
-            // 値を変更
-            adapter.IsLocked = newValue;
+            // コマンド発行（Undoは本体で記録）
+            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+            {
+                new MeshAttributeChange { Index = index, IsLocked = newValue }
+            });
             
-            // 本体エディタに反映
-            NotifyMeshContextChanged(adapter);
-            
-            RefreshTree();
             Log($"ロック: {adapter.DisplayName} → {(newValue ? "ロック" : "解除")}");
         }
 
@@ -724,22 +716,16 @@ namespace Poly_Ling.UI
                 return;
             }
             
-            int oldMirrorType = adapter.MirrorType;
-            int newMirrorType = (oldMirrorType + 1) % 4;
+            int index = adapter.GetCurrentIndex();
+            if (index < 0) return;
             
-            // Undo記録
-            RecordAttributeChange(adapter, "MirrorType", oldMirrorType, newMirrorType, "対称設定変更");
+            int newMirrorType = (adapter.MirrorType + 1) % 4;
             
-            // MeshContextに反映
-            if (adapter.MeshContext != null)
+            // コマンド発行（Undoは本体で記録）
+            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
             {
-                adapter.MeshContext.MirrorType = newMirrorType;
-            }
-            
-            // 本体エディタに反映
-            NotifyMeshContextChanged(adapter);
-            
-            RefreshTree();
+                new MeshAttributeChange { Index = index, MirrorType = newMirrorType }
+            });
             
             string[] mirrorNames = { "なし", "X軸", "Y軸", "Z軸" };
             Log($"対称: {adapter.DisplayName} → {mirrorNames[newMirrorType]}");
@@ -748,29 +734,6 @@ namespace Poly_Ling.UI
         // ================================================================
         // Undo/Redo サポート
         // ================================================================
-
-        /// <summary>
-        /// 属性変更をUndoスタックに記録
-        /// </summary>
-        private void RecordAttributeChange<T>(MeshTreeAdapter adapter, string propertyName, T oldValue, T newValue, string description)
-        {
-            var undoController = _toolContext?.UndoController;
-            if (undoController == null) return;
-            
-            int meshIndex = adapter.GetCurrentIndex();
-            if (meshIndex < 0) return;
-            
-            // MeshListChangeRecordを使用して記録
-            var record = new MeshAttributeChangeRecord
-            {
-                MeshIndex = meshIndex,
-                PropertyName = propertyName,
-                OldValue = oldValue,
-                NewValue = newValue
-            };
-            
-            undoController.MeshListStack.Record(record, $"{description}: {adapter.DisplayName}");
-        }
 
         /// <summary>
         /// 選択変更をUndoスタックに記録

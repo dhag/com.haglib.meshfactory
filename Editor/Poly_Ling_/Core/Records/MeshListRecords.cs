@@ -464,4 +464,64 @@ namespace Poly_Ling.UndoSystem
             ctx.OnFocusMeshListRequested?.Invoke();
         }
     }
+
+    // ============================================================
+    // メッシュ属性一括変更レコード
+    // ============================================================
+
+    /// <summary>
+    /// 複数メッシュの属性変更を一括で記録するレコード
+    /// UpdateMeshAttributesコマンドで使用
+    /// </summary>
+    public class MeshAttributesBatchChangeRecord : MeshListUndoRecord
+    {
+        /// <summary>変更前の値</summary>
+        public List<MeshAttributeChange> OldValues { get; set; }
+        
+        /// <summary>変更後の値</summary>
+        public List<MeshAttributeChange> NewValues { get; set; }
+
+        public MeshAttributesBatchChangeRecord() { }
+
+        public MeshAttributesBatchChangeRecord(List<MeshAttributeChange> oldValues, List<MeshAttributeChange> newValues)
+        {
+            OldValues = oldValues;
+            NewValues = newValues;
+        }
+
+        public override void Undo(ModelContext ctx)
+        {
+            ApplyValues(ctx, OldValues);
+            ctx.OnListChanged?.Invoke();
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            ApplyValues(ctx, NewValues);
+            ctx.OnListChanged?.Invoke();
+        }
+
+        private void ApplyValues(ModelContext ctx, List<MeshAttributeChange> values)
+        {
+            if (ctx == null || values == null) return;
+
+            foreach (var change in values)
+            {
+                if (change.Index < 0 || change.Index >= ctx.MeshContextCount) continue;
+                
+                var meshContext = ctx.GetMeshContext(change.Index);
+                if (meshContext == null) continue;
+
+                if (change.IsVisible.HasValue) meshContext.IsVisible = change.IsVisible.Value;
+                if (change.IsLocked.HasValue) meshContext.IsLocked = change.IsLocked.Value;
+                if (change.MirrorType.HasValue) meshContext.MirrorType = change.MirrorType.Value;
+                if (change.Name != null) meshContext.Name = change.Name;
+            }
+        }
+
+        public override string ToString()
+        {
+            return $"MeshAttributesBatchChange: {NewValues?.Count ?? 0} changes";
+        }
+    }
 }

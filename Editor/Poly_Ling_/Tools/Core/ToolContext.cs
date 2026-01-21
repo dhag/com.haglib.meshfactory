@@ -187,6 +187,9 @@ namespace Poly_Ling.Tools
         /// <summary>メッシュの順序を変更（Undo対応）</summary>
         public Action<int, int> ReorderMeshContext { get; set; }
 
+        /// <summary>メッシュ属性を変更（Undo対応）</summary>
+        public Action<IList<MeshAttributeChange>> UpdateMeshAttributes { get; set; }
+
         // === メッシュ作成コールバック（Phase 4: PrimitiveMeshTool対応） ===
 
         /// <summary>MeshObjectから新しいMeshContextを作成（Undo対応）</summary>
@@ -345,6 +348,38 @@ namespace Poly_Ling.Tools
         {
             SelectedVertices?.Clear();
             SelectionState?.ClearAll();
+        }
+    }
+
+    /// <summary>
+    /// メッシュ属性変更データ
+    /// UpdateMeshAttributesコマンドで使用
+    /// </summary>
+    public struct MeshAttributeChange
+    {
+        /// <summary>対象メッシュのインデックス</summary>
+        public int Index;
+        
+        /// <summary>可視性（nullで変更なし）</summary>
+        public bool? IsVisible;
+        
+        /// <summary>ロック状態（nullで変更なし）</summary>
+        public bool? IsLocked;
+        
+        /// <summary>ミラータイプ（nullで変更なし）</summary>
+        public int? MirrorType;
+        
+        /// <summary>名前（nullで変更なし）</summary>
+        public string Name;
+
+        public override string ToString()
+        {
+            var parts = new List<string> { $"[{Index}]" };
+            if (IsVisible.HasValue) parts.Add($"Visible={IsVisible.Value}");
+            if (IsLocked.HasValue) parts.Add($"Locked={IsLocked.Value}");
+            if (MirrorType.HasValue) parts.Add($"Mirror={MirrorType.Value}");
+            if (Name != null) parts.Add($"Name={Name}");
+            return string.Join(" ", parts);
         }
     }
 }

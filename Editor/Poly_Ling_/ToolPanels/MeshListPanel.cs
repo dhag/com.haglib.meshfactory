@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
+using Poly_Ling.Tools;
 using Poly_Ling.Localization;
 
 ////using MeshContext = MeshContext;
@@ -41,11 +42,11 @@ namespace Poly_Ling.Tools.Panels
             // ヘッダー
             ["Meshes"] = new() { ["en"] = "Meshes", ["ja"] = "メッシュ", ["hi"] = "ずけい" },
             ["Info"] = new() { ["en"] = "Info", ["ja"] = "情報", ["hi"] = "じょうほう" },
-
+            
             // メッセージ
             ["ModelNotAvailable"] = new() { ["en"] = "Model not available", ["ja"] = "モデルがありません", ["hi"] = "もでるがないよ" },
             ["NoMeshSelected"] = new() { ["en"] = "No mesh selected", ["ja"] = "メッシュ未選択", ["hi"] = "えらんでないよ" },
-
+            
             // 詳細情報
             ["SelectedMesh"] = new() { ["en"] = "Selected Mesh", ["ja"] = "選択中のメッシュ", ["hi"] = "えらんでるずけい" },
             ["Name"] = new() { ["en"] = "Name", ["ja"] = "名前", ["hi"] = "なまえ" },
@@ -55,18 +56,18 @@ namespace Poly_Ling.Tools.Panels
             ["Quads"] = new() { ["en"] = "Quads", ["ja"] = "四角形", ["hi"] = "しかく" },
             ["NGons"] = new() { ["en"] = "N-Gons", ["ja"] = "多角形", ["hi"] = "たかく" },
             ["Materials"] = new() { ["en"] = "Materials", ["ja"] = "マテリアル", ["hi"] = "ざいりょう" },
-
+            
             // ボタン
             ["MoveToTop"] = new() { ["en"] = "Move to Top", ["ja"] = "先頭へ", ["hi"] = "いちばんうえへ" },
             ["MoveToBottom"] = new() { ["en"] = "Move to Bottom", ["ja"] = "末尾へ", ["hi"] = "いちばんしたへ" },
             ["Duplicate"] = new() { ["en"] = "Duplicate", ["ja"] = "複製", ["hi"] = "コピー" },
             ["Delete"] = new() { ["en"] = "Delete", ["ja"] = "削除", ["hi"] = "けす" },
-
+            
             // ダイアログ
             ["DeleteMeshTitle"] = new() { ["en"] = "Delete Mesh", ["ja"] = "メッシュを削除", ["hi"] = "けす" },
             ["DeleteMeshMessage"] = new() { ["en"] = "Delete '{0}'?", ["ja"] = "'{0}' を削除しますか？", ["hi"] = "'{0}' をけす？" },
             ["Cancel"] = new() { ["en"] = "Cancel", ["ja"] = "キャンセル", ["hi"] = "やめる" },
-
+            
             // メニュー
             ["EmptyMesh"] = new() { ["en"] = "Empty Mesh", ["ja"] = "空のメッシュ", ["hi"] = "からっぽ" },
             ["UseMainWindow"] = new() { ["en"] = "(Use mesh creators in main toolPanel)", ["ja"] = "(メインウィンドウで作成)", ["hi"] = "(メインでつくってね)" },
@@ -82,7 +83,7 @@ namespace Poly_Ling.Tools.Panels
 
         private Vector2 _scrollPos;
         private bool _showInfo = true;
-
+        
         // 外部からの同期中フラグ（二重更新防止）
         private bool _isSyncingFromExternal = false;
 
@@ -262,9 +263,11 @@ namespace Poly_Ling.Tools.Panels
                 string newName = EditorGUILayout.TextField(T("Name"), meshContext.Name);
                 if (EditorGUI.EndChangeCheck() && !string.IsNullOrEmpty(newName))
                 {
-                    meshContext.Name = newName;
-                    NotifyModelChanged();
-                    Repaint();
+                    // コマンド発行（Undoは本体で記録）
+                    _context?.UpdateMeshAttributes?.Invoke(new[]
+                    {
+                        new MeshAttributeChange { Index = _context.SelectedMeshIndex, Name = newName }
+                    });
                 }
 
                 // 統計情報
@@ -370,9 +373,9 @@ namespace Poly_Ling.Tools.Panels
         {
             // 以前のイベント購読を解除
             UnsubscribeFromModel();
-
+            
             _scrollPos = Vector2.zero;
-
+            
             // 新しいイベント購読
             SubscribeToModel();
         }
@@ -408,17 +411,6 @@ namespace Poly_Ling.Tools.Panels
             // 自分が起こした変更は無視
             if (_isSyncingFromExternal) return;
             Repaint();
-        }
-
-        private void NotifyModelChanged()
-        {
-            _isSyncingFromExternal = true;
-            if (Model != null)
-            {
-                Model.IsDirty = true;
-                Model.OnListChanged?.Invoke();
-            }
-            _isSyncingFromExternal = false;
         }
     }
 }
