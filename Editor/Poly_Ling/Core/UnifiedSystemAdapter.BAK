@@ -44,7 +44,7 @@ namespace Poly_Ling.Core
         private bool _disposed = false;
         private bool _useUnifiedRendering = false; // 統合レンダリング使用フラグ
         private bool _skipHitTest = true;  // ヒットテストをスキップ（カメラ操作中など）
-        private bool _skipVertexFlagsReadback = true;  // 頂点フラグ読み戻しをスキップ
+        private bool _skipVertexFlagsReadback = false;  // 頂点フラグ読み戻しをスキップ
         private bool _skipGpuVisibilityCompute = false;  // GPU可視性計算をスキップ
         private bool _skipUnselectedWireframe = false;  // 非選択ワイヤーフレーム描画をスキップ
         private bool _skipUnselectedVertices = false;   // 非選択頂点描画をスキップ

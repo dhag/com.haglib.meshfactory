@@ -199,7 +199,7 @@ namespace Poly_Ling.Tools
             }
 
             _isDirty = true;
-            _ctx.SyncMesh?.Invoke();
+            _ctx.SyncMeshPositionsOnly?.Invoke(); // ドラッグ中は軽量版
         }
 
         private void ApplyScale(ToolContext ctx)
@@ -256,7 +256,7 @@ namespace Poly_Ling.Tools
 
             _startPositions.Clear();
             _isDirty = false;
-            _ctx.SyncMesh?.Invoke();
+            _ctx.SyncMeshPositionsOnly?.Invoke(); // ドラッグ中は軽量版
         }
 
         public void DrawGizmo(ToolContext ctx)

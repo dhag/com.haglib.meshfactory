@@ -241,6 +241,9 @@ namespace Poly_Ling.Tools
         /// <summary>MeshObjectからUnity Meshを更新</summary>
         public Action SyncMesh { get; set; }
 
+        /// <summary>MeshObjectからUnity Meshの位置のみ更新（軽量版）</summary>
+        public Action SyncMeshPositionsOnly { get; set; }
+
         /// <summary>画面再描画を要求</summary>
         public Action Repaint { get; set; }
 

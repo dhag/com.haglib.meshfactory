@@ -374,19 +374,23 @@ public partial class PolyLing
             bufMgr.UpdateAllSelectionFlags();
             
             // 面・線分の可視性計算（Culledフラグ設定）
-            var viewport = new Rect(0, 0, camera.pixelWidth, camera.pixelHeight);
-            bufMgr.DispatchClearBuffersGPU();
-            bufMgr.ComputeScreenPositionsGPU(camera.projectionMatrix * camera.worldToCameraMatrix, viewport);
-            bufMgr.DispatchFaceVisibilityGPU();
-            bufMgr.DispatchLineVisibilityGPU();
+            // カメラ操作中はスキップ可能
+            if (!_unifiedAdapter.SkipGpuVisibilityCompute)
+            {
+                var viewport = new Rect(0, 0, camera.pixelWidth, camera.pixelHeight);
+                bufMgr.DispatchClearBuffersGPU();
+                bufMgr.ComputeScreenPositionsGPU(camera.projectionMatrix * camera.worldToCameraMatrix, viewport);
+                bufMgr.DispatchFaceVisibilityGPU();
+                bufMgr.DispatchLineVisibilityGPU();
+            }
         }
         
         _unifiedAdapter.PrepareDrawing(
             camera,
             showWireframe,
             showVertices,
-            showUnselectedWireframe,
-            showUnselectedVertices,
+            showUnselectedWireframe && !_unifiedAdapter.SkipUnselectedWireframe,
+            showUnselectedVertices && !_unifiedAdapter.SkipUnselectedVertices,
             unifiedMeshIndex,
             pointSize,
             alpha);

@@ -462,13 +462,18 @@ namespace Poly_Ling.Core
             if (meshContexts == null)
                 return;
 
-            for (int meshIdx = 0; meshIdx < meshContexts.Count && meshIdx < _meshCount; meshIdx++)
+            for (int contextIdx = 0; contextIdx < meshContexts.Count; contextIdx++)
             {
-                var mc = meshContexts[meshIdx];
+                var mc = meshContexts[contextIdx];
                 if (mc?.MeshObject == null)
                     continue;
 
-                var meshInfo = _meshInfos[meshIdx];
+                // ContextIndex → UnifiedMeshIndex に変換
+                int unifiedMeshIdx = ContextToUnifiedMeshIndex(contextIdx);
+                if (unifiedMeshIdx < 0 || unifiedMeshIdx >= _meshCount)
+                    continue;
+
+                var meshInfo = _meshInfos[unifiedMeshIdx];
                 uint baseOffset = meshInfo.VertexStart;
                 var meshObject = mc.MeshObject;
 

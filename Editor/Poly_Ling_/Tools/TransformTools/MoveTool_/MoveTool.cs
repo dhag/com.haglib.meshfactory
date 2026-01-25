@@ -627,16 +627,22 @@ namespace Poly_Ling.Tools
             _currentTransform.Apply(worldDelta);
 
             var affectedIndices = _currentTransform.GetAffectedIndices();
-            foreach (int idx in affectedIndices)
+            
+            // OriginalPositions が null でない場合のみオフセット計算
+            if (ctx.VertexOffsets != null && ctx.OriginalPositions != null)
             {
-                if (ctx.VertexOffsets != null && idx >= 0 && idx < ctx.VertexOffsets.Length)
+                foreach (int idx in affectedIndices)
                 {
-                    ctx.VertexOffsets[idx] = ctx.MeshObject.Vertices[idx].Position - ctx.OriginalPositions[idx];
-                    ctx.GroupOffsets[idx] = ctx.VertexOffsets[idx];
+                    if (idx >= 0 && idx < ctx.VertexOffsets.Length && idx < ctx.OriginalPositions.Length)
+                    {
+                        ctx.VertexOffsets[idx] = ctx.MeshObject.Vertices[idx].Position - ctx.OriginalPositions[idx];
+                        ctx.GroupOffsets[idx] = ctx.VertexOffsets[idx];
+                    }
                 }
             }
 
-            ctx.SyncMesh?.Invoke();
+            // ドラッグ中は軽量版を使用（位置のみ更新）
+            ctx.SyncMeshPositionsOnly?.Invoke();
 
             if (ctx.UndoController != null)
             {
@@ -762,7 +768,9 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            ctx.SyncMesh?.Invoke();
+            // ドラッグ中は軽量版を使用（位置のみ更新）
+            Debug.Log($"[MoveTool.MoveVerticesAlongAxis] SyncMeshPositionsOnly is {(ctx.SyncMeshPositionsOnly == null ? "NULL" : "SET")}");
+            ctx.SyncMeshPositionsOnly?.Invoke();
         }
 
         private void EndAxisDrag(ToolContext ctx)

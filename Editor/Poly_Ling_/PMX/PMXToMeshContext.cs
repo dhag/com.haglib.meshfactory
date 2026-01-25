@@ -104,7 +104,8 @@ namespace Poly_Ling.PMX
             return new MeshContext
             {
                 MeshObject = mesh,
-                Type = MeshType.Mesh
+                Type = MeshType.Mesh,
+                OriginalPositions = mesh.Vertices.ConvertAll(v => v.Position).ToArray()
             };
         }
 
@@ -141,7 +142,8 @@ namespace Poly_Ling.PMX
             return new MeshContext
             {
                 MeshObject = mesh,
-                Type = MeshType.Mesh
+                Type = MeshType.Mesh,
+                OriginalPositions = mesh.Vertices.ConvertAll(v => v.Position).ToArray()
             };
         }
 

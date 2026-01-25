@@ -61,18 +61,23 @@ namespace Poly_Ling.Core
         /// <summary>
         /// 特定メッシュの位置を更新
         /// </summary>
-        public void ProcessTransformUpdate(int meshIndex)
+        public void ProcessTransformUpdate(int contextIndex)
         {
-            var meshContext = _currentModel?.GetMeshContext(meshIndex);
+            var meshContext = _currentModel?.GetMeshContext(contextIndex);
             if (meshContext?.MeshObject == null)
                 return;
 
-            _bufferManager.UpdatePositions(meshContext.MeshObject, meshIndex);
+            // ContextIndex → UnifiedMeshIndex に変換
+            int unifiedMeshIndex = _bufferManager.ContextToUnifiedMeshIndex(contextIndex);
+            if (unifiedMeshIndex < 0)
+                return;
+
+            _bufferManager.UpdatePositions(meshContext.MeshObject, unifiedMeshIndex);
 
             // ミラー位置も更新
             if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
             {
-                _bufferManager.UpdateMirrorPositions(meshIndex);
+                _bufferManager.UpdateMirrorPositions(unifiedMeshIndex);
             }
         }
 

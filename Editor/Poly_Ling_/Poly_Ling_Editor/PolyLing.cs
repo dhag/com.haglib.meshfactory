@@ -924,6 +924,33 @@ public partial class PolyLing : EditorWindow
         //_unifiedAdapter?.NotifyTopologyChanged();
     }
 
+    /// <summary>
+    /// 軽量版：頂点位置のみ更新（トポロジ不変の場合用）
+    /// </summary>
+    private void SyncMeshPositionsOnly(MeshContext meshContext)
+    {
+        if (meshContext == null || meshContext.MeshObject == null || meshContext.UnityMesh == null)
+            return;
+
+        var meshObject = meshContext.MeshObject;
+        var unityMesh = meshContext.UnityMesh;
+
+        // 頂点位置配列を構築
+        int vertexCount = meshObject.VertexCount;
+        var vertices = new Vector3[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+        {
+            vertices[i] = meshObject.Vertices[i].Position;
+        }
+
+        // 位置のみ更新
+        unityMesh.vertices = vertices;
+        unityMesh.RecalculateBounds();
+
+        // GPUバッファの位置情報を更新
+        NotifyUnifiedTransformChanged();
+    }
+
 
 
 
@@ -1091,6 +1118,20 @@ public partial class PolyLing : EditorWindow
         if (_isCameraDragging) return;
 
         _isCameraDragging = true;
+        
+        // ヒットテストをスキップ（カメラ操作中は不要）
+        // ★デバッグ用：一旦すべて無効化
+        /*
+        if (_unifiedAdapter != null)
+        {
+            _unifiedAdapter.SkipHitTest = true;
+            _unifiedAdapter.SkipVertexFlagsReadback = true;
+            _unifiedAdapter.SkipGpuVisibilityCompute = true;
+            _unifiedAdapter.SkipUnselectedWireframe = true;
+            _unifiedAdapter.SkipUnselectedVertices = true;
+        }
+        */
+        
         _cameraStartRotX = _rotationX;
         _cameraStartRotY = _rotationY;
         _cameraStartRotZ = _rotationZ;
@@ -1114,6 +1155,16 @@ public partial class PolyLing : EditorWindow
     {
         if (!_isCameraDragging) return;
         _isCameraDragging = false;
+        
+        // ヒットテストを再開
+        if (_unifiedAdapter != null)
+        {
+            _unifiedAdapter.SkipHitTest = false;
+            _unifiedAdapter.SkipVertexFlagsReadback = false;
+            _unifiedAdapter.SkipGpuVisibilityCompute = false;
+            _unifiedAdapter.SkipUnselectedWireframe = false;
+            _unifiedAdapter.SkipUnselectedVertices = false;
+        }
 
         bool hasChanged =
             !Mathf.Approximately(_cameraStartRotX, _rotationX) ||
