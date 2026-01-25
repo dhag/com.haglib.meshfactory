@@ -704,23 +704,83 @@ public partial class PolyLing
         // SkinnedMeshRenderer を追加
         var smr = go.AddComponent<SkinnedMeshRenderer>();
 
-        // バインドポーズを設定
-        mesh.bindposes = bindPoses;
+        // ボーンとバインドポーズの検証・設定
+        bool hasValidBones = bones != null && bones.Length > 0 && bones[0] != null;
+        bool hasValidBindPoses = bindPoses != null && bindPoses.Length > 0;
+        bool hasValidBoneWeights = mesh.boneWeights != null && mesh.boneWeights.Length == mesh.vertexCount;
 
-        // メッシュとボーンを設定
+        if (hasValidBones && hasValidBindPoses)
+        {
+            // バインドポーズの数をボーンの数に合わせる
+            if (bindPoses.Length != bones.Length)
+            {
+                var adjustedBindPoses = new Matrix4x4[bones.Length];
+                for (int i = 0; i < bones.Length; i++)
+                {
+                    if (i < bindPoses.Length)
+                        adjustedBindPoses[i] = bindPoses[i];
+                    else if (bones[i] != null)
+                        adjustedBindPoses[i] = bones[i].worldToLocalMatrix;
+                    else
+                        adjustedBindPoses[i] = Matrix4x4.identity;
+                }
+                mesh.bindposes = adjustedBindPoses;
+            }
+            else
+            {
+                mesh.bindposes = bindPoses;
+            }
+
+            smr.bones = bones;
+
+            // ルートボーンを設定
+            smr.rootBone = bones[0];
+
+            // ボーンウェイトがない場合、全頂点をルートボーン(index=0)に割り当て
+            if (!hasValidBoneWeights)
+            {
+                var defaultWeights = new BoneWeight[mesh.vertexCount];
+                for (int i = 0; i < defaultWeights.Length; i++)
+                {
+                    defaultWeights[i] = new BoneWeight { boneIndex0 = 0, weight0 = 1f };
+                }
+                mesh.boneWeights = defaultWeights;
+                Debug.LogWarning($"[SetupSkinnedMeshRenderer] '{go.name}': BoneWeights not set, using default (all vertices to root bone)");
+            }
+        }
+        else
+        {
+            // ボーンがない場合：自分自身をダミーボーンとして使用
+            Debug.LogWarning($"[SetupSkinnedMeshRenderer] '{go.name}': No valid bones, using self as dummy bone");
+            
+            var dummyBones = new Transform[] { go.transform };
+            var dummyBindPoses = new Matrix4x4[] { go.transform.worldToLocalMatrix };
+            
+            mesh.bindposes = dummyBindPoses;
+            smr.bones = dummyBones;
+            smr.rootBone = go.transform;
+
+            // 全頂点をダミーボーンに割り当て
+            var defaultWeights = new BoneWeight[mesh.vertexCount];
+            for (int i = 0; i < defaultWeights.Length; i++)
+            {
+                defaultWeights[i] = new BoneWeight { boneIndex0 = 0, weight0 = 1f };
+            }
+            mesh.boneWeights = defaultWeights;
+        }
+
+        // メッシュを設定
         smr.sharedMesh = mesh;
-        smr.bones = bones;
+
+        // localBoundsを設定（カリング用 - これがないとカメラが近づくと消える）
+        var bounds = mesh.bounds;
+        bounds.Expand(1f);  // 余裕を持たせる
+        smr.localBounds = bounds;
 
         // マテリアル設定
         if (materials != null && materials.Length > 0)
         {
             smr.sharedMaterials = materials;
-        }
-
-        // ルートボーンを設定（最初のボーン）
-        if (bones != null && bones.Length > 0)
-        {
-            smr.rootBone = bones[0];
         }
     }
 }

@@ -18,11 +18,17 @@ namespace Poly_Ling.PMX
         // PMXマジックナンバー
         private static readonly byte[] PMX_MAGIC = { 0x50, 0x4D, 0x58, 0x20 };  // "PMX "
 
+        // エンコーディング設定（Save時に設定）
+        private static int _characterEncoding = 0;
+
         /// <summary>
         /// PMXファイルを書き出し
         /// </summary>
         public static void Save(PMXDocument document, string filePath)
         {
+            // エンコーディングを設定
+            _characterEncoding = document.CharacterEncoding;
+
             using (var stream = new FileStream(filePath, FileMode.Create))
             using (var writer = new BinaryWriter(stream))
             {
@@ -37,6 +43,12 @@ namespace Poly_Ling.PMX
                 WriteDisplayFrames(writer, document);
                 WriteBodies(writer, document);
                 WriteJoints(writer, document);
+
+                // SoftBody (PMX 2.1以降)
+                if (document.Version >= 2.1f)
+                {
+                    WriteSoftBodies(writer, document);
+                }
             }
 
             Debug.Log($"[PMXWriter] Saved to: {filePath}");
@@ -71,18 +83,34 @@ namespace Poly_Ling.PMX
             int morphCount = document.Morphs.Count;
             int bodyCount = document.RigidBodies.Count;
 
-            writer.Write(GetIndexSize(vertexCount));   // 頂点インデックスサイズ
-            writer.Write(GetIndexSize(textureCount));  // テクスチャインデックスサイズ
-            writer.Write(GetIndexSize(materialCount)); // マテリアルインデックスサイズ
-            writer.Write(GetIndexSize(boneCount));     // ボーンインデックスサイズ
-            writer.Write(GetIndexSize(morphCount));    // モーフインデックスサイズ
-            writer.Write(GetIndexSize(bodyCount));     // 剛体インデックスサイズ
+            writer.Write(GetVertexIndexSize(vertexCount));    // 頂点インデックスサイズ（符号なし）
+            writer.Write(GetSignedIndexSize(textureCount));   // テクスチャインデックスサイズ（符号あり）
+            writer.Write(GetSignedIndexSize(materialCount));  // マテリアルインデックスサイズ（符号あり）
+            writer.Write(GetSignedIndexSize(boneCount));      // ボーンインデックスサイズ（符号あり）
+            writer.Write(GetSignedIndexSize(morphCount));     // モーフインデックスサイズ（符号あり）
+            writer.Write(GetSignedIndexSize(bodyCount));      // 剛体インデックスサイズ（符号あり）
         }
 
-        private static byte GetIndexSize(int count)
+        /// <summary>
+        /// 頂点インデックスサイズを取得（符号なし）
+        /// </summary>
+        private static byte GetVertexIndexSize(int count)
         {
+            // 頂点は符号なし: 1→0-255, 2→256-65535, 4→65536以上
             if (count <= 255) return 1;
             if (count <= 65535) return 2;
+            return 4;
+        }
+
+        /// <summary>
+        /// 符号ありインデックスサイズを取得（ボーン/テクスチャ/材質/モーフ/剛体用）
+        /// </summary>
+        private static byte GetSignedIndexSize(int count)
+        {
+            // 符号あり: 1→0-127, 2→128-32767, 4→32768以上
+            // -1を非参照値として使うため符号あり
+            if (count <= 127) return 1;
+            if (count <= 32767) return 2;
             return 4;
         }
 
@@ -106,7 +134,7 @@ namespace Poly_Ling.PMX
         {
             writer.Write(document.Vertices.Count);
 
-            int boneIndexSize = GetIndexSize(document.Bones.Count);
+            int boneIndexSize = GetSignedIndexSize(document.Bones.Count);
 
             foreach (var vertex in document.Vertices)
             {
@@ -146,20 +174,20 @@ namespace Poly_Ling.PMX
             switch (vertex.WeightType)
             {
                 case 0:  // BDEF1
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 0), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 0), boneIndexSize);
                     break;
 
                 case 1:  // BDEF2
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 0), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 1), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 0), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 1), boneIndexSize);
                     writer.Write(GetWeight(boneWeights, 0));
                     break;
 
                 case 2:  // BDEF4
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 0), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 1), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 2), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 3), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 0), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 1), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 2), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 3), boneIndexSize);
                     writer.Write(GetWeight(boneWeights, 0));
                     writer.Write(GetWeight(boneWeights, 1));
                     writer.Write(GetWeight(boneWeights, 2));
@@ -167,8 +195,8 @@ namespace Poly_Ling.PMX
                     break;
 
                 case 3:  // SDEF
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 0), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 1), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 0), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 1), boneIndexSize);
                     writer.Write(GetWeight(boneWeights, 0));
                     WriteVector3(writer, vertex.SDEF_C);
                     WriteVector3(writer, vertex.SDEF_R0);
@@ -176,10 +204,10 @@ namespace Poly_Ling.PMX
                     break;
 
                 case 4:  // QDEF
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 0), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 1), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 2), boneIndexSize);
-                    WriteBoneIndex(writer, document, GetBoneName(boneWeights, 3), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 0), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 1), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 2), boneIndexSize);
+                    WriteSignedIndex(writer, GetBoneIdx(boneWeights, 3), boneIndexSize);
                     writer.Write(GetWeight(boneWeights, 0));
                     writer.Write(GetWeight(boneWeights, 1));
                     writer.Write(GetWeight(boneWeights, 2));
@@ -188,22 +216,14 @@ namespace Poly_Ling.PMX
             }
         }
 
-        private static string GetBoneName(PMXBoneWeight[] weights, int index)
+        private static int GetBoneIdx(PMXBoneWeight[] weights, int index)
         {
-            return (weights != null && index < weights.Length) ? weights[index].BoneName : "";
+            return (weights != null && index < weights.Length) ? weights[index].BoneIndex : 0;
         }
 
         private static float GetWeight(PMXBoneWeight[] weights, int index)
         {
             return (weights != null && index < weights.Length) ? weights[index].Weight : 0f;
-        }
-
-        private static void WriteBoneIndex(BinaryWriter writer, PMXDocument document, string boneName, int indexSize)
-        {
-            int index = document.GetBoneIndex(boneName);
-            if (index < 0) index = 0;
-
-            WriteIndex(writer, index, indexSize);
         }
 
         // ================================================================
@@ -215,13 +235,13 @@ namespace Poly_Ling.PMX
             // 面数 × 3 = 頂点インデックス数
             writer.Write(document.Faces.Count * 3);
 
-            int vertexIndexSize = GetIndexSize(document.Vertices.Count);
+            int vertexIndexSize = GetVertexIndexSize(document.Vertices.Count);
 
             foreach (var face in document.Faces)
             {
-                WriteIndex(writer, face.VertexIndex1, vertexIndexSize);
-                WriteIndex(writer, face.VertexIndex2, vertexIndexSize);
-                WriteIndex(writer, face.VertexIndex3, vertexIndexSize);
+                WriteUnsignedIndex(writer, face.VertexIndex1, vertexIndexSize);
+                WriteUnsignedIndex(writer, face.VertexIndex2, vertexIndexSize);
+                WriteUnsignedIndex(writer, face.VertexIndex3, vertexIndexSize);
             }
         }
 
@@ -291,7 +311,7 @@ namespace Poly_Ling.PMX
         {
             writer.Write(document.Materials.Count);
 
-            int textureIndexSize = GetIndexSize(GetTextureCount(document));
+            int textureIndexSize = GetSignedIndexSize(GetTextureCount(document));
 
             foreach (var mat in document.Materials)
             {
@@ -320,10 +340,10 @@ namespace Poly_Ling.PMX
                 writer.Write(mat.EdgeSize);
 
                 // テクスチャインデックス
-                WriteIndex(writer, GetTextureIndex(document, mat.TexturePath), textureIndexSize);
+                WriteSignedIndex(writer, GetTextureIndex(document, mat.TexturePath), textureIndexSize);
 
                 // スフィアテクスチャインデックス
-                WriteIndex(writer, GetTextureIndex(document, mat.SphereTexturePath), textureIndexSize);
+                WriteSignedIndex(writer, GetTextureIndex(document, mat.SphereTexturePath), textureIndexSize);
 
                 // スフィアモード
                 writer.Write((byte)mat.SphereMode);
@@ -339,7 +359,7 @@ namespace Poly_Ling.PMX
                 }
                 else
                 {
-                    WriteIndex(writer, GetTextureIndex(document, mat.ToonTexturePath), textureIndexSize);
+                    WriteSignedIndex(writer, GetTextureIndex(document, mat.ToonTexturePath), textureIndexSize);
                 }
 
                 // メモ
@@ -358,7 +378,7 @@ namespace Poly_Ling.PMX
         {
             writer.Write(document.Bones.Count);
 
-            int boneIndexSize = GetIndexSize(document.Bones.Count);
+            int boneIndexSize = GetSignedIndexSize(document.Bones.Count);
 
             foreach (var bone in document.Bones)
             {
@@ -368,9 +388,14 @@ namespace Poly_Ling.PMX
                 // 位置
                 WriteVector3(writer, bone.Position);
 
-                // 親ボーンインデックス
-                int parentIndex = document.GetBoneIndex(bone.ParentBoneName);
-                WriteIndex(writer, parentIndex, boneIndexSize);
+                // 親ボーンインデックス（読み込み時のインデックスを使用）
+                int parentIndex = bone.ParentIndex;
+                if (parentIndex == 0 && !string.IsNullOrEmpty(bone.ParentBoneName))
+                {
+                    // インデックスが0で名前が設定されている場合は名前から検索
+                    parentIndex = document.GetBoneIndex(bone.ParentBoneName);
+                }
+                WriteSignedIndex(writer, parentIndex, boneIndexSize);
 
                 // 変形階層
                 writer.Write(bone.TransformLevel);
@@ -382,8 +407,12 @@ namespace Poly_Ling.PMX
                 bool connectByBone = (bone.Flags & 0x0001) != 0;
                 if (connectByBone)
                 {
-                    int connectIndex = document.GetBoneIndex(bone.ConnectBoneName);
-                    WriteIndex(writer, connectIndex, boneIndexSize);
+                    int connectIndex = bone.ConnectBoneIndex;
+                    if (connectIndex == 0 && !string.IsNullOrEmpty(bone.ConnectBoneName))
+                    {
+                        connectIndex = document.GetBoneIndex(bone.ConnectBoneName);
+                    }
+                    WriteSignedIndex(writer, connectIndex, boneIndexSize);
                 }
                 else
                 {
@@ -394,8 +423,12 @@ namespace Poly_Ling.PMX
                 bool hasGrant = (bone.Flags & 0x0100) != 0 || (bone.Flags & 0x0200) != 0;
                 if (hasGrant)
                 {
-                    int grantParentIndex = document.GetBoneIndex(bone.GrantParentBoneName);
-                    WriteIndex(writer, grantParentIndex, boneIndexSize);
+                    int grantParentIndex = bone.GrantParentIndex;
+                    if (grantParentIndex == 0 && !string.IsNullOrEmpty(bone.GrantParentBoneName))
+                    {
+                        grantParentIndex = document.GetBoneIndex(bone.GrantParentBoneName);
+                    }
+                    WriteSignedIndex(writer, grantParentIndex, boneIndexSize);
                     writer.Write(bone.GrantRate);
                 }
 
@@ -425,16 +458,24 @@ namespace Poly_Ling.PMX
                 bool hasIK = (bone.Flags & 0x0020) != 0;
                 if (hasIK)
                 {
-                    int ikTargetIndex = document.GetBoneIndex(bone.IKTargetBoneName);
-                    WriteIndex(writer, ikTargetIndex, boneIndexSize);
+                    int ikTargetIndex = bone.IKTargetIndex;
+                    if (ikTargetIndex == 0 && !string.IsNullOrEmpty(bone.IKTargetBoneName))
+                    {
+                        ikTargetIndex = document.GetBoneIndex(bone.IKTargetBoneName);
+                    }
+                    WriteSignedIndex(writer, ikTargetIndex, boneIndexSize);
                     writer.Write(bone.IKLoopCount);
                     writer.Write(bone.IKLimitAngle);
 
                     writer.Write(bone.IKLinks.Count);
                     foreach (var link in bone.IKLinks)
                     {
-                        int linkIndex = document.GetBoneIndex(link.BoneName);
-                        WriteIndex(writer, linkIndex, boneIndexSize);
+                        int linkIndex = link.BoneIndex;
+                        if (linkIndex == 0 && !string.IsNullOrEmpty(link.BoneName))
+                        {
+                            linkIndex = document.GetBoneIndex(link.BoneName);
+                        }
+                        WriteSignedIndex(writer, linkIndex, boneIndexSize);
                         writer.Write((byte)(link.HasLimit ? 1 : 0));
                         if (link.HasLimit)
                         {
@@ -454,10 +495,11 @@ namespace Poly_Ling.PMX
         {
             writer.Write(document.Morphs.Count);
 
-            int vertexIndexSize = GetIndexSize(document.Vertices.Count);
-            int boneIndexSize = GetIndexSize(document.Bones.Count);
-            int materialIndexSize = GetIndexSize(document.Materials.Count);
-            int morphIndexSize = GetIndexSize(document.Morphs.Count);
+            int vertexIndexSize = GetVertexIndexSize(document.Vertices.Count);
+            int boneIndexSize = GetSignedIndexSize(document.Bones.Count);
+            int materialIndexSize = GetSignedIndexSize(document.Materials.Count);
+            int morphIndexSize = GetSignedIndexSize(document.Morphs.Count);
+            int rigidBodyIndexSize = GetSignedIndexSize(document.RigidBodies.Count);
 
             foreach (var morph in document.Morphs)
             {
@@ -471,12 +513,73 @@ namespace Poly_Ling.PMX
 
                 foreach (var offset in morph.Offsets)
                 {
-                    if (offset is PMXVertexMorphOffset vertexOffset)
+                    switch (morph.MorphType)
                     {
-                        WriteIndex(writer, vertexOffset.VertexIndex, vertexIndexSize);
-                        WriteVector3(writer, vertexOffset.Offset);
+                        case 0: // Group
+                        case 9: // Flip
+                            if (offset is PMXGroupMorphOffset groupOffset)
+                            {
+                                WriteSignedIndex(writer, groupOffset.MorphIndex, morphIndexSize);
+                                writer.Write(groupOffset.Weight);
+                            }
+                            break;
+
+                        case 1: // Vertex
+                            if (offset is PMXVertexMorphOffset vertexOffset)
+                            {
+                                WriteUnsignedIndex(writer, vertexOffset.VertexIndex, vertexIndexSize);
+                                WriteVector3(writer, vertexOffset.Offset);
+                            }
+                            break;
+
+                        case 2: // Bone
+                            if (offset is PMXBoneMorphOffset boneOffset)
+                            {
+                                WriteSignedIndex(writer, boneOffset.BoneIndex, boneIndexSize);
+                                WriteVector3(writer, boneOffset.Translation);
+                                WriteQuaternion(writer, boneOffset.Rotation);
+                            }
+                            break;
+
+                        case 3:
+                        case 4:
+                        case 5:
+                        case 6:
+                        case 7: // UV
+                            if (offset is PMXUVMorphOffset uvOffset)
+                            {
+                                WriteUnsignedIndex(writer, uvOffset.VertexIndex, vertexIndexSize);
+                                WriteVector4(writer, uvOffset.Offset);
+                            }
+                            break;
+
+                        case 8: // Material
+                            if (offset is PMXMaterialMorphOffset matOffset)
+                            {
+                                WriteSignedIndex(writer, matOffset.MaterialIndex, materialIndexSize);
+                                writer.Write((byte)matOffset.Operation);
+                                WriteColor4(writer, matOffset.Diffuse);
+                                WriteColor3(writer, matOffset.Specular);
+                                writer.Write(matOffset.SpecularPower);
+                                WriteColor3(writer, matOffset.Ambient);
+                                WriteColor4(writer, matOffset.EdgeColor);
+                                writer.Write(matOffset.EdgeSize);
+                                WriteColor4(writer, matOffset.TextureCoef);
+                                WriteColor4(writer, matOffset.SphereCoef);
+                                WriteColor4(writer, matOffset.ToonCoef);
+                            }
+                            break;
+
+                        case 10: // Impulse
+                            if (offset is PMXImpulseMorphOffset impulseOffset)
+                            {
+                                WriteSignedIndex(writer, impulseOffset.RigidBodyIndex, rigidBodyIndexSize);
+                                writer.Write((byte)(impulseOffset.IsLocal ? 1 : 0));
+                                WriteVector3(writer, impulseOffset.Velocity);
+                                WriteVector3(writer, impulseOffset.Torque);
+                            }
+                            break;
                     }
-                    // 他のモーフタイプは必要に応じて追加
                 }
             }
         }
@@ -487,20 +590,48 @@ namespace Poly_Ling.PMX
 
         private static void WriteDisplayFrames(BinaryWriter writer, PMXDocument document)
         {
-            // 最小限の表示枠を出力
-            writer.Write(2);  // Root + 表情
+            // 読み込んだ表示枠がある場合はそれを書き込む
+            if (document.DisplayFrames.Count > 0)
+            {
+                writer.Write(document.DisplayFrames.Count);
 
-            // Root
-            WriteText(writer, "Root");
-            WriteText(writer, "Root");
-            writer.Write((byte)1);  // 特殊枠
-            writer.Write(0);  // 要素数
+                int boneIndexSize = GetSignedIndexSize(document.Bones.Count);
+                int morphIndexSize = GetSignedIndexSize(document.Morphs.Count);
 
-            // 表情
-            WriteText(writer, "表情");
-            WriteText(writer, "Exp");
-            writer.Write((byte)1);  // 特殊枠
-            writer.Write(0);  // 要素数
+                foreach (var frame in document.DisplayFrames)
+                {
+                    WriteText(writer, frame.Name ?? "");
+                    WriteText(writer, frame.NameEnglish ?? "");
+                    writer.Write((byte)(frame.IsSpecial ? 1 : 0));
+
+                    writer.Write(frame.Elements.Count);
+                    foreach (var element in frame.Elements)
+                    {
+                        writer.Write((byte)(element.IsMorph ? 1 : 0));
+                        if (element.IsMorph)
+                            WriteSignedIndex(writer, element.Index, morphIndexSize);
+                        else
+                            WriteSignedIndex(writer, element.Index, boneIndexSize);
+                    }
+                }
+            }
+            else
+            {
+                // 最小限の表示枠を出力
+                writer.Write(2);  // Root + 表情
+
+                // Root
+                WriteText(writer, "Root");
+                WriteText(writer, "Root");
+                writer.Write((byte)1);  // 特殊枠
+                writer.Write(0);  // 要素数
+
+                // 表情
+                WriteText(writer, "表情");
+                WriteText(writer, "Exp");
+                writer.Write((byte)1);  // 特殊枠
+                writer.Write(0);  // 要素数
+            }
         }
 
         // ================================================================
@@ -511,26 +642,30 @@ namespace Poly_Ling.PMX
         {
             writer.Write(document.RigidBodies.Count);
 
-            int boneIndexSize = GetIndexSize(document.Bones.Count);
+            int boneIndexSize = GetSignedIndexSize(document.Bones.Count);
 
             foreach (var body in document.RigidBodies)
             {
                 WriteText(writer, body.Name ?? "");
                 WriteText(writer, body.NameEnglish ?? "");
 
-                int boneIndex = document.GetBoneIndex(body.RelatedBoneName);
-                WriteIndex(writer, boneIndex, boneIndexSize);
+                // ボーンインデックス（読み込み時に保存したものを使用、なければ名前から検索）
+                int boneIndex = body.BoneIndex;
+                if (boneIndex < 0 && !string.IsNullOrEmpty(body.RelatedBoneName))
+                {
+                    boneIndex = document.GetBoneIndex(body.RelatedBoneName);
+                }
+                WriteSignedIndex(writer, boneIndex, boneIndexSize);
 
                 writer.Write((byte)body.Group);
 
-                // 非衝突グループ（16ビットフラグ）
-                ushort nonCollisionFlag = ParseNonCollisionGroups(body.NonCollisionGroups);
-                writer.Write(nonCollisionFlag);
+                // 非衝突グループフラグ（読み込み時のushort値をそのまま使用）
+                writer.Write(body.CollisionMask);
 
                 writer.Write((byte)body.Shape);
                 WriteVector3(writer, body.Size);
                 WriteVector3(writer, body.Position);
-                WriteVector3(writer, body.Rotation * Mathf.Deg2Rad);  // 度→ラジアン
+                WriteVector3(writer, body.Rotation);  // ラジアンのまま（変換しない）
 
                 writer.Write(body.Mass);
                 writer.Write(body.LinearDamping);
@@ -542,6 +677,7 @@ namespace Poly_Ling.PMX
             }
         }
 
+        // ParseNonCollisionGroupsは不要になったが、互換性のために残す
         private static ushort ParseNonCollisionGroups(string groups)
         {
             if (string.IsNullOrEmpty(groups)) return 0;
@@ -565,7 +701,7 @@ namespace Poly_Ling.PMX
         {
             writer.Write(document.Joints.Count);
 
-            int bodyIndexSize = GetIndexSize(document.RigidBodies.Count);
+            int bodyIndexSize = GetSignedIndexSize(document.RigidBodies.Count);
 
             foreach (var joint in document.Joints)
             {
@@ -574,18 +710,27 @@ namespace Poly_Ling.PMX
 
                 writer.Write((byte)joint.JointType);
 
-                int bodyAIndex = GetBodyIndex(document, joint.BodyAName);
-                int bodyBIndex = GetBodyIndex(document, joint.BodyBName);
-                WriteIndex(writer, bodyAIndex, bodyIndexSize);
-                WriteIndex(writer, bodyBIndex, bodyIndexSize);
+                // 剛体インデックス（読み込み時に保存したものを使用、なければ名前から検索）
+                int bodyAIndex = joint.RigidBodyIndexA;
+                if (bodyAIndex < -1 && !string.IsNullOrEmpty(joint.BodyAName))
+                {
+                    bodyAIndex = GetBodyIndex(document, joint.BodyAName);
+                }
+                int bodyBIndex = joint.RigidBodyIndexB;
+                if (bodyBIndex < -1 && !string.IsNullOrEmpty(joint.BodyBName))
+                {
+                    bodyBIndex = GetBodyIndex(document, joint.BodyBName);
+                }
+                WriteSignedIndex(writer, bodyAIndex, bodyIndexSize);
+                WriteSignedIndex(writer, bodyBIndex, bodyIndexSize);
 
                 WriteVector3(writer, joint.Position);
-                WriteVector3(writer, joint.Rotation * Mathf.Deg2Rad);
+                WriteVector3(writer, joint.Rotation);  // ラジアンのまま（変換しない）
 
                 WriteVector3(writer, joint.TranslationMin);
                 WriteVector3(writer, joint.TranslationMax);
-                WriteVector3(writer, joint.RotationMin * Mathf.Deg2Rad);
-                WriteVector3(writer, joint.RotationMax * Mathf.Deg2Rad);
+                WriteVector3(writer, joint.RotationMin);  // ラジアンのまま（変換しない）
+                WriteVector3(writer, joint.RotationMax);  // ラジアンのまま（変換しない）
 
                 WriteVector3(writer, joint.SpringTranslation);
                 WriteVector3(writer, joint.SpringRotation);
@@ -603,12 +748,105 @@ namespace Poly_Ling.PMX
         }
 
         // ================================================================
+        // ソフトボディ (PMX 2.1)
+        // ================================================================
+
+        private static void WriteSoftBodies(BinaryWriter writer, PMXDocument document)
+        {
+            writer.Write(document.SoftBodies.Count);
+
+            int materialIndexSize = GetSignedIndexSize(document.Materials.Count);
+            int rigidBodyIndexSize = GetSignedIndexSize(document.RigidBodies.Count);
+            int vertexIndexSize = GetVertexIndexSize(document.Vertices.Count);
+
+            foreach (var body in document.SoftBodies)
+            {
+                WriteText(writer, body.Name ?? "");
+                WriteText(writer, body.NameEnglish ?? "");
+
+                writer.Write((byte)body.Shape);
+                WriteSignedIndex(writer, body.MaterialIndex, materialIndexSize);
+
+                writer.Write((byte)body.Group);
+                writer.Write(body.CollisionMask);
+
+                writer.Write((byte)body.Flags);
+                writer.Write(body.BendingLinkDistance);
+                writer.Write(body.ClusterCount);
+
+                writer.Write(body.TotalMass);
+                writer.Write(body.Margin);
+
+                writer.Write(body.AeroModel);
+
+                // Config
+                writer.Write(body.VCF);
+                writer.Write(body.DP);
+                writer.Write(body.DG);
+                writer.Write(body.LF);
+                writer.Write(body.PR);
+                writer.Write(body.VC);
+                writer.Write(body.DF);
+                writer.Write(body.MT);
+                writer.Write(body.CHR);
+                writer.Write(body.KHR);
+                writer.Write(body.SHR);
+                writer.Write(body.AHR);
+
+                // Cluster
+                writer.Write(body.SRHR_CL);
+                writer.Write(body.SKHR_CL);
+                writer.Write(body.SSHR_CL);
+                writer.Write(body.SR_SPLT_CL);
+                writer.Write(body.SK_SPLT_CL);
+                writer.Write(body.SS_SPLT_CL);
+
+                // Iteration
+                writer.Write(body.V_IT);
+                writer.Write(body.P_IT);
+                writer.Write(body.D_IT);
+                writer.Write(body.C_IT);
+
+                // Material
+                writer.Write(body.LST);
+                writer.Write(body.AST);
+                writer.Write(body.VST);
+
+                // Anchors
+                writer.Write(body.Anchors.Count);
+                foreach (var anchor in body.Anchors)
+                {
+                    WriteSignedIndex(writer, anchor.RigidBodyIndex, rigidBodyIndexSize);
+                    WriteUnsignedIndex(writer, anchor.VertexIndex, vertexIndexSize);
+                    writer.Write((byte)(anchor.NearMode ? 1 : 0));
+                }
+
+                // Pin vertices
+                writer.Write(body.PinnedVertices.Count);
+                foreach (var vertexIndex in body.PinnedVertices)
+                {
+                    WriteUnsignedIndex(writer, vertexIndex, vertexIndexSize);
+                }
+            }
+        }
+
+        // ================================================================
         // ヘルパー
         // ================================================================
 
         private static void WriteText(BinaryWriter writer, string text)
         {
-            byte[] bytes = Encoding.Unicode.GetBytes(text ?? "");
+            byte[] bytes;
+            if (_characterEncoding == 1)
+            {
+                // UTF-8
+                bytes = Encoding.UTF8.GetBytes(text ?? "");
+            }
+            else
+            {
+                // UTF-16 (デフォルト)
+                bytes = Encoding.Unicode.GetBytes(text ?? "");
+            }
             writer.Write(bytes.Length);
             writer.Write(bytes);
         }
@@ -634,6 +872,14 @@ namespace Poly_Ling.PMX
             writer.Write(v.w);
         }
 
+        private static void WriteQuaternion(BinaryWriter writer, Quaternion q)
+        {
+            writer.Write(q.x);
+            writer.Write(q.y);
+            writer.Write(q.z);
+            writer.Write(q.w);
+        }
+
         private static void WriteColor3(BinaryWriter writer, Color c)
         {
             writer.Write(c.r);
@@ -649,15 +895,38 @@ namespace Poly_Ling.PMX
             writer.Write(c.a);
         }
 
-        private static void WriteIndex(BinaryWriter writer, int index, int indexSize)
+        /// <summary>
+        /// 符号なしインデックスを書き込む（頂点用）
+        /// </summary>
+        private static void WriteUnsignedIndex(BinaryWriter writer, int index, int indexSize)
         {
             switch (indexSize)
             {
                 case 1:
-                    writer.Write((byte)(index >= 0 ? index : 255));
+                    writer.Write((byte)index);
                     break;
                 case 2:
-                    writer.Write((ushort)(index >= 0 ? index : 65535));
+                    writer.Write((ushort)index);
+                    break;
+                case 4:
+                    writer.Write((uint)index);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 符号ありインデックスを書き込む（ボーン/テクスチャ/材質/モーフ/剛体用）
+        /// -1は非参照を意味する
+        /// </summary>
+        private static void WriteSignedIndex(BinaryWriter writer, int index, int indexSize)
+        {
+            switch (indexSize)
+            {
+                case 1:
+                    writer.Write((sbyte)index);
+                    break;
+                case 2:
+                    writer.Write((short)index);
                     break;
                 case 4:
                     writer.Write(index);

@@ -66,7 +66,16 @@ namespace Poly_Ling.PMX
             // 頂点
             foreach (var v in doc.Vertices)
             {
-                mesh.AddVertex(ConvertPosition(v.Position), ConvertNormal(v.Normal), v.UV);
+                var vertex = new Vertex(ConvertPosition(v.Position), v.UV);
+                vertex.Normals.Add(ConvertNormal(v.Normal));
+                
+                // ボーンウェイトを変換
+                if (v.BoneWeights != null && v.BoneWeights.Length > 0)
+                {
+                    vertex.BoneWeight = ConvertBoneWeight(v.BoneWeights);
+                }
+                
+                mesh.Vertices.Add(vertex);
             }
 
             // 面（頂点インデックスを反転してUnityの座標系に対応）
@@ -142,7 +151,17 @@ namespace Poly_Ling.PMX
                 return;
 
             var v = doc.Vertices[pmxIndex];
-            int newIndex = mesh.AddVertex(ConvertPosition(v.Position), ConvertNormal(v.Normal), v.UV);
+            var vertex = new Vertex(ConvertPosition(v.Position), v.UV);
+            vertex.Normals.Add(ConvertNormal(v.Normal));
+            
+            // ボーンウェイトを変換
+            if (v.BoneWeights != null && v.BoneWeights.Length > 0)
+            {
+                vertex.BoneWeight = ConvertBoneWeight(v.BoneWeights);
+            }
+            
+            int newIndex = mesh.Vertices.Count;
+            mesh.Vertices.Add(vertex);
             vertexMap[pmxIndex] = newIndex;
         }
 
@@ -160,6 +179,37 @@ namespace Poly_Ling.PMX
         private static Vector3 ConvertNormal(Vector3 pmxNormal)
         {
             return new Vector3(pmxNormal.x, pmxNormal.y, -pmxNormal.z);
+        }
+
+        /// <summary>
+        /// PMXボーンウェイトをUnity BoneWeightに変換
+        /// </summary>
+        private static BoneWeight ConvertBoneWeight(PMXBoneWeight[] pmxWeights)
+        {
+            var bw = new BoneWeight();
+            
+            if (pmxWeights.Length > 0)
+            {
+                bw.boneIndex0 = pmxWeights[0].BoneIndex >= 0 ? pmxWeights[0].BoneIndex : 0;
+                bw.weight0 = pmxWeights[0].Weight;
+            }
+            if (pmxWeights.Length > 1)
+            {
+                bw.boneIndex1 = pmxWeights[1].BoneIndex >= 0 ? pmxWeights[1].BoneIndex : 0;
+                bw.weight1 = pmxWeights[1].Weight;
+            }
+            if (pmxWeights.Length > 2)
+            {
+                bw.boneIndex2 = pmxWeights[2].BoneIndex >= 0 ? pmxWeights[2].BoneIndex : 0;
+                bw.weight2 = pmxWeights[2].Weight;
+            }
+            if (pmxWeights.Length > 3)
+            {
+                bw.boneIndex3 = pmxWeights[3].BoneIndex >= 0 ? pmxWeights[3].BoneIndex : 0;
+                bw.weight3 = pmxWeights[3].Weight;
+            }
+            
+            return bw;
         }
 
         #region Extended Information

@@ -62,6 +62,76 @@ namespace Poly_Ling.PMX
 
             Debug.Log($"[PMXImportResult] Applied material index offset: +{offset}");
         }
+
+        /// <summary>
+        /// 全MeshContextの頂点のBoneWeightインデックスにオフセットを加算
+        /// Appendモードで既存MeshContextがある場合に使用
+        /// </summary>
+        /// <param name="offset">加算するオフセット（既存MeshContext数）</param>
+        public void ApplyBoneWeightIndexOffset(int offset)
+        {
+            if (offset <= 0) return;
+
+            int convertedCount = 0;
+            foreach (var meshContext in MeshContexts)
+            {
+                if (meshContext?.MeshObject == null) continue;
+                
+                // ボーンタイプの場合はBoneWeightを持たない
+                if (meshContext.Type == MeshType.Bone) continue;
+
+                foreach (var vertex in meshContext.MeshObject.Vertices)
+                {
+                    if (vertex.BoneWeight.HasValue)
+                    {
+                        var bw = vertex.BoneWeight.Value;
+                        vertex.BoneWeight = new UnityEngine.BoneWeight
+                        {
+                            boneIndex0 = bw.boneIndex0 + offset,
+                            boneIndex1 = bw.weight1 > 0 ? bw.boneIndex1 + offset : bw.boneIndex1,
+                            boneIndex2 = bw.weight2 > 0 ? bw.boneIndex2 + offset : bw.boneIndex2,
+                            boneIndex3 = bw.weight3 > 0 ? bw.boneIndex3 + offset : bw.boneIndex3,
+                            weight0 = bw.weight0,
+                            weight1 = bw.weight1,
+                            weight2 = bw.weight2,
+                            weight3 = bw.weight3
+                        };
+                        convertedCount++;
+                    }
+                }
+            }
+
+            Debug.Log($"[PMXImportResult] Applied bone weight index offset: +{offset} ({convertedCount} vertices)");
+        }
+
+        /// <summary>
+        /// ボーンのHierarchyParentIndexにオフセットを加算
+        /// Appendモードで既存MeshContextがある場合に使用
+        /// </summary>
+        /// <param name="offset">加算するオフセット（既存MeshContext数）</param>
+        public void ApplyBoneHierarchyOffset(int offset)
+        {
+            if (offset <= 0) return;
+
+            int convertedCount = 0;
+            foreach (var meshContext in MeshContexts)
+            {
+                if (meshContext == null) continue;
+                
+                // ボーンの親インデックスにオフセットを適用
+                if (meshContext.Type == MeshType.Bone && meshContext.HierarchyParentIndex >= 0)
+                {
+                    meshContext.HierarchyParentIndex += offset;
+                    if (meshContext.MeshObject != null)
+                    {
+                        meshContext.MeshObject.HierarchyParentIndex = meshContext.HierarchyParentIndex;
+                    }
+                    convertedCount++;
+                }
+            }
+
+            Debug.Log($"[PMXImportResult] Applied bone hierarchy offset: +{offset} ({convertedCount} bones)");
+        }
     }
 
     /// <summary>
@@ -384,6 +454,7 @@ namespace Poly_Ling.PMX
             // 空のMeshObjectを作成（ボーンは頂点/面を持たない）
             var meshObject = new MeshObject(pmxBone.Name)
             {
+                Type = MeshType.Bone,
                 HierarchyParentIndex = parentIndex
             };
 
@@ -398,18 +469,24 @@ namespace Poly_Ling.PMX
             };
             meshObject.BoneTransform = boneTransform;
 
-            // MeshContext作成
-            var meshContext = new MeshContext
-            {
-                MeshObject = meshObject,
-                Type = MeshType.Bone,
-                IsVisible = true
-            };
-
             // BindPoseを設定（ワールド位置の逆変換）
             // BindPose = ボーンのワールド行列の逆行列
             // 回転・スケールなしの場合、これは単純な平行移動の逆
-            meshContext.BindPose = Matrix4x4.Translate(-worldPosition);
+            Matrix4x4 bindPose = Matrix4x4.Translate(-worldPosition);
+
+            // MeshContext作成（★MQOと同様に全プロパティを設定）
+            var meshContext = new MeshContext
+            {
+                MeshObject = meshObject,
+                Name = pmxBone.Name,  // ★名前を設定
+                Type = MeshType.Bone,
+                IsVisible = true,
+                BindPose = bindPose,
+                BoneTransform = boneTransform  // ★BoneTransformを設定
+            };
+
+            // ★MeshContextにもHierarchyParentIndexを設定（重要！）
+            meshContext.HierarchyParentIndex = parentIndex;
 
             return meshContext;
         }

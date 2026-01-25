@@ -60,7 +60,7 @@ public partial class PolyLing
         }
         if (GUILayout.Button("PMX ←→ MQO"))
         {
-            Poly_Ling.PMX.PMXMQOTransferPanel.ShowWindow();
+            Poly_Ling.UI.TypedMeshListPanel.Open(_toolManager?.toolContext);
         }
         if (GUILayout.Button("Avatar Creator..."))
         {

@@ -533,6 +533,21 @@ namespace Poly_Ling.PMX
                     // ================================================================
                     if (!handled)
                     {
+                        // ★ 既存MeshContext数を取得してオフセットを適用
+                        int existingMeshContextCount = 0;
+                        if (_context.Model?.MeshContextList != null)
+                        {
+                            existingMeshContextCount = _context.Model.MeshContextList.Count;
+                        }
+
+                        // BoneWeightとボーン階層にオフセットを適用（既存MeshContextがある場合）
+                        if (existingMeshContextCount > 0)
+                        {
+                            Debug.Log($"[PMXImportPanel] Append mode: Applying bone weight/hierarchy index offset +{existingMeshContextCount}");
+                            _lastResult.ApplyBoneWeightIndexOffset(existingMeshContextCount);
+                            _lastResult.ApplyBoneHierarchyOffset(existingMeshContextCount);
+                        }
+
                         // ★ 既存マテリアル数を取得してオフセットを適用
                         int existingMaterialCount = 0;
                         if (_context.Model?.Materials != null)
