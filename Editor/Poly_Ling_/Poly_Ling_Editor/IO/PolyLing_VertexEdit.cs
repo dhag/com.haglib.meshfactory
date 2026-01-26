@@ -262,6 +262,16 @@ public partial class PolyLing
                     }
                 }
             }
+
+            // Animatorコンポーネント追加オプション（SkinnedMesh出力時のみ表示）
+            if (currentExportAsSkinned)
+            {
+                EditorGUI.indentLevel++;
+                _addAnimatorComponent = EditorGUILayout.Toggle(
+                    L.Get("AddAnimatorComponent"),
+                    _addAnimatorComponent);
+                EditorGUI.indentLevel--;
+            }
         }
 
         bool hasAnyMesh = _meshContextList.Count > 0;

@@ -45,7 +45,7 @@ namespace Poly_Ling.Tools.Panels
         {
             if (_localize.TryGetValue(key, out var dict))
             {
-                string lang = L.CurrentLanguage;
+                string lang = L.GetLanguageKey(L.CurrentLanguage);
                 if (dict.TryGetValue(lang, out var text))
                     return text;
                 if (dict.TryGetValue("en", out var fallback))

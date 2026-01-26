@@ -252,6 +252,7 @@ public partial class PolyLing : EditorWindow
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ExportAsSkinned = value; }
     }
     private bool _createArmatureMeshesFolder = true; // Armature/Meshesフォルダを作成（EditorStateに含めない）
+    private bool _addAnimatorComponent = true; // エクスポート時にAnimatorコンポーネントを追加（デフォルトON）
     
     /// <summary>
     /// ツールの状態

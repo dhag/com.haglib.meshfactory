@@ -607,6 +607,12 @@ public partial class PolyLing
         GameObject objectToSelect = createdRoot ?? firstRootObject;
         if (objectToSelect != null)
         {
+            // Animatorコンポーネント追加オプションがONの場合
+            if (_addAnimatorComponent && objectToSelect.GetComponent<Animator>() == null)
+            {
+                objectToSelect.AddComponent<Animator>();
+            }
+            
             Selection.activeGameObject = objectToSelect;
             EditorGUIUtility.PingObject(objectToSelect);
         }
