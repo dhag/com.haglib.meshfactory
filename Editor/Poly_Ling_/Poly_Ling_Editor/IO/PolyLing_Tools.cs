@@ -15,6 +15,8 @@ using Poly_Ling.Tools;
 using Poly_Ling.Serialization;
 using Poly_Ling.Selection;
 using Poly_Ling.Commands;
+using Poly_Ling.Model;
+using MeshEditor;
 
 
 public partial class PolyLing : EditorWindow
@@ -107,6 +109,14 @@ public partial class PolyLing : EditorWindow
         // Phase 4追加: メッシュ作成コールバック
         ctx.CreateNewMeshContext = OnMeshContextCreatedAsNew;
         ctx.AddMeshObjectToCurrentMesh = OnMeshObjectCreatedAddToCurrent;
+
+        // モデル操作コールバック（NewModelモード対応）
+        ctx.Project = _project;
+        ctx.CreateNewModel = CreateNewModelWithUndo;
+        ctx.SelectModel = (index) =>
+        {
+            _commandQueue?.Enqueue(new SelectModelCommand(index, SelectModelWithUndo));
+        };
 
         // MeshContext操作コールバック（すべてCommandQueue経由）
         ctx.Model = _model;
@@ -687,6 +697,100 @@ public partial class PolyLing : EditorWindow
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
+    }
+
+    // ================================================================
+    // モデル操作（NewModelモード対応）
+    // ================================================================
+    // 【現在: 方針B（全状態保存方式）】
+    //   操作前後でProjectSnapshot.CaptureFromProjectContext()を呼び出し、
+    //   ProjectRecord として記録する
+    //
+    // 【方針A移行時の変更】
+    //   CreateNewModelWithUndo → CreateModelRecord を使用
+    //   SelectModelWithUndo → SelectModelRecord を使用
+    //   これにより、モデル作成時は作成されたモデルのみ、
+    //   モデル選択時はインデックス変更のみを記録し、メモリ効率が向上
+    //
+    // 詳細は Core/Records/ProjectUndoRecords.cs を参照
+    // ================================================================
+
+    /// <summary>
+    /// 新規モデルを作成してカレントに設定（Undo対応）
+    /// </summary>
+    /// <param name="name">モデル名（nullの場合は自動生成）</param>
+    /// <returns>作成されたModelContext</returns>
+    /// <remarks>
+    /// 方針A移行時: CreateModelRecord を使用し、作成されたモデルのスナップショットのみ保存
+    /// </remarks>
+    private ModelContext CreateNewModelWithUndo(string name)
+    {
+        // ★ 操作前のスナップショットを取得
+        var beforeSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
+        
+        // 新規モデルを作成（ProjectContextが処理）
+        var newModel = _project.CreateNewModel(name);
+        
+        Debug.Log($"[PolyLing] Created new model: {newModel.Name} (index: {_project.CurrentModelIndex})");
+        
+        // ToolContextのModel参照を更新
+        _toolManager.toolContext.Model = newModel;
+        
+        // ★ 操作後のスナップショットを取得
+        var afterSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
+        
+        // ★ Undo記録
+        if (_undoController != null && beforeSnapshot != null && afterSnapshot != null)
+        {
+            var record = ProjectRecord.CreateNewModel(beforeSnapshot, afterSnapshot);
+            _undoController.RecordProjectOperation(record);
+            Debug.Log($"[PolyLing] Recorded NewModel undo: {_undoController.GetProjectStackDebugInfo()}");
+        }
+        
+        // バッファを再構築（OnCurrentModelChangedで処理される）
+        // ProjectContext.CreateNewModelがCurrentModelIndexを設定するとコールバックが呼ばれる
+        
+        return newModel;
+    }
+
+    /// <summary>
+    /// モデルを選択（カレントに設定・Undo対応）
+    /// </summary>
+    /// <param name="index">モデルインデックス</param>
+    /// <remarks>
+    /// 方針A移行時: SelectModelRecord を使用し、oldIndex/newIndex のみ保存
+    /// （全モデルのスナップショットは不要になる）
+    /// </remarks>
+    private void SelectModelWithUndo(int index)
+    {
+        if (_project == null) return;
+        
+        int oldIndex = _project.CurrentModelIndex;
+        if (oldIndex == index) return;
+        
+        // ★ 操作前のスナップショットを取得
+        var beforeSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
+        
+        Debug.Log($"[PolyLing] Selecting model: {index} (from {oldIndex})");
+        
+        // モデルを選択（ProjectContextが処理）
+        if (_project.SelectModel(index))
+        {
+            // ToolContextのModel参照を更新
+            _toolManager.toolContext.Model = _project.CurrentModel;
+            
+            // ★ 操作後のスナップショットを取得
+            var afterSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
+            
+            // ★ Undo記録
+            if (_undoController != null && beforeSnapshot != null && afterSnapshot != null)
+            {
+                var record = ProjectRecord.CreateSelectModel(beforeSnapshot, afterSnapshot);
+                _undoController.RecordProjectOperation(record);
+            }
+            
+            // バッファ再構築はOnCurrentModelChangedで処理される
+        }
     }
 
     /// <summary>

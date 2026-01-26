@@ -194,4 +194,27 @@ namespace Poly_Ling.Commands
             _handler?.Invoke(_meshContexts);
         }
     }
+
+    /// <summary>
+    /// モデル選択コマンド
+    /// </summary>
+    public class SelectModelCommand : ICommand
+    {
+        private readonly int _index;
+        private readonly Action<int> _handler;
+
+        public string Description => $"Select Model at index {_index}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        public SelectModelCommand(int index, Action<int> handler)
+        {
+            _index = index;
+            _handler = handler;
+        }
+
+        public void Execute()
+        {
+            _handler?.Invoke(_index);
+        }
+    }
 }

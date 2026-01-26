@@ -10,6 +10,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Localization;
+using Poly_Ling.Materials;
 
 //using MeshContext = MeshContext;
 
@@ -665,39 +666,48 @@ namespace Poly_Ling.MQO
                         }
                     }
                     // ================================================================
-                    // NewModelモード: 新規MeshContextとして追加（マテリアルはインポート分のみ）
+                    // NewModelモード: 新規モデルを作成してそこにメッシュを追加
                     // ================================================================
                     else if (_settings.ImportMode == MQOImportMode.NewModel)
                     {
-                        // NewModelモードでは既存マテリアルに関係なく、インポート分のみで新規モデル
-                        // マテリアルインデックスはそのまま（0から開始）
-                        if (_context.AddMeshContexts != null)
+                        // 新規モデルを作成
+                        if (_context.CreateNewModel != null)
                         {
-                            Debug.Log($"[MQOImportPanel] NewModel mode: Adding {_lastResult.MeshContexts.Count} meshes as new model");
-                            _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
+                            string modelName = Path.GetFileNameWithoutExtension(_lastFilePath);
+                            var newModel = _context.CreateNewModel(modelName);
+                            
+                            Debug.Log($"[MQOImportPanel] NewModel mode: Created new model '{newModel?.Name}'");
+                            
+                            // 新しいモデルにマテリアルを設定（先にマテリアルを追加）
+                            if (_lastResult.MaterialReferences.Count > 0)
+                            {
+                                if (newModel != null)
+                                {
+                                    newModel.MaterialReferences = new List<Materials.MaterialReference>(_lastResult.MaterialReferences);
+                                    Debug.Log($"[MQOImportPanel] Set {_lastResult.MaterialReferences.Count} materials to new model");
+                                }
+                            }
+                            
+                            // 新しいモデルにメッシュを追加
+                            // 注: _context.Model は CreateNewModel で更新されている
+                            if (_context.AddMeshContexts != null)
+                            {
+                                Debug.Log($"[MQOImportPanel] NewModel mode: Adding {_lastResult.MeshContexts.Count} meshes to new model");
+                                _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
+                            }
+                            else
+                            {
+                                foreach (var meshContext in _lastResult.MeshContexts)
+                                {
+                                    Debug.Log($"[MQOImportPanel] Adding MeshContext: {meshContext.Name}");
+                                    _context.AddMeshContext?.Invoke(meshContext);
+                                }
+                            }
                             handled = true;
                         }
                         else
                         {
-                            foreach (var meshContext in _lastResult.MeshContexts)
-                            {
-                                Debug.Log($"[MQOImportPanel] Adding MeshContext: {meshContext.Name}");
-                                _context.AddMeshContext?.Invoke(meshContext);
-                            }
-                            handled = true;
-                        }
-
-                        // ボーンは既にMeshContextsに含まれている（PMXと同じ方式）
-                        // BoneMeshContextsは使用しない
-
-                        // NewModelモードではマテリアルを追加（インポート分のみ）
-                        if (_lastResult.MaterialReferences.Count > 0 && _context.AddMaterialReferences != null)
-                        {
-                            _context.AddMaterialReferences.Invoke(_lastResult.MaterialReferences);
-                        }
-                        else if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
-                        {
-                            _context.AddMaterials.Invoke(_lastResult.Materials);
+                            Debug.LogWarning("[MQOImportPanel] CreateNewModel not available, falling back to Append mode");
                         }
                     }
 

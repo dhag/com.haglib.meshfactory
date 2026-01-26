@@ -20,6 +20,7 @@ using static Poly_Ling.Gizmo.GLGizmoDrawer;
 using Poly_Ling.Rendering;
 using Poly_Ling.Symmetry;
 using Poly_Ling.Commands;
+using MeshEditor;
 
 
 
@@ -387,6 +388,7 @@ public partial class PolyLing : EditorWindow
         _undoController = new MeshUndoController("PolyLing");
         _undoController.SetCommandQueue(_commandQueue); // キューを設定
         _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
+        _undoController.OnProjectUndoRedoPerformed += OnProjectUndoRedoPerformed;  // Project-level Undo/Redo
 
 
         // ProjectContext のコールバック設定
@@ -519,17 +521,6 @@ public partial class PolyLing : EditorWindow
 
     }
 
-
-    /// <summary>
-    /// カレントモデル変更時のコールバック
-    /// </summary>
-    // private void OnCurrentModelChanged(int newIndex)
-    // {
-    //     Debug.Log($"[OnCurrentModelChanged] Model index changed to {newIndex}");
-    //     RefreshUndoControllerReferences();
-    //     Repaint();
-    //  }
-
     /// <summary>
     /// Selection System 初期化
     /// </summary>
@@ -650,6 +641,7 @@ public partial class PolyLing : EditorWindow
         if (_undoController != null)
         {
             _undoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
+            _undoController.OnProjectUndoRedoPerformed -= OnProjectUndoRedoPerformed;  // Project-level Undo/Redo
             _undoController.Dispose();
             _undoController = null;
         }

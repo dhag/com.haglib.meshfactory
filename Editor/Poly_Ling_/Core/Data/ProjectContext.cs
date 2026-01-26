@@ -253,6 +253,69 @@ namespace Poly_Ling.Model
             return true;
         }
 
+        /// <summary>
+        /// 新規モデルを作成してカレントに設定
+        /// </summary>
+        /// <param name="name">モデル名（nullの場合は自動生成）</param>
+        /// <returns>作成されたModelContext</returns>
+        public ModelContext CreateNewModel(string name = null)
+        {
+            // 名前の自動生成
+            if (string.IsNullOrEmpty(name))
+            {
+                name = $"Model {Models.Count + 1}";
+            }
+
+            var model = new ModelContext(name);
+            int index = AddModel(model);
+            
+            // 新しいモデルをカレントに設定
+            CurrentModelIndex = index;
+            
+            Debug.Log($"[ProjectContext] Created new model '{name}' at index {index}");
+            return model;
+        }
+
+        /// <summary>
+        /// 指定インデックスのモデルを選択（カレントに設定）
+        /// </summary>
+        /// <param name="index">モデルインデックス</param>
+        /// <returns>選択成功したか</returns>
+        public bool SelectModel(int index)
+        {
+            if (index < 0 || index >= Models.Count)
+            {
+                Debug.LogWarning($"[ProjectContext] Invalid model index: {index} (count: {Models.Count})");
+                return false;
+            }
+
+            if (_currentModelIndex == index)
+            {
+                return true; // 既に選択中
+            }
+
+            int oldIndex = _currentModelIndex;
+            CurrentModelIndex = index;
+            Debug.Log($"[ProjectContext] Model selection changed: {oldIndex} -> {index} ({CurrentModel?.Name})");
+            return true;
+        }
+
+        /// <summary>
+        /// 指定モデルを選択（カレントに設定）
+        /// </summary>
+        /// <param name="model">選択するモデル</param>
+        /// <returns>選択成功したか</returns>
+        public bool SelectModel(ModelContext model)
+        {
+            int index = IndexOf(model);
+            if (index < 0)
+            {
+                Debug.LogWarning($"[ProjectContext] Model not found: {model?.Name}");
+                return false;
+            }
+            return SelectModel(index);
+        }
+
         // ================================================================
         // 全体操作
         // ================================================================

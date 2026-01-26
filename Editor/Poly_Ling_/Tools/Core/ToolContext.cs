@@ -169,6 +169,23 @@ namespace Poly_Ling.Tools
         /// <summary>有効なメッシュが選択されているか</summary>
         public bool HasValidMeshSelection => Model?.HasValidMeshContextSelection ?? false;
 
+        // === モデル操作コールバック（NewModelモード対応） ===
+
+        /// <summary>プロジェクトコンテキスト参照</summary>
+        public ProjectContext Project { get; set; }
+
+        /// <summary>新規モデルを作成してカレントに設定（Undo対応）</summary>
+        public Func<string, ModelContext> CreateNewModel { get; set; }
+
+        /// <summary>モデルを選択（Undo対応）</summary>
+        public Action<int> SelectModel { get; set; }
+
+        /// <summary>モデル数</summary>
+        public int ModelCount => Project?.ModelCount ?? 0;
+
+        /// <summary>現在のモデルインデックス</summary>
+        public int CurrentModelIndex => Project?.CurrentModelIndex ?? 0;
+
         // === メッシュリスト操作コールバック（Undo対応） ===
 
         /// <summary>メッシュコンテキストを追加（Undo対応）</summary>

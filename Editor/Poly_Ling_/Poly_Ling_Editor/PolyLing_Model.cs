@@ -13,6 +13,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Localization;
+using MeshEditor;
 
 public partial class PolyLing
 {
@@ -107,14 +108,11 @@ public partial class PolyLing
 
         int oldIndex = _project.CurrentModelIndex;
 
+        // ★ 操作前のスナップショットを取得（ProjectSnapshot）
+        var beforeSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
+
         // ★Phase 1: 現在のメッシュの選択を保存
         SaveSelectionToCurrentMesh();
-
-        // 選択状態スナップショット（Undo用）
-        MeshSelectionSnapshot oldSelection = _model?.CurrentMeshContext?.CaptureSelection();
-
-        // カメラ状態を保存
-        CameraSnapshot oldCamera = CaptureCameraSnapshot();
 
         // モデル切り替え
         _project.CurrentModelIndex = newIndex;
@@ -143,20 +141,22 @@ public partial class PolyLing
         // 頂点オフセット初期化
         InitVertexOffsets();
 
-        // カメラをフィット
-        CameraSnapshot newCamera = CaptureCameraSnapshot();
-
-        // 選択状態スナップショット（新モデル）
-        MeshSelectionSnapshot newSelection = _model?.CurrentMeshContext?.CaptureSelection();
-
         // MeshContextをUndoControllerにロード
         if (_model?.CurrentMeshContext != null)
         {
             LoadMeshContextToUndoController(_model.CurrentMeshContext);
         }
 
-        // ★Phase 3: Undo記録
-        RecordModelSwitchUndo(oldIndex, newIndex, oldCamera, newCamera, oldSelection, newSelection);
+        // ★ 操作後のスナップショットを取得
+        var afterSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
+
+        // ★ ProjectSnapshotベースのUndo記録
+        if (_undoController != null && beforeSnapshot != null && afterSnapshot != null)
+        {
+            var record = ProjectRecord.CreateSelectModel(beforeSnapshot, afterSnapshot);
+            _undoController.RecordProjectOperation(record);
+            Debug.Log($"[SwitchModelWithUndo] Recorded: {oldIndex} -> {newIndex}, {_undoController.GetProjectStackDebugInfo()}");
+        }
 
         Repaint();
     }
@@ -471,7 +471,54 @@ public partial class PolyLing
     private void OnCurrentModelChanged(int newIndex)
     {
         Debug.Log($"[OnCurrentModelChanged] Model index changed to {newIndex}");
-        RefreshUndoControllerReferences();
+        
+        // _model は _project.CurrentModel を参照するプロパティなので自動的に更新される
+        // _meshContextList も _model.MeshContextList を参照するので自動的に更新される
+        var currentModel = _model;
+        
+        if (currentModel == null)
+        {
+            Debug.LogWarning("[OnCurrentModelChanged] CurrentModel is null");
+            return;
+        }
+        
+        // 選択インデックスを同期
+        _selectedIndex = currentModel.SelectedMeshContextIndex;
+        
+        // ToolContextのModel参照を更新
+        if (_toolManager?.toolContext != null)
+        {
+            _toolManager.toolContext.Model = currentModel;
+        }
+        
+        // UndoControllerのMeshListを更新
+        if (_undoController != null)
+        {
+            _undoController.SetMeshList(_meshContextList, OnMeshListChanged);
+        }
+        
+        // 選択をクリア
+        _selectionState?.ClearAll();
+        _selectedVertices.Clear();
+        
+        // バッファを再構築
+        _unifiedAdapter?.SetModelContext(currentModel);
+        
+        // 新しいモデルの最初のメッシュを選択
+        if (_meshContextList.Count > 0 && _selectedIndex < 0)
+        {
+            _selectedIndex = 0;
+            currentModel.SelectedMeshContextIndex = 0;
+        }
+        
+        // UndoControllerに現在のMeshContextをロード
+        if (_selectedIndex >= 0 && _selectedIndex < _meshContextList.Count)
+        {
+            LoadMeshContextToUndoController(_meshContextList[_selectedIndex]);
+        }
+        
+        // トポロジ更新
+        UpdateTopology();
         Repaint();
     }
 
@@ -480,8 +527,63 @@ public partial class PolyLing
     /// </summary>
     private void OnModelsChanged()
     {
-        Debug.Log("[OnModelsChanged] Models list changed");
+        Debug.Log($"[OnModelsChanged] Models count: {_project?.ModelCount ?? 0}");
         Repaint();
+    }
+
+    /// <summary>
+    /// プロジェクトUndo/Redo実行時の復元処理
+    /// </summary>
+    /// <param name="record">実行されたProjectRecord</param>
+    /// <param name="isRedo">Redoの場合true、Undoの場合false</param>
+    private void OnProjectUndoRedoPerformed(ProjectRecord record, bool isRedo)
+    {
+        if (record == null || _project == null) return;
+
+        Debug.Log($"[OnProjectUndoRedoPerformed] {(isRedo ? "Redo" : "Undo")} operation: {record.Operation}");
+
+        // 復元するスナップショットを決定
+        ProjectSnapshot snapshot = isRedo ? record.AfterSnapshot : record.BeforeSnapshot;
+        if (snapshot == null)
+        {
+            Debug.LogWarning("[OnProjectUndoRedoPerformed] Snapshot is null");
+            return;
+        }
+
+        // スナップショットからProjectContextを復元
+        snapshot.RestoreToProjectContext(_project, model =>
+        {
+            // 各モデルのMeshContextにMaterialOwnerを設定
+            foreach (var meshContext in model.MeshContextList)
+            {
+                meshContext.MaterialOwner = model;
+            }
+        });
+
+        // ToolContextのModel参照を更新
+        if (_toolManager?.toolContext != null)
+        {
+            _toolManager.toolContext.Model = _project.CurrentModel;
+        }
+
+        // UndoControllerのMeshListを更新
+        if (_undoController != null && _project.CurrentModel != null)
+        {
+            _undoController.SetMeshList(_project.CurrentModel.MeshContextList, OnMeshListChanged);
+        }
+
+        // 選択をクリア
+        _selectionState?.ClearAll();
+        _selectedVertices.Clear();
+
+        // バッファを再構築
+        _unifiedAdapter?.SetModelContext(_project.CurrentModel);
+
+        // トポロジ更新
+        UpdateTopology();
+        Repaint();
+
+        Debug.Log($"[OnProjectUndoRedoPerformed] Restored to {_project.ModelCount} models, current: {_project.CurrentModelIndex}");
     }
 
     /// <summary>

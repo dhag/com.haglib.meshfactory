@@ -32,7 +32,18 @@ namespace Poly_Ling.UndoSystem
         private UndoStack<ModelContext> _meshListStack;
         private UndoGroup _subWindowGroup;
 
-        // === プロジェクトレベルUndo（ファイル読み込み/新規作成用） ===
+        // ====================================================================
+        // プロジェクトレベルUndo（ファイル読み込み/新規作成/モデル操作用）
+        // ====================================================================
+        // 【現在: 方針B（全状態保存方式）】
+        //   Stack<ProjectRecord> で操作前後のスナップショットを保存
+        //
+        // 【方針A移行時の変更】
+        //   Stack<MeshEditor.ProjectRecord> → Stack<IProjectUndoRecord>
+        //   PerformProjectUndo/Redo で record.Undo(ctx)/Redo(ctx) を呼び出し
+        //
+        // 詳細は ProjectUndoRecords.cs のファイル先頭コメントを参照
+        // ====================================================================
         private Stack<MeshEditor.ProjectRecord> _projectUndoStack = new Stack<MeshEditor.ProjectRecord>();
         private Stack<MeshEditor.ProjectRecord> _projectRedoStack = new Stack<MeshEditor.ProjectRecord>();
 
@@ -86,6 +97,11 @@ namespace Poly_Ling.UndoSystem
 
         // === イベント ===
         public event Action OnUndoRedoPerformed;
+        
+        /// <summary>
+        /// プロジェクトUndo実行時のコールバック（復元処理用）
+        /// </summary>
+        public event Action<MeshEditor.ProjectRecord, bool> OnProjectUndoRedoPerformed;
 
         // === コンストラクタ ===
         public MeshUndoController(string windowId = "MainEditor")
@@ -1396,6 +1412,20 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
+        /// プロジェクトレベルのUndoを実行（コールバック呼び出し付き）
+        /// </summary>
+        /// <returns>Undo成功したか</returns>
+        public bool PerformProjectUndo()
+        {
+            var record = UndoProject();
+            if (record == null) return false;
+
+            // コールバックを呼び出し（isRedo = false）
+            OnProjectUndoRedoPerformed?.Invoke(record, false);
+            return true;
+        }
+
+        /// <summary>
         /// プロジェクトレベルのRedoを実行
         /// </summary>
         /// <returns>Redo実行されたProjectRecord（復元用）、実行できない場合はnull</returns>
@@ -1406,6 +1436,20 @@ namespace Poly_Ling.UndoSystem
             var record = _projectRedoStack.Pop();
             _projectUndoStack.Push(record);
             return record;
+        }
+
+        /// <summary>
+        /// プロジェクトレベルのRedoを実行（コールバック呼び出し付き）
+        /// </summary>
+        /// <returns>Redo成功したか</returns>
+        public bool PerformProjectRedo()
+        {
+            var record = RedoProject();
+            if (record == null) return false;
+
+            // コールバックを呼び出し（isRedo = true）
+            OnProjectUndoRedoPerformed?.Invoke(record, true);
+            return true;
         }
 
         /// <summary>

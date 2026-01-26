@@ -9,6 +9,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Localization;
+using Poly_Ling.Materials;
 
 namespace Poly_Ling.PMX
 {
@@ -498,33 +499,48 @@ namespace Poly_Ling.PMX
                         }
                     }
                     // ================================================================
-                    // NewModelモード: 新規MeshContextとして追加（マテリアルはインポート分のみ）
+                    // NewModelモード: 新規モデルを作成してそこにメッシュを追加
                     // ================================================================
                     else if (_settings.ImportMode == PMXImportMode.NewModel)
                     {
-                        // NewModelモードでは既存マテリアルに関係なく、インポート分のみで新規モデル
-                        // マテリアルインデックスはそのまま（0から開始）
-                        if (_context.AddMeshContexts != null)
+                        // 新規モデルを作成
+                        if (_context.CreateNewModel != null)
                         {
-                            Debug.Log($"[PMXImportPanel] NewModel mode: Adding {_lastResult.MeshContexts.Count} meshes as new model");
-                            _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
+                            string modelName = Path.GetFileNameWithoutExtension(_lastFilePath);
+                            var newModel = _context.CreateNewModel(modelName);
+                            
+                            Debug.Log($"[PMXImportPanel] NewModel mode: Created new model '{newModel?.Name}'");
+                            
+                            // 新しいモデルにマテリアルを設定（先にマテリアルを追加）
+                            if (_lastResult.MaterialReferences.Count > 0)
+                            {
+                                if (newModel != null)
+                                {
+                                    newModel.MaterialReferences = new List<Materials.MaterialReference>(_lastResult.MaterialReferences);
+                                    Debug.Log($"[PMXImportPanel] Set {_lastResult.MaterialReferences.Count} materials to new model");
+                                }
+                            }
+                            
+                            // 新しいモデルにメッシュを追加
+                            // 注: _context.Model は CreateNewModel で更新されている
+                            if (_context.AddMeshContexts != null)
+                            {
+                                Debug.Log($"[PMXImportPanel] NewModel mode: Adding {_lastResult.MeshContexts.Count} meshes to new model");
+                                _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
+                            }
+                            else
+                            {
+                                foreach (var meshContext in _lastResult.MeshContexts)
+                                {
+                                    Debug.Log($"[PMXImportPanel] Adding MeshContext: {meshContext.Name}");
+                                    _context.AddMeshContext?.Invoke(meshContext);
+                                }
+                            }
                             handled = true;
                         }
                         else
                         {
-                            foreach (var meshContext in _lastResult.MeshContexts)
-                            {
-                                Debug.Log($"[PMXImportPanel] Adding MeshContext: {meshContext.Name}");
-                                _context.AddMeshContext?.Invoke(meshContext);
-                            }
-                            handled = true;
-                        }
-
-                        // NewModelモードではマテリアルを追加（インポート分のみ）
-                        if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
-                        {
-                            Debug.Log($"[PMXImportPanel] Adding materials: {_lastResult.Materials.Count}");
-                            _context.AddMaterials.Invoke(_lastResult.Materials);
+                            Debug.LogWarning("[PMXImportPanel] CreateNewModel not available, falling back to Append mode");
                         }
                     }
 
