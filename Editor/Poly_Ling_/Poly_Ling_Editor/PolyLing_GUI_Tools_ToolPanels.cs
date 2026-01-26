@@ -92,7 +92,10 @@ public partial class PolyLing
         {
             Poly_Ling.UI.TypedMeshListPanel.Open(_toolManager?.toolContext);
         }
-
+        if(GUILayout.Button("モデル選択"))
+        {
+            Poly_Ling.Tools.Panels.ModelListPanel.Open(_toolManager?.toolContext);
+        }
 
         EditorGUI.indentLevel--;
     }
