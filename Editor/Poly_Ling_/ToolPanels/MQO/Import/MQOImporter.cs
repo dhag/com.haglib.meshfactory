@@ -11,6 +11,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
 using Poly_Ling.Materials;
+using Poly_Ling.PMX;
 
 // MeshContextはSimpleMeshFactoryのネストクラス
 //using MeshContext = MeshContext;
@@ -512,6 +513,13 @@ namespace Poly_Ling.MQO
             {
                 CalculateParentIndices(result.MeshContexts, 0);
             }
+
+            // Tポーズ変換（オプション）
+            if (settings.ConvertToTPose && boneContextCount > 0)
+            {
+                Debug.Log($"[MQOImporter] Converting to T-Pose...");
+                PMXImporter.ConvertToTPoseFromMeshContexts(result.MeshContexts);
+            }
         }
 
         /// <summary>
@@ -869,32 +877,13 @@ namespace Poly_Ling.MQO
                 };
                 meshObject.BoneTransform = boneTransform;
 
-                // ワールド位置を計算（BindPose用）
-                Vector3 worldPosition = localPosition;
-                int currentParent = parentObjIdx;
-                while (currentParent >= 0)
-                {
-                    var parentObj = boneObjects[currentParent];
-                    Vector3 parentTrans = parentObj.Translation;
-                    worldPosition += new Vector3(
-                        parentTrans.x * settings.Scale,
-                        parentTrans.y * settings.Scale,
-                        settings.FlipZ ? -parentTrans.z * settings.Scale : parentTrans.z * settings.Scale
-                    );
-                    currentParent = parentIndices[currentParent];
-                }
-
-                // BindPose行列を計算
-                Matrix4x4 bindPose = Matrix4x4.Translate(-worldPosition);
-
-                // MeshContextを作成
+                // MeshContextを作成（BindPoseは後で設定）
                 var meshContext = new MeshContext
                 {
                     MeshObject = meshObject,
                     Name = obj.Name,
                     Type = MeshType.Bone,
                     IsVisible = obj.IsVisible,
-                    BindPose = bindPose,
                     BoneTransform = boneTransform
                 };
 
@@ -911,6 +900,14 @@ namespace Poly_Ling.MQO
                     result.BoneContexts.Add(boneContextsTemp[i]);
                     result.BoneNameToIndex[boneContextsTemp[i].Name] = result.BoneContexts.Count - 1;
                 }
+            }
+
+            // BindPoseを計算（PMXImporterと同じ方式）
+            // BoneTransformのローカル位置・回転からワールド行列を計算し、その逆行列をBindPoseとする
+            var worldMatrices = PMXImporter.CalculateWorldMatrices(result.BoneContexts);
+            foreach (var kv in worldMatrices)
+            {
+                result.BoneContexts[kv.Key].BindPose = kv.Value.inverse;
             }
 
             Debug.Log($"[MQOImporter] Imported {result.BoneContexts.Count} bones from __Armature__");

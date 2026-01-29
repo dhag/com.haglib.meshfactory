@@ -105,6 +105,7 @@ namespace Poly_Ling.MQO
             // ミラー設定
             ["BakeMirror"] = new() { ["en"] = "Bake Mirror", ["ja"] = "ミラーをベイク" },
             ["ImportBonesFromArmature"] = new() { ["en"] = "Import Bones from __Armature__", ["ja"] = "__Armature__からボーンをインポート" },
+            ["ConvertToTPose"] = new() { ["en"] = "Convert to T-Pose", ["ja"] = "Tポーズに変換" },
             
             // デバッグ設定
             ["DebugSettings"] = new() { ["en"] = "Debug Settings", ["ja"] = "デバッグ設定" },
@@ -435,6 +436,16 @@ namespace Poly_Ling.MQO
             _settings.ImportBonesFromArmature = EditorGUILayout.Toggle(
                 new GUIContent(T("ImportBonesFromArmature"), "MQO内の__Armature__オブジェクト以下をボーン構造としてインポート"),
                 _settings.ImportBonesFromArmature);
+
+            // ボーンインポートが有効な場合のみTポーズ変換オプションを表示
+            if (_settings.ImportBonesFromArmature)
+            {
+                EditorGUI.indentLevel++;
+                _settings.ConvertToTPose = EditorGUILayout.Toggle(
+                    new GUIContent(T("ConvertToTPose"), "腕ボーンを水平に回転させてTポーズに変換（スキニング頂点も変換）"),
+                    _settings.ConvertToTPose);
+                EditorGUI.indentLevel--;
+            }
             
             // ================================================================
             // デバッグ設定

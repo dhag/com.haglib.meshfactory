@@ -1269,34 +1269,54 @@ namespace Poly_Ling.PMX
                 }
 
                 // ================================================================
-                // ボーン位置埋め込み（MQOExporter互換）
-                // ================================================================
-                // 【暫定実装】
-                // 現在はPMXBoneのPositionのみをtranslationとして出力。
-                // PMXにはボーンの回転情報がないため、位置のみ。
-                // 将来的には回転・スケールも含む完全なトランスフォームに対応予定。
-                // 
-                // 注意: MQOExporterも同様のボーン出力機能を持っているが、
-                // 現時点ではVertexIdHelperを使用していない。
-                // 将来的にはMQOExporterもVertexIdHelperのメソッドを使うように統合予定。
+                // ボーン埋め込み（位置・回転）
+                // PMXBoneのPosition（位置）とLocalAxisX/Z（回転）をMQOに出力
+                // PMXImporter.CalculateBoneModelRotationを使用してワールド回転を計算
                 // ================================================================
 
                 int embeddedBoneCount = 0;
 
                 if (_embedBones && _pmxDocument.Bones.Count > 0)
                 {
+                    // PMXImportSettingsを作成（回転計算用）
+                    var boneImportSettings = new Poly_Ling.PMX.PMXImportSettings
+                    {
+                        Scale = 1f,       // スケールはVertexIdHelperで適用
+                        FlipZ = _boneFlipZ  // Z軸反転
+                    };
+
                     // PMXBone → BoneData に変換
                     var boneDataList = new List<VertexIdHelper.BoneData>();
 
-                    foreach (var pmxBone in _pmxDocument.Bones)
+                    const int FLAG_LOCAL_AXIS = 0x0800;
+
+                    for (int i = 0; i < _pmxDocument.Bones.Count; i++)
                     {
+                        var pmxBone = _pmxDocument.Bones[i];
+
+                        // LocalAxisフラグを確認
+                        bool hasLocalAxis = (pmxBone.Flags & FLAG_LOCAL_AXIS) != 0;
+
+                        // LocalAxis=1: 回転を計算、LocalAxis=0: identity
+                        Quaternion modelRotation;
+                        if (hasLocalAxis)
+                        {
+                            modelRotation = Poly_Ling.PMX.PMXImporter.CalculateBoneModelRotation(
+                                pmxBone, _pmxDocument, i, boneImportSettings);
+                        }
+                        else
+                        {
+                            modelRotation = Quaternion.identity;
+                        }
+
                         var boneData = new VertexIdHelper.BoneData
                         {
                             Name = pmxBone.Name,
                             ParentIndex = pmxBone.ParentIndex,
                             Position = pmxBone.Position,
-                            Rotation = Vector3.zero,  // 【暫定】PMXにはボーン回転情報がない
-                            Scale = Vector3.one,      // 【暫定】PMXにはボーンスケール情報がない
+                            ModelRotation = modelRotation,
+                            Rotation = Vector3.zero,
+                            Scale = Vector3.one,
                             IsVisible = true,
                             IsLocked = false
                         };
@@ -1317,7 +1337,7 @@ namespace Poly_Ling.PMX
                     }
 
                     embeddedBoneCount = _pmxDocument.Bones.Count;
-                    Debug.Log($"[PMXBoneWeightExport] Embedded {embeddedBoneCount} bones");
+                    Debug.Log($"[PMXBoneWeightExport] Embedded {embeddedBoneCount} bones with rotation");
                 }
 
                 // MQOWriterで保存（VertexIdTool.csにあるMQOWriterを使用）

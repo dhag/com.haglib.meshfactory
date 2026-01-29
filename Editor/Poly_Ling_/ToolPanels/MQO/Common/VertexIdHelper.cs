@@ -591,6 +591,9 @@ namespace Poly_Ling.MQO
             /// <summary>位置（ワールド座標）</summary>
             public Vector3 Position { get; set; }
 
+            /// <summary>モデル空間回転（Quaternion、ワールド回転）</summary>
+            public Quaternion? ModelRotation { get; set; }
+
             /// <summary>回転（度数法、暫定で0）</summary>
             public Vector3 Rotation { get; set; }
 
@@ -722,8 +725,28 @@ namespace Poly_Ling.MQO
             // 2. ボーンのdepthを計算
             var depths = CalculateBoneDepths(bones);
 
-            // 3. ローカル座標を計算（絶対座標 → 親からの相対座標）
-            var localPositions = CalculateLocalPositions(bones);
+            // 3. ローカル座標・回転を計算
+            Vector3[] localPositions;
+            Vector3[] localRotations;
+
+            // ModelRotationが設定されているか確認（最初のボーンで判定）
+            bool hasModelRotation = bones.Count > 0 && bones[0].ModelRotation.HasValue;
+
+            if (hasModelRotation)
+            {
+                // 回転を考慮したローカル変換を計算（flipZ変換をここで適用）
+                (localPositions, localRotations) = CalculateLocalTransforms(bones, flipZ);
+            }
+            else
+            {
+                // 従来の方式（回転を無視、後方互換）
+                localPositions = CalculateLocalPositions(bones);
+                localRotations = new Vector3[bones.Count];
+                for (int i = 0; i < bones.Count; i++)
+                {
+                    localRotations[i] = bones[i].Rotation;
+                }
+            }
 
             // 4. ボーンをツリー順（深さ優先）でソート
             var sortedIndices = SortBonesDepthFirst(bones);
@@ -734,7 +757,9 @@ namespace Poly_Ling.MQO
                 var bone = bones[idx];
                 int depth = depths[idx];
                 Vector3 localPos = localPositions[idx];
-                objects.Add(CreateBoneObjectWithLocalPosition(bone, localPos, depth, scale, flipZ));
+                Vector3 localRot = localRotations[idx];
+                // hasModelRotation=trueの場合、flipZは既にCalculateLocalTransformsで適用済み
+                objects.Add(CreateBoneObjectWithLocalTransform(bone, localPos, localRot, depth, scale, hasModelRotation ? false : flipZ));
             }
 
             // 6. __ArmatureName__オブジェクト
@@ -751,6 +776,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>
         /// ローカル座標を計算（絶対座標から親からの相対座標へ変換）
+        /// 【旧版】回転を考慮しない単純差分
         /// </summary>
         private static Vector3[] CalculateLocalPositions(IList<BoneData> bones)
         {
@@ -774,6 +800,63 @@ namespace Poly_Ling.MQO
             }
 
             return localPositions;
+        }
+
+        /// <summary>
+        /// ローカル座標・回転を計算（親の回転を考慮）
+        /// PMXImporter.ConvertBoneと同等のアルゴリズム
+        /// </summary>
+        /// <param name="bones">ボーンデータリスト（Position=ワールド座標（PMX座標系）、ModelRotation=ワールド回転（FlipZ変換済み））</param>
+        /// <param name="flipZ">Z軸反転フラグ（Positionに適用）</param>
+        /// <returns>ローカル位置とローカル回転（オイラー角）の配列</returns>
+        private static (Vector3[] localPositions, Vector3[] localRotations) CalculateLocalTransforms(IList<BoneData> bones, bool flipZ)
+        {
+            var localPositions = new Vector3[bones.Count];
+            var localRotations = new Vector3[bones.Count];
+
+            for (int i = 0; i < bones.Count; i++)
+            {
+                var bone = bones[i];
+                Quaternion modelRotation = bone.ModelRotation ?? Quaternion.identity;
+
+                // ワールド位置（flipZ変換）
+                Vector3 worldPosition = bone.Position;
+                if (flipZ)
+                {
+                    worldPosition.z = -worldPosition.z;
+                }
+
+                if (bone.ParentIndex >= 0 && bone.ParentIndex < bones.Count)
+                {
+                    // 親がいる場合
+                    var parent = bones[bone.ParentIndex];
+                    Quaternion parentModelRotation = parent.ModelRotation ?? Quaternion.identity;
+
+                    // 親のワールド位置（flipZ変換）
+                    Vector3 parentWorldPos = parent.Position;
+                    if (flipZ)
+                    {
+                        parentWorldPos.z = -parentWorldPos.z;
+                    }
+
+                    // MQO: childWorldPos = parentWorldPos + parentRotation * childTranslation
+                    // したがって: childTranslation = Inverse(parentRotation) * (childWorldPos - parentWorldPos)
+                    Vector3 worldOffset = worldPosition - parentWorldPos;
+                    localPositions[i] = Quaternion.Inverse(parentModelRotation) * worldOffset;
+
+                    // 親からの相対回転
+                    Quaternion localRotation = Quaternion.Inverse(parentModelRotation) * modelRotation;
+                    localRotations[i] = localRotation.eulerAngles;
+                }
+                else
+                {
+                    // ルートボーン：ワールド座標・回転をそのまま使用
+                    localPositions[i] = worldPosition;
+                    localRotations[i] = modelRotation.eulerAngles;
+                }
+            }
+
+            return (localPositions, localRotations);
         }
 
         /// <summary>
@@ -806,6 +889,47 @@ namespace Poly_Ling.MQO
             obj.Attributes.Add(new MQOAttribute("rotation", bone.Rotation.x, bone.Rotation.y, bone.Rotation.z));
 
             // スケール（暫定で1,1,1）
+            obj.Attributes.Add(new MQOAttribute("scale", bone.Scale.x, bone.Scale.y, bone.Scale.z));
+
+            return obj;
+        }
+
+        /// <summary>
+        /// ボーンオブジェクトを作成（ローカル座標・回転指定版）
+        /// </summary>
+        /// <param name="bone">ボーンデータ</param>
+        /// <param name="localPosition">ローカル位置（親の回転考慮済み）</param>
+        /// <param name="localRotation">ローカル回転（オイラー角、度数法）</param>
+        /// <param name="depth">MQOオブジェクトの深さ</param>
+        /// <param name="scale">スケール係数</param>
+        /// <param name="flipZ">Z軸反転フラグ（位置に適用、回転には適用しない）</param>
+        private static MQOObject CreateBoneObjectWithLocalTransform(BoneData bone, Vector3 localPosition, Vector3 localRotation, int depth, float scale, bool flipZ)
+        {
+            var obj = new MQOObject { Name = bone.Name ?? "Bone" };
+
+            // デプス設定
+            obj.Attributes.Add(new MQOAttribute("depth", depth));
+
+            // 基本属性
+            obj.Attributes.Add(new MQOAttribute("visible", bone.IsVisible ? 15 : 0));
+            obj.Attributes.Add(new MQOAttribute("locking", bone.IsLocked ? 1 : 0));
+            obj.Attributes.Add(new MQOAttribute("shading", 1));
+            obj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+            obj.Attributes.Add(new MQOAttribute("color", 1f, 1f, 1f));
+            obj.Attributes.Add(new MQOAttribute("color_type", 0));
+
+            // ローカルトランスフォーム（位置）
+            Vector3 pos = localPosition * scale;
+            if (flipZ)
+            {
+                pos.z = -pos.z;
+            }
+            obj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
+
+            // ローカル回転（オイラー角）
+            obj.Attributes.Add(new MQOAttribute("rotation", localRotation.x, localRotation.y, localRotation.z));
+
+            // スケール
             obj.Attributes.Add(new MQOAttribute("scale", bone.Scale.x, bone.Scale.y, bone.Scale.z));
 
             return obj;

@@ -132,6 +132,10 @@ namespace Poly_Ling.MQO
         [Tooltip("MQO内の__Armature__オブジェクト以下をボーン構造としてインポートする")]
         public bool ImportBonesFromArmature = true;
 
+        /// <summary>AポーズをTポーズに変換</summary>
+        [Tooltip("腕ボーンを水平に回転させてTポーズに変換する（スキニング頂点も変換）")]
+        public bool ConvertToTPose = false;
+
         // ================================================================
         // 頂点デバッグ設定
         // ================================================================
@@ -206,6 +210,7 @@ namespace Poly_Ling.MQO
                 BoneWeightCSVPath = this.BoneWeightCSVPath,
                 BakeMirror = this.BakeMirror,
                 ImportBonesFromArmature = this.ImportBonesFromArmature,
+                ConvertToTPose = this.ConvertToTPose,
                 DebugVertexInfo = this.DebugVertexInfo,
                 DebugVertexNearUVCount = this.DebugVertexNearUVCount
             };
@@ -229,6 +234,7 @@ namespace Poly_Ling.MQO
                    BoneWeightCSVPath != o.BoneWeightCSVPath ||
                    BakeMirror != o.BakeMirror ||
                    ImportBonesFromArmature != o.ImportBonesFromArmature ||
+                   ConvertToTPose != o.ConvertToTPose ||
                    DebugVertexInfo != o.DebugVertexInfo ||
                    DebugVertexNearUVCount != o.DebugVertexNearUVCount;
         }
@@ -251,6 +257,7 @@ namespace Poly_Ling.MQO
             BoneWeightCSVPath = o.BoneWeightCSVPath;
             BakeMirror = o.BakeMirror;
             ImportBonesFromArmature = o.ImportBonesFromArmature;
+            ConvertToTPose = o.ConvertToTPose;
             DebugVertexInfo = o.DebugVertexInfo;
             DebugVertexNearUVCount = o.DebugVertexNearUVCount;
         }
