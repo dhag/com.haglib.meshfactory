@@ -203,8 +203,9 @@ namespace Poly_Ling.MQO
             if (model == null || model.MeshContextList == null)
                 return 0;
 
-            // メッシュとボーンを分離
+            // メッシュ、BakedMirror、ボーンを分離
             var meshContexts = new List<MeshContext>();
+            var bakedMirrorContexts = new List<MeshContext>();
             var boneContexts = new List<MeshContext>();
 
             foreach (var mc in model.MeshContextList)
@@ -212,11 +213,13 @@ namespace Poly_Ling.MQO
                 if (mc == null) continue;
                 if (mc.Type == MeshType.Bone)
                     boneContexts.Add(mc);
+                else if (mc.Type == MeshType.BakedMirror && mc.MeshObject != null)
+                    bakedMirrorContexts.Add(mc);
                 else if (mc.Type == MeshType.Mesh && mc.MeshObject != null)
                     meshContexts.Add(mc);
             }
 
-            return ExportWeightCSV(filePath, meshContexts, boneContexts, model.MeshContextList);
+            return ExportWeightCSV(filePath, meshContexts, bakedMirrorContexts, boneContexts, model.MeshContextList);
         }
 
         /// <summary>
@@ -230,6 +233,26 @@ namespace Poly_Ling.MQO
         public static int ExportWeightCSV(
             string filePath,
             IList<MeshContext> meshContexts,
+            IList<MeshContext> boneContexts,
+            IList<MeshContext> allContexts)
+        {
+            // BakedMirrorなしで呼び出された場合は空リストを渡す
+            return ExportWeightCSV(filePath, meshContexts, new List<MeshContext>(), boneContexts, allContexts);
+        }
+
+        /// <summary>
+        /// ボーンウェイト情報をCSVに出力（BakedMirror対応版）
+        /// </summary>
+        /// <param name="filePath">出力ファイルパス</param>
+        /// <param name="meshContexts">メッシュMeshContextのリスト</param>
+        /// <param name="bakedMirrorContexts">BakedMirror MeshContextのリスト</param>
+        /// <param name="boneContexts">ボーンMeshContextのリスト</param>
+        /// <param name="allContexts">全MeshContextのリスト（インデックス→名前解決用）</param>
+        /// <returns>出力した頂点数</returns>
+        public static int ExportWeightCSV(
+            string filePath,
+            IList<MeshContext> meshContexts,
+            IList<MeshContext> bakedMirrorContexts,
             IList<MeshContext> boneContexts,
             IList<MeshContext> allContexts)
         {
@@ -339,6 +362,84 @@ namespace Poly_Ling.MQO
                         if (vertex.HasMirrorBoneWeight)
                         {
                             var bw = vertex.MirrorBoneWeight.Value;
+
+                            if (bw.weight0 > 0 && boneIndexToName.TryGetValue(bw.boneIndex0, out string name0))
+                            {
+                                boneNames[0] = name0;
+                                weights[0] = bw.weight0;
+                            }
+                            if (bw.weight1 > 0 && boneIndexToName.TryGetValue(bw.boneIndex1, out string name1))
+                            {
+                                boneNames[1] = name1;
+                                weights[1] = bw.weight1;
+                            }
+                            if (bw.weight2 > 0 && boneIndexToName.TryGetValue(bw.boneIndex2, out string name2))
+                            {
+                                boneNames[2] = name2;
+                                weights[2] = bw.weight2;
+                            }
+                            if (bw.weight3 > 0 && boneIndexToName.TryGetValue(bw.boneIndex3, out string name3))
+                            {
+                                boneNames[3] = name3;
+                                weights[3] = bw.weight3;
+                            }
+                        }
+
+                        sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                            "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                            EscapeCSV(mirrorObjectName),
+                            vertexId,
+                            vIdx,
+                            EscapeCSV(boneNames[0]),
+                            EscapeCSV(boneNames[1]),
+                            EscapeCSV(boneNames[2]),
+                            EscapeCSV(boneNames[3]),
+                            weights[0],
+                            weights[1],
+                            weights[2],
+                            weights[3]));
+
+                        exportedCount++;
+                    }
+                }
+            }
+
+            // BakedMirrorメッシュのボーンウェイトを出力
+            // BakedMirrorの頂点ウェイトは、対応する実体メッシュ名+"+"で出力
+            if (bakedMirrorContexts != null)
+            {
+                foreach (var mc in bakedMirrorContexts)
+                {
+                    if (mc?.MeshObject == null) continue;
+
+                    // 元のメッシュ名を取得（BakedMirrorSourceIndexから）
+                    string sourceObjectName = "Object";
+                    if (mc.BakedMirrorSourceIndex >= 0 && mc.BakedMirrorSourceIndex < allContexts.Count)
+                    {
+                        var sourceMc = allContexts[mc.BakedMirrorSourceIndex];
+                        if (sourceMc != null)
+                        {
+                            sourceObjectName = sourceMc.Name ?? "Object";
+                        }
+                    }
+                    
+                    // ミラー側として出力（実体メッシュ名+"+"）
+                    string mirrorObjectName = sourceObjectName + "+";
+                    var meshObject = mc.MeshObject;
+
+                    for (int vIdx = 0; vIdx < meshObject.VertexCount; vIdx++)
+                    {
+                        var vertex = meshObject.Vertices[vIdx];
+
+                        int vertexId = vertex.Id != 0 ? vertex.Id : -1;
+
+                        string[] boneNames = new string[4] { "", "", "", "" };
+                        float[] weights = new float[4] { 0, 0, 0, 0 };
+
+                        // BakedMirrorの頂点のBoneWeightを使用
+                        if (vertex.HasBoneWeight)
+                        {
+                            var bw = vertex.BoneWeight.Value;
 
                             if (bw.weight0 > 0 && boneIndexToName.TryGetValue(bw.boneIndex0, out string name0))
                             {
