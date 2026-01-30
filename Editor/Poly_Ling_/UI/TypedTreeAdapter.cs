@@ -70,8 +70,18 @@ namespace Poly_Ling.UI
         /// <summary>ベイクされたミラーか</summary>
         public bool IsBakedMirror => MeshContext?.IsBakedMirror ?? false;
 
-        /// <summary>展開状態</summary>
-        public bool IsExpanded { get; set; } = true;
+        /// <summary>展開状態（MeshContext.IsFoldingと連動）</summary>
+        public bool IsExpanded
+        {
+            get => !(MeshContext?.IsFolding ?? false);
+            set
+            {
+                if (MeshContext != null)
+                {
+                    MeshContext.IsFolding = !value;
+                }
+            }
+        }
 
         /// <summary>選択状態</summary>
         public bool IsSelected { get; set; }

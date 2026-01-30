@@ -138,7 +138,69 @@ namespace Poly_Ling.UI
             }
 
             // 親子関係を設定
-            // 注意: 親がフィルタ外の場合はルートとして扱う
+            if (_category == MeshCategory.Drawable || _category == MeshCategory.Morph)
+            {
+                // Drawable/Morphカテゴリ: Depthに基づいて階層を構築（MQO互換）
+                BuildHierarchyFromDepth(allAdapters);
+            }
+            else
+            {
+                // Bone等: HierarchyParentIndexに基づいて階層を構築
+                BuildHierarchyFromParentIndex(allAdapters);
+            }
+
+            SyncSelectionFromModelContext();
+        }
+
+        /// <summary>
+        /// Depthに基づいて親子関係を構築（MQO互換）
+        /// </summary>
+        private void BuildHierarchyFromDepth(List<TypedTreeAdapter> allAdapters)
+        {
+            // スタック: (アダプター, Depth) を保持
+            var parentStack = new Stack<(TypedTreeAdapter adapter, int depth)>();
+
+            foreach (var adapter in allAdapters)
+            {
+                int currentDepth = adapter.MeshContext?.Depth ?? 0;
+
+                if (currentDepth == 0)
+                {
+                    // Depth=0はルート
+                    _rootItems.Add(adapter);
+                    parentStack.Clear();
+                    parentStack.Push((adapter, currentDepth));
+                }
+                else
+                {
+                    // 現在のDepthより小さいDepthを持つ最も近い親を探す
+                    while (parentStack.Count > 0 && parentStack.Peek().depth >= currentDepth)
+                    {
+                        parentStack.Pop();
+                    }
+
+                    if (parentStack.Count > 0)
+                    {
+                        var parentAdapter = parentStack.Peek().adapter;
+                        adapter.Parent = parentAdapter;
+                        parentAdapter.Children.Add(adapter);
+                    }
+                    else
+                    {
+                        // 親が見つからない場合はルート
+                        _rootItems.Add(adapter);
+                    }
+
+                    parentStack.Push((adapter, currentDepth));
+                }
+            }
+        }
+
+        /// <summary>
+        /// HierarchyParentIndexに基づいて親子関係を構築
+        /// </summary>
+        private void BuildHierarchyFromParentIndex(List<TypedTreeAdapter> allAdapters)
+        {
             foreach (var adapter in allAdapters)
             {
                 int parentMasterIndex = adapter.MeshContext?.HierarchyParentIndex ?? -1;
@@ -161,8 +223,6 @@ namespace Poly_Ling.UI
                     _rootItems.Add(adapter);
                 }
             }
-
-            SyncSelectionFromModelContext();
         }
 
         // ================================================================
@@ -321,21 +381,37 @@ namespace Poly_Ling.UI
             _modelContext.MeshContextList.Clear();
             _modelContext.MeshContextList.AddRange(newOrder);
 
-            // インデックスと親参照を更新
+            // インデックスと親参照、Depthを更新
             for (int i = 0; i < flatList.Count; i++)
             {
                 var adapter = flatList[i];
                 adapter.UpdateTypedIndex(i);
 
-                // 親インデックスを設定（マスターリストのインデックス）
-                int parentIndex = -1;
-                if (adapter.Parent != null)
-                {
-                    parentIndex = newOrder.IndexOf(adapter.Parent.MeshContext);
-                }
                 if (adapter.MeshContext != null)
                 {
-                    adapter.MeshContext.HierarchyParentIndex = parentIndex;
+                    if (_category == MeshCategory.Drawable || _category == MeshCategory.Morph)
+                    {
+                        // Drawable/Morph: Depthを更新（UI上の階層深さ）
+                        adapter.MeshContext.Depth = adapter.GetDepth();
+                        
+                        // 親インデックスも設定（同カテゴリ内の親）
+                        int parentIndex = -1;
+                        if (adapter.Parent != null)
+                        {
+                            parentIndex = newOrder.IndexOf(adapter.Parent.MeshContext);
+                        }
+                        adapter.MeshContext.HierarchyParentIndex = parentIndex;
+                    }
+                    else
+                    {
+                        // Bone等: 親インデックスを設定（マスターリストのインデックス）
+                        int parentIndex = -1;
+                        if (adapter.Parent != null)
+                        {
+                            parentIndex = newOrder.IndexOf(adapter.Parent.MeshContext);
+                        }
+                        adapter.MeshContext.HierarchyParentIndex = parentIndex;
+                    }
                 }
             }
 

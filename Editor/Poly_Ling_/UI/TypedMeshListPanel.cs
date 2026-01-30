@@ -594,7 +594,12 @@ namespace Poly_Ling.UI
         {
             var adapter = _treeRoot?.FindById(args.id);
             if (adapter != null)
+            {
                 adapter.IsExpanded = _treeView.IsExpanded(args.id);
+                // 折り畳み状態変更を保存対象に
+                if (Model != null)
+                    Model.IsDirty = true;
+            }
         }
 
         private void SyncTreeViewSelection()
