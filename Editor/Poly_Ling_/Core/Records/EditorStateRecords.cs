@@ -54,7 +54,10 @@ namespace Poly_Ling.UndoSystem
 
         // トランスフォーム表示モード
         public bool ShowLocalTransform = false;   // 自身のBoneTransformを反映
-        public bool ShowWorldTransform = false;   // 親を遡ったBoneTransformを累積適用
+        public bool ShowWorldTransform = true;    // 親を遡ったBoneTransformを累積適用（デフォルトON）
+
+        // カメラ設定
+        public bool AutoZoomEnabled = false;      // メッシュ選択時に自動ズーム（デフォルトOFF）
 
         // 汎用ツール設定ストレージ
         public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();
@@ -113,6 +116,7 @@ namespace Poly_Ling.UndoSystem
                 ExportAsSkinned = ExportAsSkinned,
                 ShowLocalTransform = ShowLocalTransform,
                 ShowWorldTransform = ShowWorldTransform,
+                AutoZoomEnabled = AutoZoomEnabled,
                 RecordFoldoutChanges = RecordFoldoutChanges,
                 FoldoutStates = new Dictionary<string, bool>(FoldoutStates),
             };
@@ -153,6 +157,7 @@ namespace Poly_Ling.UndoSystem
             ExportAsSkinned = snapshot.ExportAsSkinned;
             ShowLocalTransform = snapshot.ShowLocalTransform;
             ShowWorldTransform = snapshot.ShowWorldTransform;
+            AutoZoomEnabled = snapshot.AutoZoomEnabled;
             RecordFoldoutChanges = snapshot.RecordFoldoutChanges;
             
             // FoldoutStates復元
@@ -209,6 +214,9 @@ namespace Poly_Ling.UndoSystem
         public bool ShowLocalTransform;
         public bool ShowWorldTransform;
 
+        // カメラ設定
+        public bool AutoZoomEnabled;
+
         // 汎用ツール設定
         public ToolSettingsStorage ToolSettings;
         
@@ -244,6 +252,7 @@ namespace Poly_Ling.UndoSystem
                 ExportAsSkinned != other.ExportAsSkinned ||
                 ShowLocalTransform != other.ShowLocalTransform ||
                 ShowWorldTransform != other.ShowWorldTransform ||
+                AutoZoomEnabled != other.AutoZoomEnabled ||
                 RecordFoldoutChanges != other.RecordFoldoutChanges)
             {
                 return true;

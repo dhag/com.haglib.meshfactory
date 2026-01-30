@@ -182,6 +182,21 @@ public partial class PolyLing
                     _cameraDistance = newDist;
                 }
 
+                // オートズーム設定（メッシュ選択時に自動でカメラを調整）
+                EditorGUI.BeginChangeCheck();
+                bool currentAutoZoom = _undoController?.EditorState.AutoZoomEnabled ?? false;
+                bool newAutoZoom = EditorGUILayout.Toggle(L.Get("AutoZoom"), currentAutoZoom);
+                if (EditorGUI.EndChangeCheck() && newAutoZoom != currentAutoZoom)
+                {
+                    if (_undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                        _undoController.EditorState.AutoZoomEnabled = newAutoZoom;
+                        _undoController.EndEditorStateDrag("Toggle Auto Zoom");
+                    }
+                    Repaint();
+                }
+
                 EditorGUILayout.Space(3);
 
                 // ★対称モードUI

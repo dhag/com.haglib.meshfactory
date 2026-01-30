@@ -383,7 +383,7 @@ public partial class PolyLing
     /// <summary>
     /// 頂点オフセット初期化（MeshObjectベース）
     /// </summary>
-    /// <param name="updateCamera">trueの場合、カメラをメッシュに合わせて調整する</param>
+    /// <param name="updateCamera">trueの場合、AutoZoomが有効ならカメラをメッシュに合わせて調整する</param>
     private void InitVertexOffsets(bool updateCamera = true)
     {
         var meshContext = _model.CurrentMeshContext;
@@ -408,8 +408,9 @@ public partial class PolyLing
         _vertexOffsets = new Vector3[vertexCount];
         _groupOffsets = new Vector3[vertexCount];  // Vertexと1:1
 
-        // カメラ設定（オプション、頂点がある場合のみ）
-        if (updateCamera && vertexCount > 0)
+        // カメラ設定（オプション、頂点がある場合のみ、AutoZoomが有効な場合のみ）
+        bool autoZoomEnabled = _undoController?.EditorState?.AutoZoomEnabled ?? false;
+        if (updateCamera && autoZoomEnabled && vertexCount > 0)
         {
             var bounds = meshObject.CalculateBounds();
             float radius = Mathf.Max(bounds.extents.magnitude, 0.5f);

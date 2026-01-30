@@ -84,79 +84,73 @@ public partial class PolyLing
 
         EditorGUI.indentLevel++;
 
-        // 有効/無効トグル
+        // ミラー有効は常にtrue（UIから削除）
+        if (!_symmetrySettings.IsEnabled)
+        {
+            _symmetrySettings.IsEnabled = true;
+            InvalidateSymmetryCache();
+            ApplySymmetryToUnifiedSystem();
+        }
+
+        // 詳細設定（常に表示）
+        EditorGUILayout.Space(2);
+
+        // 軸選択
         EditorGUI.BeginChangeCheck();
-        bool newEnabled = EditorGUILayout.Toggle(L.Get("EnableMirror"), _symmetrySettings.IsEnabled);
+        var newAxis = (SymmetryAxis)EditorGUILayout.EnumPopup(L.Get("Axis"), _symmetrySettings.Axis);
         if (EditorGUI.EndChangeCheck())
         {
-            _symmetrySettings.IsEnabled = newEnabled;
+            _symmetrySettings.Axis = newAxis;
             InvalidateSymmetryCache();
             ApplySymmetryToUnifiedSystem();
             Repaint();
         }
 
-        // 有効時のみ詳細設定を表示
-        if (_symmetrySettings.IsEnabled)
+        // 平面オフセット
+        EditorGUI.BeginChangeCheck();
+        float newOffset = EditorGUILayout.Slider(L.Get("PlaneOffset"), _symmetrySettings.PlaneOffset, -1f, 1f);//スライダーの上限下限
+        if (EditorGUI.EndChangeCheck())
         {
-            EditorGUILayout.Space(2);
+            _symmetrySettings.PlaneOffset = newOffset;
+            InvalidateSymmetryCache();
+            ApplySymmetryToUnifiedSystem();
+            Repaint();
+        }
 
-            // 軸選択
-            EditorGUI.BeginChangeCheck();
-            var newAxis = (SymmetryAxis)EditorGUILayout.EnumPopup(L.Get("Axis"), _symmetrySettings.Axis);
-            if (EditorGUI.EndChangeCheck())
+        // オフセットリセットボタン
+        if (Mathf.Abs(_symmetrySettings.PlaneOffset) > 0.001f)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button(L.Get("ResetOffset"), EditorStyles.miniButton, GUILayout.Width(80)))
             {
-                _symmetrySettings.Axis = newAxis;
+                _symmetrySettings.PlaneOffset = 0f;
                 InvalidateSymmetryCache();
                 ApplySymmetryToUnifiedSystem();
                 Repaint();
             }
+            EditorGUILayout.EndHorizontal();
+        }
 
-            // 平面オフセット
-            EditorGUI.BeginChangeCheck();
-            float newOffset = EditorGUILayout.Slider(L.Get("PlaneOffset"), _symmetrySettings.PlaneOffset, -1f, 1f);//スライダーの上限下限
-            if (EditorGUI.EndChangeCheck())
-            {
-                _symmetrySettings.PlaneOffset = newOffset;
-                InvalidateSymmetryCache();
-                ApplySymmetryToUnifiedSystem();
-                Repaint();
-            }
+        EditorGUILayout.Space(3);
 
-            // オフセットリセットボタン
-            if (Mathf.Abs(_symmetrySettings.PlaneOffset) > 0.001f)
-            {
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.FlexibleSpace();
-                if (GUILayout.Button(L.Get("ResetOffset"), EditorStyles.miniButton, GUILayout.Width(80)))
-                {
-                    _symmetrySettings.PlaneOffset = 0f;
-                    InvalidateSymmetryCache();
-                    ApplySymmetryToUnifiedSystem();
-                    Repaint();
-                }
-                EditorGUILayout.EndHorizontal();
-            }
+        // 表示オプション
+        EditorGUILayout.LabelField(L.Get("DisplayOptions"), EditorStyles.miniLabel);
 
-            EditorGUILayout.Space(3);
+        EditorGUI.BeginChangeCheck();
+        bool showMesh = EditorGUILayout.Toggle(L.Get("MirrorMesh"), _symmetrySettings.ShowMirrorMesh);
+        bool showWire = EditorGUILayout.Toggle(L.Get("MirrorWireframe"), _symmetrySettings.ShowMirrorWireframe);
+        bool showPlane = EditorGUILayout.Toggle(L.Get("SymmetryPlane"), _symmetrySettings.ShowSymmetryPlane);
+        float alpha = EditorGUILayout.Slider(L.Get("MirrorAlpha"), _symmetrySettings.MirrorAlpha, 0.1f, 1f);//スライダーの上限下限
 
-            // 表示オプション
-            EditorGUILayout.LabelField(L.Get("DisplayOptions"), EditorStyles.miniLabel);
-
-            EditorGUI.BeginChangeCheck();
-            bool showMesh = EditorGUILayout.Toggle(L.Get("MirrorMesh"), _symmetrySettings.ShowMirrorMesh);
-            bool showWire = EditorGUILayout.Toggle(L.Get("MirrorWireframe"), _symmetrySettings.ShowMirrorWireframe);
-            bool showPlane = EditorGUILayout.Toggle(L.Get("SymmetryPlane"), _symmetrySettings.ShowSymmetryPlane);
-            float alpha = EditorGUILayout.Slider(L.Get("MirrorAlpha"), _symmetrySettings.MirrorAlpha, 0.1f, 1f);//スライダーの上限下限
-
-            if (EditorGUI.EndChangeCheck())
-            {
-                _symmetrySettings.ShowMirrorMesh = showMesh;
-                _symmetrySettings.ShowMirrorWireframe = showWire;
-                _symmetrySettings.ShowSymmetryPlane = showPlane;
-                _symmetrySettings.MirrorAlpha = alpha;
-                UpdateMirrorMaterialAlpha();
-                Repaint();
-            }
+        if (EditorGUI.EndChangeCheck())
+        {
+            _symmetrySettings.ShowMirrorMesh = showMesh;
+            _symmetrySettings.ShowMirrorWireframe = showWire;
+            _symmetrySettings.ShowSymmetryPlane = showPlane;
+            _symmetrySettings.MirrorAlpha = alpha;
+            UpdateMirrorMaterialAlpha();
+            Repaint();
         }
 
         EditorGUI.indentLevel--;

@@ -186,6 +186,7 @@ namespace Poly_Ling.Localization
             ["ShowVertexIndices"] = new() { ["en"] = "Show Vertex Indices", ["ja"] = "頂点インデックス表示" },
             ["ShowSelectedMeshOnly"] = new() { ["en"] = "Selected Mesh Only", ["ja"] = "選択中のメッシュのみ表示" },
             ["Zoom"] = new() { ["en"] = "Zoom", ["ja"] = "ズーム", ["hi"] = "ずーむ" },
+            ["AutoZoom"] = new() { ["en"] = "Auto Zoom", ["ja"] = "オートズーム", ["hi"] = "おーとずーむ" },
             ["UndoFoldout"] = new() { ["en"] = "Undo Foldout Changes", ["ja"] = "開閉をUndo記録", ["hi"] = "ひらきとじをきろく" },
             ["Language"] = new() { ["en"] = "Language", ["ja"] = "言語", ["hi"] = "ことば" },
 
