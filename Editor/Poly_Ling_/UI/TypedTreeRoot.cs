@@ -415,15 +415,38 @@ namespace Poly_Ling.UI
                 }
             }
 
-            // 選択インデックスを復元
-            _modelContext.SelectedMeshContextIndices.Clear();
-            foreach (var mc in selectedContexts)
+            // 選択インデックスを復元 (v2.0: カテゴリ別に復元、他カテゴリは維持)
+            switch (_category)
             {
-                int newIndex = _modelContext.MeshContextList.IndexOf(mc);
-                if (newIndex >= 0)
-                {
-                    _modelContext.SelectedMeshContextIndices.Add(newIndex);
-                }
+                case MeshCategory.Drawable:
+                    _modelContext.ClearMeshSelection();
+                    foreach (var mc in selectedContexts)
+                    {
+                        int newIndex = _modelContext.MeshContextList.IndexOf(mc);
+                        if (newIndex >= 0)
+                            _modelContext.AddToMeshSelection(newIndex);
+                    }
+                    break;
+
+                case MeshCategory.Bone:
+                    _modelContext.ClearBoneSelection();
+                    foreach (var mc in selectedContexts)
+                    {
+                        int newIndex = _modelContext.MeshContextList.IndexOf(mc);
+                        if (newIndex >= 0)
+                            _modelContext.AddToBoneSelection(newIndex);
+                    }
+                    break;
+
+                case MeshCategory.Morph:
+                    _modelContext.ClearMorphSelection();
+                    foreach (var mc in selectedContexts)
+                    {
+                        int newIndex = _modelContext.MeshContextList.IndexOf(mc);
+                        if (newIndex >= 0)
+                            _modelContext.AddToMorphSelection(newIndex);
+                    }
+                    break;
             }
         }
 
@@ -438,17 +461,25 @@ namespace Poly_Ling.UI
                 adapter.IsSelected = false;
             }
 
-            if (_modelContext != null)
+            if (_modelContext == null) return;
+
+            // v2.0: カテゴリに応じた選択セットのみを参照
+            HashSet<int> selectedIndices = _category switch
             {
-                foreach (int index in _modelContext.SelectedMeshContextIndices)
+                MeshCategory.Drawable => _modelContext.SelectedMeshIndices,
+                MeshCategory.Bone => _modelContext.SelectedBoneIndices,
+                MeshCategory.Morph => _modelContext.SelectedMorphIndices,
+                _ => _modelContext.SelectedMeshIndices
+            };
+
+            foreach (int index in selectedIndices)
+            {
+                if (index >= 0 && index < _modelContext.MeshContextCount)
                 {
-                    if (index >= 0 && index < _modelContext.MeshContextCount)
+                    var meshContext = _modelContext.GetMeshContext(index);
+                    if (meshContext != null && _adapterMap.TryGetValue(meshContext, out var adapter))
                     {
-                        var meshContext = _modelContext.GetMeshContext(index);
-                        if (meshContext != null && _adapterMap.TryGetValue(meshContext, out var adapter))
-                        {
-                            adapter.IsSelected = true;
-                        }
+                        adapter.IsSelected = true;
                     }
                 }
             }
@@ -458,18 +489,48 @@ namespace Poly_Ling.UI
         {
             if (_modelContext == null) return;
 
-            _modelContext.SelectedMeshContextIndices.Clear();
-
-            foreach (var adapter in _adapterMap.Values)
+            // v2.0: カテゴリに応じた選択セットのみをクリア＆設定
+            // 他カテゴリの選択は維持
+            switch (_category)
             {
-                if (adapter.IsSelected)
-                {
-                    int index = adapter.GetCurrentMasterIndex();
-                    if (index >= 0)
+                case MeshCategory.Drawable:
+                    _modelContext.ClearMeshSelection();
+                    foreach (var adapter in _adapterMap.Values)
                     {
-                        _modelContext.SelectedMeshContextIndices.Add(index);
+                        if (adapter.IsSelected)
+                        {
+                            int index = adapter.GetCurrentMasterIndex();
+                            if (index >= 0)
+                                _modelContext.AddToMeshSelection(index);
+                        }
                     }
-                }
+                    break;
+
+                case MeshCategory.Bone:
+                    _modelContext.ClearBoneSelection();
+                    foreach (var adapter in _adapterMap.Values)
+                    {
+                        if (adapter.IsSelected)
+                        {
+                            int index = adapter.GetCurrentMasterIndex();
+                            if (index >= 0)
+                                _modelContext.AddToBoneSelection(index);
+                        }
+                    }
+                    break;
+
+                case MeshCategory.Morph:
+                    _modelContext.ClearMorphSelection();
+                    foreach (var adapter in _adapterMap.Values)
+                    {
+                        if (adapter.IsSelected)
+                        {
+                            int index = adapter.GetCurrentMasterIndex();
+                            if (index >= 0)
+                                _modelContext.AddToMorphSelection(index);
+                        }
+                    }
+                    break;
             }
         }
 

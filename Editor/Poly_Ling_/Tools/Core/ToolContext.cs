@@ -163,8 +163,27 @@ namespace Poly_Ling.Tools
         /// <summary>メッシュリスト（読み取り専用）</summary>
         public IReadOnlyList<MeshContext> MeshList => Model?.MeshContextList;
 
-        /// <summary>選択中のメッシュインデックス</summary>
-        public int SelectedMeshIndex => Model?.SelectedMeshContextIndex ?? -1;
+        /// <summary>選択中のメッシュインデックス（全カテゴリ統合・ActiveCategoryに応じて返す）</summary>
+        public int SelectedMeshIndex => Model?.PrimarySelectedMeshContextIndex ?? -1;
+
+        // v2.0: カテゴリ別選択プロパティ
+        /// <summary>選択中のメッシュインデックス（Mesh/BakedMirror タイプ）</summary>
+        public int PrimarySelectedMeshIndex => Model?.PrimarySelectedMeshIndex ?? -1;
+
+        /// <summary>選択中のボーンインデックス（Bone タイプ）</summary>
+        public int PrimarySelectedBoneIndex => Model?.PrimarySelectedBoneIndex ?? -1;
+
+        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）</summary>
+        public int PrimarySelectedMorphIndex => Model?.PrimarySelectedMorphIndex ?? -1;
+
+        /// <summary>メッシュが選択されているか</summary>
+        public bool HasMeshSelection => Model?.HasMeshSelection ?? false;
+
+        /// <summary>ボーンが選択されているか</summary>
+        public bool HasBoneSelection => Model?.HasBoneSelection ?? false;
+
+        /// <summary>頂点モーフが選択されているか</summary>
+        public bool HasMorphSelection => Model?.HasMorphSelection ?? false;
 
         /// <summary>有効なメッシュが選択されているか</summary>
         public bool HasValidMeshSelection => Model?.HasValidMeshContextSelection ?? false;

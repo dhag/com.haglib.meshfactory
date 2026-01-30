@@ -594,6 +594,7 @@ namespace Poly_Ling.Serialization
 
         /// <summary>
         /// EditorStateDTOを作成
+        /// v2.0: カテゴリ別選択インデックス対応
         /// </summary>
         public static EditorStateDTO CreateEditorStateDTO(
             float rotationX,
@@ -604,6 +605,8 @@ namespace Poly_Ling.Serialization
             bool showVertices,
             bool vertexEditMode,
             int selectedMeshIndex,
+            int selectedBoneIndex = -1,
+            int selectedVertexMorphIndex = -1,
             string currentToolName = null)
         {
             return new EditorStateDTO
@@ -616,6 +619,8 @@ namespace Poly_Ling.Serialization
                 showVertices = showVertices,
                 vertexEditMode = vertexEditMode,
                 selectedMeshIndex = selectedMeshIndex,
+                selectedBoneIndex = selectedBoneIndex,
+                selectedVertexMorphIndex = selectedVertexMorphIndex,
                 currentToolName = currentToolName
             };
         }

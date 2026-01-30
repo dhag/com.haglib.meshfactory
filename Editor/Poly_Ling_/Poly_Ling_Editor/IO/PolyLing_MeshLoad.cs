@@ -502,7 +502,7 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト置換）
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
 
             // 複数メッシュ追加をバッチ記録
             var addedContexts = new List<(int Index, MeshContext MeshContext)>();
@@ -895,7 +895,7 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト追加）
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 

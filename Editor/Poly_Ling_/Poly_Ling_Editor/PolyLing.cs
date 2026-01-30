@@ -34,10 +34,34 @@ public partial class PolyLing : EditorWindow
     // 後方互換プロパティ（既存コードを壊さない）
     private ModelContext _model => _project.CurrentModel;
     private List<MeshContext> _meshContextList => _model?.MeshContextList;
+    
+    // v2.0: カテゴリ別選択インデックス
+    private int _selectedMeshIndex => _model?.PrimarySelectedMeshIndex ?? -1;
+    private int _selectedBoneIndex => _model?.PrimarySelectedBoneIndex ?? -1;
+    private int _selectedMorphIndex => _model?.PrimarySelectedMorphIndex ?? -1;
+
+    // アクティブカテゴリに応じた選択インデックス
     private int _selectedIndex
     {
-        get => _model?.SelectedMeshContextIndex ?? -1;
-        set { if (_model != null) _model.SelectedMeshContextIndex = value; }
+        get
+        {
+            if (_model == null) return -1;
+            return _model.ActiveCategory switch
+            {
+                ModelContext.SelectionCategory.Mesh => _selectedMeshIndex,
+                ModelContext.SelectionCategory.Bone => _selectedBoneIndex,
+                ModelContext.SelectionCategory.Morph => _selectedMorphIndex,
+                _ => -1
+            };
+        }
+        set
+        {
+            if (_model != null && value >= 0 && value < _model.Count)
+            {
+                // v2.0: 同一カテゴリのみクリア（他カテゴリの選択は維持）
+                _model.SelectByTypeExclusive(value);
+            }
+        }
     }
 
     private Vector2 _vertexScroll;
@@ -429,13 +453,9 @@ public partial class PolyLing : EditorWindow
                 // 4. MeshUndoContext を再設定（参照が変わるため）
                 // ========================================================
 
-                // 1. _selectedIndex を同期
-                // 注意: _undoController.MeshListContext と _model は別オブジェクトの場合がある
-                // MeshTreeRootは _toolContext.Model (= _model) を更新するので、
-                // _model から直接読む必要がある
-                var oldSelectedIndex = _selectedIndex;
-                _selectedIndex = _model?.SelectedMeshContextIndex ?? 0;
-                Debug.Log($"[OnReorderCompleted] _selectedIndex: {oldSelectedIndex} -> {_selectedIndex}, CurrentMesh={_model?.CurrentMeshContext?.Name}");
+                // 1. _selectedIndex は ModelContext.ActiveCategory に応じて自動取得される
+                // v2.0: _selectedIndex getterがModelContextを直接参照するため、同期不要
+                Debug.Log($"[OnReorderCompleted] _selectedIndex={_selectedIndex}, CurrentMesh={_model?.CurrentMeshContext?.Name}");
 
                 // 2. グローバルバッファを完全再構築
                 _unifiedAdapter?.SetModelContext(_model);
@@ -670,7 +690,7 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void OnUndoRedoPerformed()
     {
-        Debug.Log($"[OnUndoRedoPerformed] === START === _selectedIndex={_selectedIndex}, MeshListContext.SelectedMeshContextIndex={_undoController?.MeshListContext?.SelectedMeshContextIndex}");
+        Debug.Log($"[OnUndoRedoPerformed] === START === _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
         Debug.Log($"[OnUndoRedoPerformed] _selectedVertices.Count={_selectedVertices.Count}, ctx.SelectedVertices?.Count={_undoController?.MeshUndoContext?.SelectedVertices?.Count}");
         
         // コンテキストからメッシュに反映
@@ -806,13 +826,10 @@ public partial class PolyLing : EditorWindow
     private void OnMeshListChanged()
     {
         Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
-        Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.SelectedMeshContextIndex={_undoController?.MeshListContext?.SelectedMeshContextIndex}");
+        Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
 
-        // MeshListContextから選択インデックスを取得
-        if (_undoController?.MeshListContext != null)
-        {
-            _selectedIndex = _undoController.MeshListContext.SelectedMeshContextIndex;
-        }
+        // v2.0: _selectedIndex getterがModelContextを直接参照するため、同期不要
+        // MeshListContext（= ModelContext）の選択状態はUndo/Redoで自動復元される
 
         Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
 

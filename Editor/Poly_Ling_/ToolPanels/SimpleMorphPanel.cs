@@ -300,7 +300,8 @@ namespace Poly_Ling.Tools.Panels
         private List<(int index, string name, int vertexCount)> BuildMeshOptions(ModelContext model, int targetVertexCount)
         {
             var options = new List<(int, string, int)>();
-            int currentIndex = model.SelectedMeshContextIndex;
+            // v2.0: 新API使用
+            int currentIndex = model.PrimarySelectedMeshContextIndex;
 
             for (int i = 0; i < model.MeshContextCount; i++)
             {

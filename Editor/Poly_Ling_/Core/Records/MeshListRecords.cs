@@ -320,7 +320,8 @@ namespace Poly_Ling.UndoSystem
                 ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
             }
 
-            ctx.SelectedMeshContextIndices = new HashSet<int>(OldSelectedIndices);
+            // v2.0: 新API使用
+            ctx.RestoreSelectionFromIndices(OldSelectedIndices);
             ctx.ValidateSelection();
             
             // カメラ状態を復元
@@ -366,7 +367,8 @@ namespace Poly_Ling.UndoSystem
                 ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
             }
 
-            ctx.SelectedMeshContextIndices = new HashSet<int>(NewSelectedIndices);
+            // v2.0: 新API使用
+            ctx.RestoreSelectionFromIndices(NewSelectedIndices);
             ctx.ValidateSelection();
             
             // カメラ状態を復元
@@ -413,10 +415,11 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(ModelContext ctx)
         {
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] START. OldSelectedIndices={string.Join(",", OldSelectedIndices)}, CurrentIndex={ctx.SelectedMeshContextIndex}");
-            ctx.SelectedMeshContextIndices = new HashSet<int>(OldSelectedIndices);
+            Debug.Log($"[MeshSelectionChangeRecord.Undo] START. OldSelectedIndices={string.Join(",", OldSelectedIndices)}, CurrentIndex={ctx.PrimarySelectedMeshContextIndex}");
+            // v2.0: 新API使用
+            ctx.RestoreSelectionFromIndices(OldSelectedIndices);
             ctx.ValidateSelection();
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] After ValidateSelection. NewIndex={ctx.SelectedMeshContextIndex}");
+            Debug.Log($"[MeshSelectionChangeRecord.Undo] After ValidateSelection. NewIndex={ctx.PrimarySelectedMeshContextIndex}");
             
             Debug.Log($"[MeshSelectionChangeRecord.Undo] Before OnCameraRestoreRequested");
             if (OldCameraState.HasValue)
@@ -437,7 +440,8 @@ namespace Poly_Ling.UndoSystem
         public override void Redo(ModelContext ctx)
         {
             Debug.Log("[MeshSelectionChangeRecord.Redo] *** CALLED ***");
-            ctx.SelectedMeshContextIndices = new HashSet<int>(NewSelectedIndices);
+            // v2.0: 新API使用
+            ctx.RestoreSelectionFromIndices(NewSelectedIndices);
             ctx.ValidateSelection();
             
             Debug.Log($"[MeshSelectionChangeRecord.Redo] NewCameraState.HasValue={NewCameraState.HasValue}");

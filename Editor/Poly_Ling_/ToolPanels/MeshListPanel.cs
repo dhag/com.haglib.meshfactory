@@ -168,7 +168,8 @@ namespace Poly_Ling.Tools.Panels
             var meshContext = model.GetMeshContext(index);
             if (meshContext == null) return;
 
-            bool isSelected = (model.SelectedMeshContextIndex == index);
+            // v2.0: カテゴリ別選択対応 - IsSelectedが全カテゴリをチェック
+            bool isSelected = model.IsSelected(index);
             bool isFirst = (index == 0);
             bool isLast = (index == model.MeshContextCount - 1);
 

@@ -536,6 +536,7 @@ namespace Poly_Ling.Serialization
 
     /// <summary>
     /// エディタ状態データ
+    /// v2.0: 選択メッシュ/選択ボーン/選択頂点モーフに分離
     /// </summary>
     [Serializable]
     public class EditorStateDTO
@@ -564,8 +565,14 @@ namespace Poly_Ling.Serialization
         /// <summary>現在のツール名</summary>
         public string currentToolName;
 
-        /// <summary>選択中のメッシュインデックス</summary>
+        /// <summary>選択中のメッシュインデックス（Mesh, BakedMirror タイプ）</summary>
         public int selectedMeshIndex;
+
+        /// <summary>選択中のボーンインデックス（Bone タイプ）</summary>
+        public int selectedBoneIndex = -1;
+
+        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）</summary>
+        public int selectedVertexMorphIndex = -1;
 
         //ナイフツールの固有設定
         /// <summary>ナイフツールのモード</summary>
@@ -590,6 +597,8 @@ namespace Poly_Ling.Serialization
                 vertexEditMode = true,
                 currentToolName = "Select",
                 selectedMeshIndex = -1,
+                selectedBoneIndex = -1,
+                selectedVertexMorphIndex = -1,
                 //ナイフツールの固有設定
                 knifeMode = "Cut",
                 knifeEdgeSelect = false,

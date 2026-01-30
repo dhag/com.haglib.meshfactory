@@ -193,13 +193,19 @@ namespace MeshEditor
 
     /// <summary>
     /// モデル全体のスナップショット（メッシュリスト + マテリアル + エディタ状態）
+    /// v1.1: カテゴリ別選択対応
     /// </summary>
     public class ModelSnapshot
     {
         public string Name;
         public List<MeshContextSnapshot> MeshSnapshots;
         public List<MaterialReferenceSnapshot> MaterialSnapshots;  // マテリアル参照のスナップショット
-        public int SelectedMeshIndex;  // 選択中のメッシュインデックス
+        
+        // カテゴリ別選択インデックス (v1.1追加)
+        public int SelectedMeshIndex;      // 選択中のメッシュインデックス (Mesh/BakedMirror)
+        public int SelectedBoneIndex;      // 選択中のボーンインデックス
+        public int SelectedMorphIndex;     // 選択中の頂点モーフインデックス
+        
         public int CurrentMaterialIndex;  // 選択中のマテリアルインデックス
         public WorkPlaneDTO WorkPlane;
         public EditorStateDTO EditorState;
@@ -254,7 +260,10 @@ namespace MeshEditor
                 Name = modelContext.Name,
                 MeshSnapshots = new List<MeshContextSnapshot>(),
                 MaterialSnapshots = new List<MaterialReferenceSnapshot>(),
-                SelectedMeshIndex = modelContext.SelectedMeshContextIndex,
+                // カテゴリ別選択 (v1.1)
+                SelectedMeshIndex = modelContext.PrimarySelectedMeshIndex,
+                SelectedBoneIndex = modelContext.PrimarySelectedBoneIndex,
+                SelectedMorphIndex = modelContext.PrimarySelectedMorphIndex,
                 CurrentMaterialIndex = modelContext.CurrentMaterialIndex,
                 EditorState = editorState != null ? CloneEditorState(editorState) : null
             };
@@ -337,8 +346,10 @@ namespace MeshEditor
                 model.MaterialReferences = materialRefs;
             }
 
-            // 選択状態を復元
-            model.SelectedMeshContextIndex = SelectedMeshIndex;
+            // カテゴリ別選択状態を復元 (v1.1)
+            if (SelectedMeshIndex >= 0) model.SelectMesh(SelectedMeshIndex);
+            if (SelectedBoneIndex >= 0) model.SelectBone(SelectedBoneIndex);
+            if (SelectedMorphIndex >= 0) model.SelectMorph(SelectedMorphIndex);
             model.CurrentMaterialIndex = CurrentMaterialIndex;
 
             return model;
@@ -371,7 +382,10 @@ namespace MeshEditor
                 showVertices = source.showVertices,
                 vertexEditMode = source.vertexEditMode,
                 currentToolName = source.currentToolName,
-                selectedMeshIndex = source.selectedMeshIndex
+                // カテゴリ別選択 (v1.1)
+                selectedMeshIndex = source.selectedMeshIndex,
+                selectedBoneIndex = source.selectedBoneIndex,
+                selectedVertexMorphIndex = source.selectedVertexMorphIndex
             };
         }
     }

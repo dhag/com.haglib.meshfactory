@@ -200,7 +200,29 @@ namespace Poly_Ling.Core
             _flagManager.ActiveModelIndex = modelIndex;
             _flagManager.ActiveMeshIndex = meshIndex;
             _flagManager.SelectedModelIndex = modelIndex;
-            _flagManager.SelectedMeshIndex = meshIndex;
+            _flagManager.SelectedMeshIndex = meshIndex;  // 後方互換
+
+            // v2.0: カテゴリ別選択インデックス設定
+            if (_currentModel != null && meshIndex >= 0 && meshIndex < _currentModel.MeshContextCount)
+            {
+                var meshContext = _currentModel.GetMeshContext(meshIndex);
+                if (meshContext != null)
+                {
+                    switch (meshContext.Type)
+                    {
+                        case MeshType.Mesh:
+                        case MeshType.BakedMirror:
+                            _flagManager.SelectedDrawableMeshIndex = meshIndex;
+                            break;
+                        case MeshType.Bone:
+                            _flagManager.SelectedBoneIndex = meshIndex;
+                            break;
+                        case MeshType.Morph:
+                            _flagManager.SelectedMorphIndex = meshIndex;
+                            break;
+                    }
+                }
+            }
 
             _bufferManager.SetActiveMesh(modelIndex, meshIndex);
 

@@ -24,8 +24,18 @@ namespace Poly_Ling.Core
         /// <summary>選択モデルインデックス（-1 = なし）</summary>
         public int SelectedModelIndex { get; set; } = -1;
 
-        /// <summary>選択メッシュインデックス（-1 = なし）</summary>
+        /// <summary>選択メッシュインデックス（-1 = なし）- 後方互換</summary>
         public int SelectedMeshIndex { get; set; } = -1;
+
+        // v2.0: カテゴリ別選択インデックス
+        /// <summary>選択メッシュインデックス（Mesh/BakedMirror タイプ）</summary>
+        public int SelectedDrawableMeshIndex { get; set; } = -1;
+
+        /// <summary>選択ボーンインデックス（Bone タイプ）</summary>
+        public int SelectedBoneIndex { get; set; } = -1;
+
+        /// <summary>選択頂点モーフインデックス（Morph タイプ）</summary>
+        public int SelectedMorphIndex { get; set; } = -1;
 
         /// <summary>アクティブモデルインデックス（編集対象）</summary>
         public int ActiveModelIndex { get; set; } = 0;
@@ -46,6 +56,7 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// 頂点の階層フラグを計算
+        /// v2.0: カテゴリ別選択インデックス対応
         /// </summary>
         /// <param name="modelIndex">モデルインデックス</param>
         /// <param name="meshIndex">メッシュインデックス（モデル内）</param>
@@ -61,9 +72,19 @@ namespace Poly_Ling.Core
             if (modelIndex == ActiveModelIndex)
                 flags |= SelectionFlags.ModelActive;
 
-            // メッシュレベル
-            if (modelIndex == SelectedModelIndex && meshIndex == SelectedMeshIndex)
-                flags |= SelectionFlags.MeshSelected;
+            // メッシュレベル（後方互換 + カテゴリ別）
+            if (modelIndex == SelectedModelIndex)
+            {
+                // 後方互換: 単一SelectedMeshIndex
+                if (meshIndex == SelectedMeshIndex)
+                    flags |= SelectionFlags.MeshSelected;
+                
+                // カテゴリ別選択もチェック
+                if (meshIndex == SelectedDrawableMeshIndex ||
+                    meshIndex == SelectedBoneIndex ||
+                    meshIndex == SelectedMorphIndex)
+                    flags |= SelectionFlags.MeshSelected;
+            }
 
             if (modelIndex == ActiveModelIndex && meshIndex == ActiveMeshIndex)
                 flags |= SelectionFlags.MeshActive;

@@ -622,7 +622,7 @@ public partial class PolyLing : EditorWindow
         // Undo記録 - カメラ状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldIndex, _selectedIndex, oldCamera, newCamera);
         }
 
@@ -687,7 +687,7 @@ public partial class PolyLing : EditorWindow
         // Undo記録（1回でまとめて）- カメラ状態付き、マテリアル状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             _undoController.RecordMeshContextsAdd(addedContexts, oldIndex, _selectedIndex, oldCamera, newCamera, oldMaterials, oldMaterialIndex);
         }
 
@@ -849,7 +849,7 @@ public partial class PolyLing : EditorWindow
         // Undo記録 - Materials 対応版
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             var record = new MeshListChangeRecord
             {
                 RemovedMeshContexts = removedSnapshots,
@@ -956,7 +956,7 @@ public partial class PolyLing : EditorWindow
                 NewCameraState = newCameraState
             };
             _undoController.RecordMeshListChange(record, $"Replace All: {newMeshContexts.Count} meshes", oldMaterials, oldMaterialIndex);
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
         }
 
 
@@ -1024,7 +1024,7 @@ public partial class PolyLing : EditorWindow
         // Undo記録 - カメラ状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             List<(int Index, MeshContext meshContext)> removedList = new List<(int Index, MeshContext meshContext)> { (index, meshContext) };
             _undoController.RecordMeshContextsRemove(removedList, oldIndex, _selectedIndex, oldCamera, newCamera);
         }
@@ -1052,7 +1052,7 @@ public partial class PolyLing : EditorWindow
         // Undo記録（選択変更のみ）
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             // MeshListChangeRecordで選択変更を記録
             MeshListChangeRecord record = new MeshListChangeRecord
             {
@@ -1140,7 +1140,7 @@ public partial class PolyLing : EditorWindow
         // Undo記録 - カメラ状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             _undoController.RecordMeshContextAdd(clone, insertIndex, oldIndex, _selectedIndex, oldCamera, newCamera);
         }
 
@@ -1183,7 +1183,7 @@ public partial class PolyLing : EditorWindow
         // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             _undoController.RecordMeshContextReorder(meshContext, fromIndex, toIndex, oldSelectedIndex, _selectedIndex);
         }
 

@@ -40,14 +40,8 @@ namespace Poly_Ling.UndoSystem
         {
             if (context == null) return;
 
-            context.SelectedMeshContextIndices.Clear();
-            foreach (var index in OldSelectedIndices)
-            {
-                if (index >= 0 && index < context.MeshContextCount)
-                {
-                    context.SelectedMeshContextIndices.Add(index);
-                }
-            }
+            // v2.0: 新API使用
+            context.RestoreSelectionFromIndices(OldSelectedIndices);
         }
 
         /// <summary>
@@ -57,14 +51,8 @@ namespace Poly_Ling.UndoSystem
         {
             if (context == null) return;
 
-            context.SelectedMeshContextIndices.Clear();
-            foreach (var index in NewSelectedIndices)
-            {
-                if (index >= 0 && index < context.MeshContextCount)
-                {
-                    context.SelectedMeshContextIndices.Add(index);
-                }
-            }
+            // v2.0: 新API使用
+            context.RestoreSelectionFromIndices(NewSelectedIndices);
         }
 
         public override string ToString()
@@ -158,7 +146,8 @@ namespace Poly_Ling.UndoSystem
                 int newIndex = context.MeshContextList.IndexOf(selectedMeshContext);
                 if (newIndex >= 0)
                 {
-                    context.SelectedMeshContextIndices = new HashSet<int> { newIndex };
+                    // v2.0: 新API使用
+                    context.Select(newIndex);
                 }
             }
             context.ValidateSelection();

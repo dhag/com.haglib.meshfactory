@@ -331,15 +331,41 @@ namespace Poly_Ling.UI
                 adapter.MeshContext.HierarchyParentIndex = parentIndex;
             }
 
-            // 4. 選択インデックスを復元
+            // 4. 選択インデックスを復元 (v2.0: 選択されていたカテゴリのみクリア)
             var oldIndices = string.Join(",", _modelContext.SelectedMeshContextIndices);
-            _modelContext.SelectedMeshContextIndices.Clear();
+            
+            // 選択されていたアイテムのカテゴリを収集
+            var selectedCategories = new HashSet<MeshType>();
+            foreach (var mc in selectedMeshContexts)
+            {
+                if (mc != null)
+                    selectedCategories.Add(mc.Type);
+            }
+            
+            // 選択されていたカテゴリのみクリア
+            foreach (var type in selectedCategories)
+            {
+                switch (type)
+                {
+                    case MeshType.Bone:
+                        _modelContext.ClearBoneSelection();
+                        break;
+                    case MeshType.Morph:
+                        _modelContext.ClearMorphSelection();
+                        break;
+                    default:
+                        _modelContext.ClearMeshSelection();
+                        break;
+                }
+            }
+            
+            // 選択を復元
             foreach (var mc in selectedMeshContexts)
             {
                 int newIndex = _modelContext.MeshContextList.IndexOf(mc);
                 if (newIndex >= 0)
                 {
-                    _modelContext.SelectedMeshContextIndices.Add(newIndex);
+                    _modelContext.AddToSelectionByType(newIndex);
                 }
             }
             var newIndices = string.Join(",", _modelContext.SelectedMeshContextIndices);
@@ -385,8 +411,11 @@ namespace Poly_Ling.UI
         {
             if (_modelContext == null) return;
 
-            _modelContext.SelectedMeshContextIndices.Clear();
-
+            // v2.0: 選択されたアイテムのカテゴリのみクリアして追加
+            // まず選択されたアイテムのカテゴリを収集
+            var selectedCategories = new HashSet<MeshType>();
+            var selectedIndices = new List<int>();
+            
             foreach (var adapter in _adapterMap.Values)
             {
                 if (adapter.IsSelected)
@@ -394,9 +423,35 @@ namespace Poly_Ling.UI
                     int index = adapter.GetCurrentIndex();
                     if (index >= 0)
                     {
-                        _modelContext.SelectedMeshContextIndices.Add(index);
+                        selectedIndices.Add(index);
+                        var meshContext = _modelContext.GetMeshContext(index);
+                        if (meshContext != null)
+                            selectedCategories.Add(meshContext.Type);
                     }
                 }
+            }
+
+            // 選択に含まれるカテゴリのみクリア
+            foreach (var type in selectedCategories)
+            {
+                switch (type)
+                {
+                    case MeshType.Bone:
+                        _modelContext.ClearBoneSelection();
+                        break;
+                    case MeshType.Morph:
+                        _modelContext.ClearMorphSelection();
+                        break;
+                    default:
+                        _modelContext.ClearMeshSelection();
+                        break;
+                }
+            }
+
+            // 選択されたアイテムを追加
+            foreach (var index in selectedIndices)
+            {
+                _modelContext.AddToSelectionByType(index);
             }
         }
 

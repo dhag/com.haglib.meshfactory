@@ -546,19 +546,24 @@ namespace Poly_Ling.UI
                     if (!oldIndices.SequenceEqual(newIndices))
                         RecordMultiSelectionChange(oldIndices, newIndices);
 
-                    // ModelContextの選択も更新
+                    // ModelContextの選択も更新（カテゴリ別）
                     if (_treeRoot != null)
                     {
                         _treeRoot.SelectMultiple(_selectedAdapters);
                     }
 
-                    // ToolContextのコールバック（あれば）
-                    if (_selectedAdapters.Count > 0 && _toolContext?.SelectMeshContext != null)
+                    // v2.0: ToolContextのコールバックはDrawableタブの場合のみ
+                    // Bone/Morphタブでは頂点編集等のエディタ処理は不要なため、
+                    // SelectMeshContext()を呼ばない（LoadMeshContextToUndoController等をスキップ）
+                    if (_selectedAdapters.Count > 0 && CurrentCategory == MeshCategory.Drawable)
                     {
-                        var firstIndex = _selectedAdapters[0].MasterIndex;
-                        if (firstIndex >= 0)
+                        if (_toolContext?.SelectMeshContext != null)
                         {
-                            _toolContext.SelectMeshContext(firstIndex);
+                            var firstIndex = _selectedAdapters[0].MasterIndex;
+                            if (firstIndex >= 0)
+                            {
+                                _toolContext.SelectMeshContext(firstIndex);
+                            }
                         }
                     }
 
@@ -606,8 +611,17 @@ namespace Poly_Ling.UI
         {
             if (_treeView == null || _treeRoot == null || Model == null) return;
 
+            // v2.0: カテゴリに応じた選択セットのみを参照
+            HashSet<int> selectedIndices = CurrentCategory switch
+            {
+                MeshCategory.Drawable => Model.SelectedMeshIndices,
+                MeshCategory.Bone => Model.SelectedBoneIndices,
+                MeshCategory.Morph => Model.SelectedMorphIndices,
+                _ => Model.SelectedMeshIndices
+            };
+
             var selectedIds = new List<int>();
-            foreach (var idx in Model.SelectedMeshContextIndices)
+            foreach (var idx in selectedIndices)
             {
                 var adapter = _treeRoot.GetAdapterByMasterIndex(idx);
                 if (adapter != null)

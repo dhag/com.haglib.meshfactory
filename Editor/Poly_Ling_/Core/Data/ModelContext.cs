@@ -117,32 +117,162 @@ namespace Poly_Ling.Model
         public bool HasBones => TypedIndices.HasBones;
 
         // ================================================================
-        // 選択状態（複数選択対応）
+        // 選択状態（カテゴリ別・複数選択対応）
+        // v2.0: 選択メッシュ/選択ボーン/選択頂点モーフに分離
         // ================================================================
 
-        /// <summary>選択中のメッシュインデックス（複数選択対応）</summary>
-        public HashSet<int> SelectedMeshContextIndices { get; set; } = new HashSet<int>();
+        /// <summary>選択カテゴリ</summary>
+        public enum SelectionCategory { Mesh, Bone, Morph }
 
-        /// <summary>主選択インデックス（編集対象・最小インデックス）</summary>
-        public int PrimarySelectedMeshContextIndex => SelectedMeshContextIndices.Count > 0 ? SelectedMeshContextIndices.Min() : -1;
+        /// <summary>現在アクティブな選択カテゴリ</summary>
+        public SelectionCategory ActiveCategory { get; private set; } = SelectionCategory.Mesh;
+
+        /// <summary>選択中のメッシュインデックス（Mesh, BakedMirror タイプ）</summary>
+        public HashSet<int> SelectedMeshIndices { get; set; } = new HashSet<int>();
+
+        /// <summary>選択中のボーンインデックス（Bone タイプ）</summary>
+        public HashSet<int> SelectedBoneIndices { get; set; } = new HashSet<int>();
+
+        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）</summary>
+        public HashSet<int> SelectedMorphIndices { get; set; } = new HashSet<int>();
+
+        /// <summary>主選択メッシュインデックス（編集対象・最小インデックス）</summary>
+        public int PrimarySelectedMeshIndex => SelectedMeshIndices.Count > 0 ? SelectedMeshIndices.Min() : -1;
+
+        /// <summary>主選択ボーンインデックス（編集対象・最小インデックス）</summary>
+        public int PrimarySelectedBoneIndex => SelectedBoneIndices.Count > 0 ? SelectedBoneIndices.Min() : -1;
+
+        /// <summary>主選択頂点モーフインデックス（編集対象・最小インデックス）</summary>
+        public int PrimarySelectedMorphIndex => SelectedMorphIndices.Count > 0 ? SelectedMorphIndices.Min() : -1;
+
+        /// <summary>メッシュが選択されているか</summary>
+        public bool HasMeshSelection => SelectedMeshIndices.Count > 0;
+
+        /// <summary>ボーンが選択されているか</summary>
+        public bool HasBoneSelection => SelectedBoneIndices.Count > 0;
+
+        /// <summary>頂点モーフが選択されているか</summary>
+        public bool HasMorphSelection => SelectedMorphIndices.Count > 0;
+
+        /// <summary>メッシュが複数選択されているか</summary>
+        public bool IsMeshMultiSelected => SelectedMeshIndices.Count > 1;
+
+        /// <summary>ボーンが複数選択されているか</summary>
+        public bool IsBoneMultiSelected => SelectedBoneIndices.Count > 1;
+
+        /// <summary>頂点モーフが複数選択されているか</summary>
+        public bool IsMorphMultiSelected => SelectedMorphIndices.Count > 1;
+
+        // ================================================================
+        // カテゴリ別選択操作
+        // ================================================================
+
+        /// <summary>メッシュを選択（単一選択）</summary>
+        public void SelectMesh(int index)
+        {
+            ClearMeshSelection();
+            if (index >= 0 && index < Count)
+            {
+                SelectedMeshIndices.Add(index);
+                ActiveCategory = SelectionCategory.Mesh;
+            }
+        }
+
+        /// <summary>ボーンを選択（単一選択）</summary>
+        public void SelectBone(int index)
+        {
+            ClearBoneSelection();
+            if (index >= 0 && index < Count)
+            {
+                SelectedBoneIndices.Add(index);
+                ActiveCategory = SelectionCategory.Bone;
+            }
+        }
+
+        /// <summary>頂点モーフを選択（単一選択）</summary>
+        public void SelectMorph(int index)
+        {
+            ClearMorphSelection();
+            if (index >= 0 && index < Count)
+            {
+                SelectedMorphIndices.Add(index);
+                ActiveCategory = SelectionCategory.Morph;
+            }
+        }
+
+        /// <summary>メッシュ選択に追加</summary>
+        public void AddToMeshSelection(int index)
+        {
+            if (index >= 0 && index < Count)
+            {
+                SelectedMeshIndices.Add(index);
+                ActiveCategory = SelectionCategory.Mesh;
+            }
+        }
+
+        /// <summary>ボーン選択に追加</summary>
+        public void AddToBoneSelection(int index)
+        {
+            if (index >= 0 && index < Count)
+            {
+                SelectedBoneIndices.Add(index);
+                ActiveCategory = SelectionCategory.Bone;
+            }
+        }
+
+        /// <summary>頂点モーフ選択に追加</summary>
+        public void AddToMorphSelection(int index)
+        {
+            if (index >= 0 && index < Count)
+            {
+                SelectedMorphIndices.Add(index);
+                ActiveCategory = SelectionCategory.Morph;
+            }
+        }
+
+        /// <summary>メッシュ選択をクリア</summary>
+        public void ClearMeshSelection() => SelectedMeshIndices.Clear();
+
+        /// <summary>ボーン選択をクリア</summary>
+        public void ClearBoneSelection() => SelectedBoneIndices.Clear();
+
+        /// <summary>頂点モーフ選択をクリア</summary>
+        public void ClearMorphSelection() => SelectedMorphIndices.Clear();
+
+        // ================================================================
+        // 後方互換プロパティ（全カテゴリ統合ビュー）
+        // ================================================================
+
+        /// <summary>
+        /// 選択中の全インデックス（読み取り専用）
+        /// 設定にはSelect/SelectMesh/SelectBone/SelectMorph等を使用
+        /// </summary>
+        public HashSet<int> SelectedMeshContextIndices
+        {
+            get
+            {
+                var all = new HashSet<int>(SelectedMeshIndices);
+                all.UnionWith(SelectedBoneIndices);
+                all.UnionWith(SelectedMorphIndices);
+                return all;
+            }
+        }
+
+        /// <summary>主選択インデックス（全カテゴリ中の最小）</summary>
+        public int PrimarySelectedMeshContextIndex
+        {
+            get
+            {
+                var all = SelectedMeshContextIndices;
+                return all.Count > 0 ? all.Min() : -1;
+            }
+        }
 
         /// <summary>選択があるか</summary>
-        public bool HasSelection => SelectedMeshContextIndices.Count > 0;
+        public bool HasSelection => HasMeshSelection || HasBoneSelection || HasMorphSelection;
 
         /// <summary>複数選択されているか</summary>
         public bool IsMultiSelected => SelectedMeshContextIndices.Count > 1;
-
-        /// <summary>選択中のメッシュインデックス（後方互換・単一選択用）</summary>
-        public int SelectedMeshContextIndex
-        {
-            get => PrimarySelectedMeshContextIndex;
-            set
-            {
-                SelectedMeshContextIndices.Clear();
-                if (value >= 0 && value < Count)
-                    SelectedMeshContextIndices.Add(value);
-            }
-        }
 
         /// <summary>現在選択中のメッシュコンテキスト（主選択）</summary>
         public MeshContext CurrentMeshContext =>
@@ -151,6 +281,91 @@ namespace Poly_Ling.Model
 
         /// <summary>有効なメッシュコンテキストが選択されているか</summary>
         public bool HasValidMeshContextSelection => CurrentMeshContext != null;
+
+        // ================================================================
+        // カテゴリ別選択ヘルパー
+        // ================================================================
+
+        /// <summary>タイプに基づいて適切なカテゴリに選択を追加</summary>
+        public void AddToSelectionByType(int index)
+        {
+            if (index < 0 || index >= Count) return;
+            var meshContext = MeshContextList[index];
+            if (meshContext == null) return;
+
+            switch (meshContext.Type)
+            {
+                case MeshType.Bone:
+                    SelectedBoneIndices.Add(index);
+                    ActiveCategory = SelectionCategory.Bone;
+                    break;
+                case MeshType.Morph:
+                    SelectedMorphIndices.Add(index);
+                    ActiveCategory = SelectionCategory.Morph;
+                    break;
+                default:
+                    // Mesh, BakedMirror, Helper, Group, RigidBody, RigidBodyJoint等
+                    SelectedMeshIndices.Add(index);
+                    ActiveCategory = SelectionCategory.Mesh;
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// タイプに基づいて同一カテゴリのみをクリアして選択（他カテゴリは維持）
+        /// メインパネルでの選択操作用
+        /// </summary>
+        public void SelectByTypeExclusive(int index)
+        {
+            if (index < 0 || index >= Count) return;
+            var meshContext = MeshContextList[index];
+            if (meshContext == null) return;
+
+            switch (meshContext.Type)
+            {
+                case MeshType.Bone:
+                    ClearBoneSelection();
+                    SelectedBoneIndices.Add(index);
+                    ActiveCategory = SelectionCategory.Bone;
+                    break;
+                case MeshType.Morph:
+                    ClearMorphSelection();
+                    SelectedMorphIndices.Add(index);
+                    ActiveCategory = SelectionCategory.Morph;
+                    break;
+                default:
+                    // Mesh, BakedMirror, Helper, Group, RigidBody, RigidBodyJoint等
+                    ClearMeshSelection();
+                    SelectedMeshIndices.Add(index);
+                    ActiveCategory = SelectionCategory.Mesh;
+                    break;
+            }
+        }
+
+        /// <summary>タイプに基づいて適切なカテゴリから選択を解除</summary>
+        public void RemoveFromSelectionByType(int index)
+        {
+            // 全カテゴリから削除（タイプが変わっている可能性があるため）
+            SelectedMeshIndices.Remove(index);
+            SelectedBoneIndices.Remove(index);
+            SelectedMorphIndices.Remove(index);
+        }
+
+        /// <summary>指定インデックスがどのカテゴリで選択されているか確認</summary>
+        public bool IsSelectedInAnyCategory(int index)
+        {
+            return SelectedMeshIndices.Contains(index) ||
+                   SelectedBoneIndices.Contains(index) ||
+                   SelectedMorphIndices.Contains(index);
+        }
+
+        /// <summary>全カテゴリの選択をクリア</summary>
+        public void ClearAllCategorySelection()
+        {
+            SelectedMeshIndices.Clear();
+            SelectedBoneIndices.Clear();
+            SelectedMorphIndices.Clear();
+        }
 
         // ================================================================
         // Undoコールバック（旧MeshListUndoContextから統合）
@@ -424,46 +639,46 @@ namespace Poly_Ling.Model
         }
 
         // ================================================================
-        // 選択操作（複数選択対応・旧MeshListUndoContextから統合）
+        // 選択操作（カテゴリ対応・旧MeshListUndoContextから統合）
         // ================================================================
 
-        /// <summary>選択をクリア</summary>
+        /// <summary>全選択をクリア（後方互換）</summary>
         public void ClearSelection()
         {
-            SelectedMeshContextIndices.Clear();
+            ClearAllCategorySelection();
         }
 
-        /// <summary>単一選択（既存選択をクリアして選択）</summary>
+        /// <summary>単一選択（既存選択をクリアして選択・タイプ自動判定）</summary>
         public void Select(int index)
         {
-            SelectedMeshContextIndices.Clear();
+            ClearAllCategorySelection();
             if (index >= 0 && index < Count)
-                SelectedMeshContextIndices.Add(index);
+                AddToSelectionByType(index);
         }
 
-        /// <summary>選択を追加</summary>
+        /// <summary>選択を追加（タイプ自動判定）</summary>
         public void AddToSelection(int index)
         {
             if (index >= 0 && index < Count)
-                SelectedMeshContextIndices.Add(index);
+                AddToSelectionByType(index);
         }
 
-        /// <summary>選択を解除</summary>
+        /// <summary>選択を解除（全カテゴリ）</summary>
         public void RemoveFromSelection(int index)
         {
-            SelectedMeshContextIndices.Remove(index);
+            RemoveFromSelectionByType(index);
         }
 
-        /// <summary>選択をトグル</summary>
+        /// <summary>選択をトグル（タイプ自動判定）</summary>
         public void ToggleSelection(int index)
         {
-            if (SelectedMeshContextIndices.Contains(index))
-                SelectedMeshContextIndices.Remove(index);
+            if (IsSelectedInAnyCategory(index))
+                RemoveFromSelectionByType(index);
             else if (index >= 0 && index < Count)
-                SelectedMeshContextIndices.Add(index);
+                AddToSelectionByType(index);
         }
 
-        /// <summary>範囲選択（from から to まで）</summary>
+        /// <summary>範囲選択（from から to まで・タイプ自動判定）</summary>
         public void SelectRange(int from, int to)
         {
             int min = Mathf.Min(from, to);
@@ -471,28 +686,42 @@ namespace Poly_Ling.Model
             for (int i = min; i <= max; i++)
             {
                 if (i >= 0 && i < Count)
-                    SelectedMeshContextIndices.Add(i);
+                    AddToSelectionByType(i);
             }
         }
 
-        /// <summary>全選択</summary>
+        /// <summary>全選択（タイプ自動判定）</summary>
         public void SelectAll()
         {
-            SelectedMeshContextIndices.Clear();
+            ClearAllCategorySelection();
             for (int i = 0; i < Count; i++)
-                SelectedMeshContextIndices.Add(i);
+                AddToSelectionByType(i);
         }
 
-        /// <summary>選択されているか</summary>
+        /// <summary>インデックスセットから選択状態を復元（Undo用）</summary>
+        public void RestoreSelectionFromIndices(IEnumerable<int> indices)
+        {
+            ClearAllCategorySelection();
+            if (indices == null) return;
+            foreach (var index in indices)
+            {
+                if (index >= 0 && index < Count)
+                    AddToSelectionByType(index);
+            }
+        }
+
+        /// <summary>選択されているか（全カテゴリ）</summary>
         public bool IsSelected(int index)
         {
-            return SelectedMeshContextIndices.Contains(index);
+            return IsSelectedInAnyCategory(index);
         }
 
-        /// <summary>選択インデックスを検証して無効なものを除去</summary>
+        /// <summary>選択インデックスを検証して無効なものを除去（全カテゴリ）</summary>
         public void ValidateSelection()
         {
-            SelectedMeshContextIndices.RemoveWhere(i => i < 0 || i >= Count);
+            SelectedMeshIndices.RemoveWhere(i => i < 0 || i >= Count);
+            SelectedBoneIndices.RemoveWhere(i => i < 0 || i >= Count);
+            SelectedMorphIndices.RemoveWhere(i => i < 0 || i >= Count);
         }
 
         // ================================================================
@@ -524,13 +753,21 @@ namespace Poly_Ling.Model
             InvalidateTypedIndices();
             IsDirty = true;
 
-            // 選択インデックス調整（挿入位置以降は+1）
+            // 選択インデックス調整（挿入位置以降は+1）- 各カテゴリ個別に
+            SelectedMeshIndices = AdjustIndicesForInsert(SelectedMeshIndices, index);
+            SelectedBoneIndices = AdjustIndicesForInsert(SelectedBoneIndices, index);
+            SelectedMorphIndices = AdjustIndicesForInsert(SelectedMorphIndices, index);
+        }
+
+        /// <summary>挿入時のインデックス調整ヘルパー</summary>
+        private static HashSet<int> AdjustIndicesForInsert(HashSet<int> indices, int insertIndex)
+        {
             var adjusted = new HashSet<int>();
-            foreach (var i in SelectedMeshContextIndices)
+            foreach (var i in indices)
             {
-                adjusted.Add(i >= index ? i + 1 : i);
+                adjusted.Add(i >= insertIndex ? i + 1 : i);
             }
-            SelectedMeshContextIndices = adjusted;
+            return adjusted;
         }
 
         /// <summary>メッシュを削除</summary>
@@ -544,20 +781,28 @@ namespace Poly_Ling.Model
             InvalidateTypedIndices();
             IsDirty = true;
 
-            // 選択インデックス調整
-            var adjusted = new HashSet<int>();
-            foreach (var i in SelectedMeshContextIndices)
-            {
-                if (i < index)
-                    adjusted.Add(i);
-                else if (i > index)
-                    adjusted.Add(i - 1);
-                // i == index の場合は削除されるので追加しない
-            }
-            SelectedMeshContextIndices = adjusted;
+            // 選択インデックス調整 - 各カテゴリ個別に
+            SelectedMeshIndices = AdjustIndicesForRemove(SelectedMeshIndices, index);
+            SelectedBoneIndices = AdjustIndicesForRemove(SelectedBoneIndices, index);
+            SelectedMorphIndices = AdjustIndicesForRemove(SelectedMorphIndices, index);
             ValidateSelection();
 
             return true;
+        }
+
+        /// <summary>削除時のインデックス調整ヘルパー</summary>
+        private static HashSet<int> AdjustIndicesForRemove(HashSet<int> indices, int removeIndex)
+        {
+            var adjusted = new HashSet<int>();
+            foreach (var i in indices)
+            {
+                if (i < removeIndex)
+                    adjusted.Add(i);
+                else if (i > removeIndex)
+                    adjusted.Add(i - 1);
+                // i == removeIndex の場合は削除されるので追加しない
+            }
+            return adjusted;
         }
 
         /// <summary>メッシュを移動（順序変更）</summary>
@@ -575,9 +820,21 @@ namespace Poly_Ling.Model
             MeshContextList.RemoveAt(fromIndex);
             MeshContextList.Insert(toIndex, meshContext);
 
-            // 選択インデックス調整
+            // 選択インデックス調整 - 各カテゴリ個別に
+            SelectedMeshIndices = AdjustIndicesForMove(SelectedMeshIndices, fromIndex, toIndex);
+            SelectedBoneIndices = AdjustIndicesForMove(SelectedBoneIndices, fromIndex, toIndex);
+            SelectedMorphIndices = AdjustIndicesForMove(SelectedMorphIndices, fromIndex, toIndex);
+
+            InvalidateTypedIndices();
+            IsDirty = true;
+            return true;
+        }
+
+        /// <summary>移動時のインデックス調整ヘルパー</summary>
+        private static HashSet<int> AdjustIndicesForMove(HashSet<int> indices, int fromIndex, int toIndex)
+        {
             var adjusted = new HashSet<int>();
-            foreach (var i in SelectedMeshContextIndices)
+            foreach (var i in indices)
             {
                 if (i == fromIndex)
                 {
@@ -596,11 +853,7 @@ namespace Poly_Ling.Model
                     adjusted.Add(i);
                 }
             }
-            SelectedMeshContextIndices = adjusted;
-
-            InvalidateTypedIndices();
-            IsDirty = true;
-            return true;
+            return adjusted;
         }
 
         /// <summary>インデックスでメッシュコンテキストを取得</summary>
@@ -635,7 +888,7 @@ namespace Poly_Ling.Model
             }
 
             MeshContextList.Clear();
-            SelectedMeshContextIndices.Clear();
+            ClearAllCategorySelection();
             InvalidateTypedIndices();
             IsDirty = true;
         }

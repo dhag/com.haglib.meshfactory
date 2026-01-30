@@ -34,7 +34,7 @@ public partial class PolyLing
         string projectName = _model.Name ?? (_meshContextList.Count > 0 ? _meshContextList[0].Name : "Project");
         var projectDTO = ProjectDTO.Create(projectName);
 
-        // EditorState を作成
+        // EditorState を作成（v2.0: カテゴリ別選択インデックス対応）
         var editorStateDTO = new EditorStateDTO
         {
             rotationX = _rotationX,
@@ -45,7 +45,9 @@ public partial class PolyLing
             showVertices = _showVertices,
             vertexEditMode = _vertexEditMode,
             currentToolName = _currentTool?.Name ?? "Select",
-            selectedMeshIndex = _selectedIndex
+            selectedMeshIndex = _model.PrimarySelectedMeshIndex,
+            selectedBoneIndex = _model.PrimarySelectedBoneIndex,
+            selectedVertexMorphIndex = _model.PrimarySelectedMorphIndex
         };
 
         // ModelSerializer.FromModelContext を使用してモデル全体をエクスポート
@@ -142,18 +144,37 @@ public partial class PolyLing
             _showVertices = state.showVertices;
             _vertexEditMode = state.vertexEditMode;
 
-            // 選択メッシュを復元
+            // 選択メッシュを復元（v2.0: カテゴリ別対応）
+            _model.ClearAllCategorySelection();
+            
+            // メッシュカテゴリ
             if (state.selectedMeshIndex >= 0 && state.selectedMeshIndex < _meshContextList.Count)
             {
+                _model.SelectMesh(state.selectedMeshIndex);
                 _selectedIndex = state.selectedMeshIndex;
 
                 // 選択頂点を復元
                 var selectedMeshContextData = modelDTO.meshDTOList[state.selectedMeshIndex];
                 _selectedVertices = ModelSerializer.ToSelectedVertices(selectedMeshContextData);
             }
-            else if (_meshContextList.Count > 0)
+            
+            // ボーンカテゴリ
+            if (state.selectedBoneIndex >= 0 && state.selectedBoneIndex < _meshContextList.Count)
+            {
+                _model.SelectBone(state.selectedBoneIndex);
+            }
+            
+            // モーフカテゴリ
+            if (state.selectedVertexMorphIndex >= 0 && state.selectedVertexMorphIndex < _meshContextList.Count)
+            {
+                _model.SelectMorph(state.selectedVertexMorphIndex);
+            }
+            
+            // フォールバック: 何も選択されていない場合
+            if (!_model.HasSelection && _meshContextList.Count > 0)
             {
                 _selectedIndex = 0;
+                _model.Select(0);
             }
 
             // ツールを復元（名前で検索）
@@ -165,6 +186,7 @@ public partial class PolyLing
         else if (_meshContextList.Count > 0)
         {
             _selectedIndex = 0;
+            _model.Select(0);
         }
 
         // 変更後のカメラ状態を保存
@@ -215,7 +237,8 @@ public partial class PolyLing
             };
             _undoController.MeshListStack.Record(record, $"Import Project: {projectDTO.name}");
             _undoController.FocusMeshList();
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            // v2.0: 新API使用
+            _undoController.MeshListContext.Select(_selectedIndex);
         }
 
         Debug.Log($"[PolyLing] Imported project: {projectDTO.name} ({_meshContextList.Count} meshes, {_model.Materials?.Count ?? 0} materialPathList)");

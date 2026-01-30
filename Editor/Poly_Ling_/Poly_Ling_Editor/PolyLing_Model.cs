@@ -123,16 +123,12 @@ public partial class PolyLing
         // 選択インデックスをリセット
         if (_model != null && _model.MeshContextCount > 0)
         {
-            _selectedIndex = _model.SelectedMeshContextIndex;
+            // v2.0: カテゴリ別選択使用
             if (_selectedIndex < 0 || _selectedIndex >= _model.MeshContextCount)
             {
-                _selectedIndex = 0;
-                _model.SelectedMeshContextIndex = 0;
+                _model.ClearAllCategorySelection();
+                _model.AddToSelectionByType(0);
             }
-        }
-        else
-        {
-            _selectedIndex = -1;
         }
 
         // ★Phase 1: 新しいメッシュの選択を復元
@@ -279,15 +275,11 @@ public partial class PolyLing
         // UndoController更新
         RefreshUndoControllerReferences();
 
-        // 選択リセット
+        // 選択リセット (v2.0)
         if (_model != null && _model.MeshContextCount > 0)
         {
-            _selectedIndex = 0;
-            _model.SelectedMeshContextIndex = 0;
-        }
-        else
-        {
-            _selectedIndex = -1;
+            _model.ClearAllCategorySelection();
+            _model.AddToSelectionByType(0);
         }
         _selectedVertices.Clear();
         _selectionState?.ClearAll();
@@ -482,8 +474,7 @@ public partial class PolyLing
             return;
         }
         
-        // 選択インデックスを同期
-        _selectedIndex = currentModel.SelectedMeshContextIndex;
+        // v2.0: 選択インデックスは_selectedIndexプロパティ経由でActiveCategoryに応じて取得
         
         // ToolContextのModel参照を更新
         if (_toolManager?.toolContext != null)
@@ -504,11 +495,11 @@ public partial class PolyLing
         // バッファを再構築
         _unifiedAdapter?.SetModelContext(currentModel);
         
-        // 新しいモデルの最初のメッシュを選択
+        // 新しいモデルの最初のメッシュを選択 (v2.0)
         if (_meshContextList.Count > 0 && _selectedIndex < 0)
         {
-            _selectedIndex = 0;
-            currentModel.SelectedMeshContextIndex = 0;
+            currentModel.ClearAllCategorySelection();
+            currentModel.AddToSelectionByType(0);
         }
         
         // UndoControllerに現在のMeshContextをロード
@@ -618,14 +609,13 @@ public partial class PolyLing
     {
         RefreshUndoControllerReferences();
 
-        // 選択インデックスを同期
+        // 選択インデックスを同期 (v2.0)
         if (_model != null)
         {
-            _selectedIndex = _model.SelectedMeshContextIndex;
             if (_selectedIndex < 0 && _model.MeshContextCount > 0)
             {
-                _selectedIndex = 0;
-                _model.SelectedMeshContextIndex = 0;
+                _model.ClearAllCategorySelection();
+                _model.AddToSelectionByType(0);
             }
         }
 

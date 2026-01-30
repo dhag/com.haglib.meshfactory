@@ -103,7 +103,7 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュコンテキスト追加）
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 
@@ -289,7 +289,7 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト追加）
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
             _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 
@@ -370,7 +370,7 @@ public partial class PolyLing
             };
             _undoController.MeshListStack.Record(record, $"Remove UnityMesh: {meshContext.Name}");
             _undoController.FocusMeshList();
-            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            _undoController.MeshListContext.Select(_selectedIndex);
         }
 
         Repaint();

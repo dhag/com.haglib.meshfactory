@@ -18,12 +18,38 @@ namespace Poly_Ling.UndoSystem
 
     /// <summary>
     /// ModelContext全体のスナップショット
+    /// v2.0: カテゴリ別選択インデックス対応
     /// </summary>
     public class ModelContextSnapshot
     {
         public string Name;
         public List<MeshContextSnapshot> MeshSnapshots;
-        public int SelectedMeshIndex;
+        
+        // カテゴリ別選択インデックス（v2.0）
+        public HashSet<int> SelectedMeshIndices;
+        public HashSet<int> SelectedBoneIndices;
+        public HashSet<int> SelectedMorphIndices;
+        
+        // 後方互換用（廃止予定）
+        public int SelectedMeshIndex
+        {
+            get
+            {
+                // 全カテゴリ中の最小インデックスを返す
+                var all = new HashSet<int>();
+                if (SelectedMeshIndices != null) all.UnionWith(SelectedMeshIndices);
+                if (SelectedBoneIndices != null) all.UnionWith(SelectedBoneIndices);
+                if (SelectedMorphIndices != null) all.UnionWith(SelectedMorphIndices);
+                return all.Count > 0 ? all.Min() : -1;
+            }
+            set
+            {
+                // 後方互換: 単一値をメッシュカテゴリに設定
+                SelectedMeshIndices = value >= 0 ? new HashSet<int> { value } : new HashSet<int>();
+                SelectedBoneIndices = new HashSet<int>();
+                SelectedMorphIndices = new HashSet<int>();
+            }
+        }
 
         // マテリアル
         public List<MaterialReferenceSnapshot> MaterialReferences;
@@ -43,7 +69,10 @@ namespace Poly_Ling.UndoSystem
             {
                 Name = model.Name,
                 MeshSnapshots = new List<MeshContextSnapshot>(),
-                SelectedMeshIndex = model.SelectedMeshContextIndex,
+                // カテゴリ別選択インデックス（v2.0）
+                SelectedMeshIndices = new HashSet<int>(model.SelectedMeshIndices),
+                SelectedBoneIndices = new HashSet<int>(model.SelectedBoneIndices),
+                SelectedMorphIndices = new HashSet<int>(model.SelectedMorphIndices),
                 CurrentMaterialIndex = model.CurrentMaterialIndex,
                 DefaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex,
                 AutoSetDefaultMaterials = model.AutoSetDefaultMaterials
@@ -90,8 +119,13 @@ namespace Poly_Ling.UndoSystem
                 }
             }
 
-            // 選択インデックス
-            model.SelectedMeshContextIndex = SelectedMeshIndex;
+            // カテゴリ別選択インデックス復元（v2.0）
+            if (SelectedMeshIndices != null)
+                model.SelectedMeshIndices = new HashSet<int>(SelectedMeshIndices);
+            if (SelectedBoneIndices != null)
+                model.SelectedBoneIndices = new HashSet<int>(SelectedBoneIndices);
+            if (SelectedMorphIndices != null)
+                model.SelectedMorphIndices = new HashSet<int>(SelectedMorphIndices);
 
             // マテリアル復元
             model.MaterialReferences = RestoreMaterialReferences(MaterialReferences);
@@ -134,8 +168,14 @@ namespace Poly_Ling.UndoSystem
                 }
             }
 
-            // 選択インデックス
-            model.SelectedMeshContextIndex = SelectedMeshIndex;
+            // カテゴリ別選択インデックス復元（v2.0）
+            model.ClearAllCategorySelection();
+            if (SelectedMeshIndices != null)
+                model.SelectedMeshIndices = new HashSet<int>(SelectedMeshIndices);
+            if (SelectedBoneIndices != null)
+                model.SelectedBoneIndices = new HashSet<int>(SelectedBoneIndices);
+            if (SelectedMorphIndices != null)
+                model.SelectedMorphIndices = new HashSet<int>(SelectedMorphIndices);
 
             // マテリアル復元
             model.MaterialReferences = RestoreMaterialReferences(MaterialReferences);
