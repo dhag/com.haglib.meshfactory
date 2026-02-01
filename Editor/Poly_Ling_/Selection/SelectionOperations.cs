@@ -447,6 +447,167 @@ namespace Poly_Ling.Selection
             return changed;
         }
 
+        /// <summary>
+        /// v2.1: 矩形内の要素を選択（頂点インデックスからスクリーン座標を取得するバージョン）
+        /// ワールドモード時にGPU変換後の座標を使用するため
+        /// </summary>
+        public bool SelectInRectByIndex(
+            Rect screenRect,
+            MeshObject meshObject,
+            Func<int, Vector2> vertexIndexToScreen,
+            bool additive = false)
+        {
+            if (meshObject == null || vertexIndexToScreen == null) return false;
+
+            bool changed = false;
+            var mode = _state.Mode;
+
+            // 頂点選択のみ対応（エッジ・面・ラインは頂点座標から計算可能）
+            if (mode.Has(MeshSelectMode.Vertex))
+            {
+                changed |= SelectVerticesInRectByIndex(screenRect, meshObject, vertexIndexToScreen, additive);
+            }
+            if (mode.Has(MeshSelectMode.Edge))
+            {
+                changed |= SelectEdgesInRectByIndex(screenRect, meshObject, vertexIndexToScreen, additive);
+            }
+            if (mode.Has(MeshSelectMode.Face))
+            {
+                changed |= SelectFacesInRectByIndex(screenRect, meshObject, vertexIndexToScreen, additive);
+            }
+            if (mode.Has(MeshSelectMode.Line))
+            {
+                changed |= SelectLinesInRectByIndex(screenRect, meshObject, vertexIndexToScreen, additive);
+            }
+
+            return changed;
+        }
+
+        private bool SelectVerticesInRectByIndex(Rect rect, MeshObject meshObject, Func<int, Vector2> vertexIndexToScreen, bool additive)
+        {
+            if (!additive) _state.Vertices.Clear();
+
+            bool changed = false;
+            for (int i = 0; i < meshObject.VertexCount; i++)
+            {
+                // 可視性チェック
+                if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
+                    continue;
+
+                Vector2 sp = vertexIndexToScreen(i);
+                if (rect.Contains(sp))
+                {
+                    if (_state.Vertices.Add(i))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
+        private bool SelectEdgesInRectByIndex(Rect rect, MeshObject meshObject, Func<int, Vector2> vertexIndexToScreen, bool additive)
+        {
+            if (!additive) _state.Edges.Clear();
+
+            bool changed = false;
+            foreach (var pair in _topology.AllEdgePairs)
+            {
+                // 可視性チェック：エッジが属する面のいずれかが可視なら可視
+                if (_visibilityProvider != null)
+                {
+                    bool anyVisible = false;
+                    foreach (var faceEdge in _topology.GetEdgesAt(pair))
+                    {
+                        if (_visibilityProvider.IsFaceVisible(faceEdge.FaceIndex))
+                        {
+                            anyVisible = true;
+                            break;
+                        }
+                    }
+                    if (!anyVisible) continue;
+                }
+
+                Vector2 sp1 = vertexIndexToScreen(pair.V1);
+                Vector2 sp2 = vertexIndexToScreen(pair.V2);
+
+                // 両端点が矩形内
+                if (rect.Contains(sp1) && rect.Contains(sp2))
+                {
+                    if (_state.Edges.Add(pair))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
+        private bool SelectFacesInRectByIndex(Rect rect, MeshObject meshObject, Func<int, Vector2> vertexIndexToScreen, bool additive)
+        {
+            if (!additive) _state.Faces.Clear();
+
+            bool changed = false;
+            for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
+            {
+                var face = meshObject.Faces[faceIdx];
+                if (face.VertexCount < 3) continue;  // 面は3頂点以上
+
+                // 可視性チェック
+                if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(faceIdx))
+                    continue;
+
+                // 全頂点が矩形内にあるか
+                bool allInRect = true;
+                foreach (int vIdx in face.VertexIndices)
+                {
+                    Vector2 sp = vertexIndexToScreen(vIdx);
+                    if (!rect.Contains(sp))
+                    {
+                        allInRect = false;
+                        break;
+                    }
+                }
+
+                if (allInRect)
+                {
+                    if (_state.Faces.Add(faceIdx))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
+        private bool SelectLinesInRectByIndex(Rect rect, MeshObject meshObject, Func<int, Vector2> vertexIndexToScreen, bool additive)
+        {
+            if (!additive) _state.Lines.Clear();
+
+            bool changed = false;
+            for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
+            {
+                var face = meshObject.Faces[faceIdx];
+                if (face.VertexCount != 2) continue;  // ラインは2頂点
+
+                // 可視性チェック
+                if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(faceIdx))
+                    continue;
+
+                int v1 = face.VertexIndices[0];
+                int v2 = face.VertexIndices[1];
+
+                Vector2 sp1 = vertexIndexToScreen(v1);
+                Vector2 sp2 = vertexIndexToScreen(v2);
+
+                // 両端点が矩形内
+                if (rect.Contains(sp1) && rect.Contains(sp2))
+                {
+                    if (_state.Lines.Add(faceIdx))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
         private bool SelectVerticesInRect(Rect rect, MeshObject meshObject, Func<Vector3, Vector2> worldToScreen, bool additive)
         {
             if (!additive) _state.Vertices.Clear();

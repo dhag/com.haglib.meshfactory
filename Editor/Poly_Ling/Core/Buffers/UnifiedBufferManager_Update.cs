@@ -43,6 +43,9 @@ namespace Poly_Ling.Core
         {
             if (model == null) return;
             
+            // v2.1: ModelContext参照を保存
+            _modelContext = model;
+            
             // 複数選択を同期
             _flagManager.SelectedMeshIndices.Clear();
             foreach (var idx in model.SelectedMeshIndices)
@@ -62,6 +65,9 @@ namespace Poly_Ling.Core
             var indices = string.Join(",", _flagManager.SelectedMeshIndices);
             UnityEngine.Debug.Log($"[SyncSelectionFromModel] FlagManager.SelectedMeshIndices=[{indices}], Active={_flagManager.ActiveMeshIndex}");
         }
+        
+        // v2.1: ModelContext参照（複数メッシュ選択用）
+        private Poly_Ling.Model.ModelContext _modelContext;
 
         /// <summary>
         /// 全頂点の選択フラグを更新
@@ -72,20 +78,25 @@ namespace Poly_Ling.Core
             int activeModel = _flagManager.ActiveModelIndex;
             bool hasSelectionState = _flagManager.SelectionState != null;
 
-            // デバッグログ
-            if (hasSelectionState)
-            {
-                var ss = _flagManager.SelectionState;
-                if (ss.Edges.Count > 0 || ss.Faces.Count > 0 || ss.Lines.Count > 0)
-                {
-                    Debug.Log($"[UpdateAllSelectionFlags] V={ss.Vertices.Count}, E={ss.Edges.Count}, F={ss.Faces.Count}, L={ss.Lines.Count}, activeMesh={activeMesh}, meshCount={_meshCount}");
-                }
-            }
+            int vertexSelectedCount = 0;
 
             for (int meshIdx = 0; meshIdx < _meshCount; meshIdx++)
             {
                 var meshInfo = _meshInfos[meshIdx];
                 bool isActiveMesh = (meshIdx == activeMesh) && ((int)meshInfo.ModelIndex == activeModel);
+                
+                // v2.1: このメッシュが選択されているか、MeshContextから選択頂点を取得
+                bool isMeshSelected = _flagManager.SelectedMeshIndices.Contains(meshIdx);
+                HashSet<int> meshSelectedVertices = null;
+                
+                if (isMeshSelected && _modelContext != null)
+                {
+                    var meshContext = _modelContext.GetMeshContext(meshIdx);
+                    if (meshContext != null && meshContext.SelectedVertices.Count > 0)
+                    {
+                        meshSelectedVertices = meshContext.SelectedVertices;
+                    }
+                }
 
                 SelectionFlags hierarchyFlags = _flagManager.ComputeHierarchyFlags(
                     (int)meshInfo.ModelIndex, meshIdx);
@@ -103,13 +114,36 @@ namespace Poly_Ling.Core
                     // 新しいフラグを設定
                     flags |= (uint)hierarchyFlags;
 
-                    if (hasSelectionState && isActiveMesh && _flagManager.SelectionState.Vertices.Contains((int)v))
+                    // v2.1: 複数メッシュ選択対応 - MeshContextの選択を使用
+                    if (meshSelectedVertices != null && meshSelectedVertices.Contains((int)v))
                     {
                         flags |= (uint)SelectionFlags.VertexSelected;
+                        vertexSelectedCount++;
+                    }
+                    // フォールバック: アクティブメッシュはSelectionStateを使用
+                    else if (hasSelectionState && isActiveMesh && _flagManager.SelectionState.Vertices.Contains((int)v))
+                    {
+                        flags |= (uint)SelectionFlags.VertexSelected;
+                        vertexSelectedCount++;
                     }
 
                     _vertexFlags[globalIdx] = flags;
                 }
+            }
+
+            // デバッグログ: 頂点選択数
+            int totalSelected = 0;
+            if (_modelContext != null)
+            {
+                foreach (int meshIdx in _flagManager.SelectedMeshIndices)
+                {
+                    var ctx = _modelContext.GetMeshContext(meshIdx);
+                    if (ctx != null) totalSelected += ctx.SelectedVertices.Count;
+                }
+            }
+            if (totalSelected > 0 || (hasSelectionState && _flagManager.SelectionState.Vertices.Count > 0))
+            {
+                Debug.Log($"[UpdateAllSelectionFlags] MeshContextTotal={totalSelected}, SelectionState.Vertices={_flagManager.SelectionState?.Vertices.Count ?? 0}, VertexSelectedFlags={vertexSelectedCount}, activeMesh={activeMesh}, meshCount={_meshCount}");
             }
 
             // GPUにアップロード
@@ -123,7 +157,51 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// v2.1: 個別頂点の選択フラグを設定（複数メッシュ選択用）
+        /// </summary>
+        public void SetVertexSelectedFlag(int globalVertexIndex, bool selected)
+        {
+            if (globalVertexIndex < 0 || globalVertexIndex >= _totalVertexCount)
+                return;
+            
+            if (selected)
+            {
+                _vertexFlags[globalVertexIndex] |= (uint)SelectionFlags.VertexSelected;
+            }
+            else
+            {
+                _vertexFlags[globalVertexIndex] &= ~(uint)SelectionFlags.VertexSelected;
+            }
+        }
+        
+        /// <summary>
+        /// v2.1: 全頂点の選択フラグをクリア（複数メッシュ選択用）
+        /// </summary>
+        public void ClearAllVertexSelectedFlags()
+        {
+            for (int i = 0; i < _totalVertexCount; i++)
+            {
+                _vertexFlags[i] &= ~(uint)SelectionFlags.VertexSelected;
+            }
+        }
+        
+        /// <summary>
+        /// v2.1: 頂点フラグをGPUにアップロード
+        /// </summary>
+        public void UploadVertexFlags()
+        {
+            if (_totalVertexCount > 0 && _vertexFlagsBuffer != null)
+            {
+                _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
+            }
+        }
+
+        /// <summary>
         /// ラインの選択フラグを更新
+        /// 
+        /// 【複数メッシュ対応】
+        /// - プライマリメッシュ: _flagManager.SelectionStateを見る
+        /// - セカンダリメッシュ: MeshContextのSelectedEdges/SelectedLinesを見る
         /// </summary>
         private void UpdateAllLineSelectionFlags()
         {
@@ -138,26 +216,32 @@ namespace Poly_Ling.Core
             for (int lineIdx = 0; lineIdx < _totalLineCount; lineIdx++)
             {
                 var line = _lines[lineIdx];
-                bool isActiveMesh = ((int)line.MeshIndex == activeMesh) && ((int)line.ModelIndex == activeModel);
+                int meshIdx = (int)line.MeshIndex;
+                bool isActiveMesh = (meshIdx == activeMesh) && ((int)line.ModelIndex == activeModel);
 
                 // 既存フラグから選択フラグをクリア
                 uint flags = _lineFlags[lineIdx];
                 flags &= ~((uint)SelectionFlags.HierarchyMask | (uint)SelectionFlags.EdgeSelected | (uint)SelectionFlags.LineSelected);
 
                 // 階層フラグ
-                flags |= (uint)_flagManager.ComputeHierarchyFlags((int)line.ModelIndex, (int)line.MeshIndex);
+                flags |= (uint)_flagManager.ComputeHierarchyFlags((int)line.ModelIndex, meshIdx);
                 
                 // v2.1: MeshSelectedフラグのカウント
-                if ((flags & (uint)SelectionFlags.MeshSelected) != 0)
+                bool isMeshSelected = (flags & (uint)SelectionFlags.MeshSelected) != 0;
+                if (isMeshSelected)
                     meshSelectedLineCount++;
 
-                if (hasSelectionState && isActiveMesh)
-                {
-                    bool isAuxLine = (flags & (uint)SelectionFlags.IsAuxLine) != 0;
+                // v2.1: 選択フラグ判定（プライマリ/セカンダリ両対応）
+                bool isAuxLine = (flags & (uint)SelectionFlags.IsAuxLine) != 0;
+                var meshInfo = _meshInfos[line.MeshIndex];
+                int localV1 = (int)(line.V1 - meshInfo.VertexStart);
+                int localV2 = (int)(line.V2 - meshInfo.VertexStart);
 
+                if (isActiveMesh && hasSelectionState)
+                {
+                    // プライマリメッシュ: _selectionStateを見る
                     if (isAuxLine)
                     {
-                        // 補助線選択
                         if (_flagManager.SelectionState.Lines.Contains((int)line.FaceIndex))
                         {
                             flags |= (uint)SelectionFlags.LineSelected;
@@ -166,18 +250,36 @@ namespace Poly_Ling.Core
                     }
                     else
                     {
-                        // エッジ選択（ローカルインデックスで判定が必要）
-                        // Note: ここではグローバルインデックスなので、変換が必要
-                        // 簡易実装: メッシュ内ローカルインデックスを計算
-                        var meshInfo = _meshInfos[line.MeshIndex];
-                        int localV1 = (int)(line.V1 - meshInfo.VertexStart);
-                        int localV2 = (int)(line.V2 - meshInfo.VertexStart);
                         var pair = new VertexPair(localV1, localV2);
-
                         if (_flagManager.SelectionState.Edges.Contains(pair))
                         {
                             flags |= (uint)SelectionFlags.EdgeSelected;
                             edgeSelectedCount++;
+                        }
+                    }
+                }
+                else if (isMeshSelected && _modelContext != null)
+                {
+                    // セカンダリメッシュ: MeshContextを見る
+                    var meshContext = _modelContext.GetMeshContext(meshIdx);
+                    if (meshContext != null)
+                    {
+                        if (isAuxLine)
+                        {
+                            if (meshContext.SelectedLines.Contains((int)line.FaceIndex))
+                            {
+                                flags |= (uint)SelectionFlags.LineSelected;
+                                lineSelectedCount++;
+                            }
+                        }
+                        else
+                        {
+                            var pair = new VertexPair(localV1, localV2);
+                            if (meshContext.SelectedEdges.Contains(pair))
+                            {
+                                flags |= (uint)SelectionFlags.EdgeSelected;
+                                edgeSelectedCount++;
+                            }
                         }
                     }
                 }

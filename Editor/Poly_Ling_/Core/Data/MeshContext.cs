@@ -236,6 +236,7 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// SelectionStateへ選択をコピー（MeshContext→カレント選択）
+        /// 注意: Modeは上書きしない（グローバルなUIモードを保持するため）
         /// </summary>
         public void LoadSelectionTo(SelectionState state)
         {
@@ -246,7 +247,8 @@ namespace Poly_Ling.Data
             state.Edges.Clear();
             state.Faces.Clear();
             state.Lines.Clear();
-            state.Mode = SelectMode;
+            // v2.1: Modeは上書きしない（グローバルなUIモードを保持）
+            // state.Mode = SelectMode;
 
             foreach (var v in SelectedVertices)
                 state.Vertices.Add(v);
@@ -256,6 +258,28 @@ namespace Poly_Ling.Data
                 state.Faces.Add(f);
             foreach (var l in SelectedLines)
                 state.Lines.Add(l);
+        }
+
+        /// <summary>
+        /// SelectionStateからMeshContextへ選択を読み込み
+        /// </summary>
+        public void LoadSelectionFrom(SelectionState state)
+        {
+            if (state == null) return;
+
+            SelectedVertices.Clear();
+            SelectedEdges.Clear();
+            SelectedFaces.Clear();
+            SelectedLines.Clear();
+
+            foreach (var v in state.Vertices)
+                SelectedVertices.Add(v);
+            foreach (var e in state.Edges)
+                SelectedEdges.Add(e);
+            foreach (var f in state.Faces)
+                SelectedFaces.Add(f);
+            foreach (var l in state.Lines)
+                SelectedLines.Add(l);
         }
 
         // ================================================================

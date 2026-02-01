@@ -239,16 +239,27 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// 面の選択フラグを計算
+        /// 
+        /// 【複数メッシュ対応】
+        /// - プライマリ: SelectionState.Facesを見る
+        /// - セカンダリ: MeshContext.SelectedFacesを見る（呼び出し側で処理）
         /// </summary>
-        public SelectionFlags ComputeFaceSelectionFlags(int faceIndex, bool isActiveMesh)
+        public SelectionFlags ComputeFaceSelectionFlags(int faceIndex, bool isActiveMesh, Poly_Ling.Data.MeshContext meshContext = null)
         {
-            if (!isActiveMesh || SelectionState == null)
-                return SelectionFlags.None;
-
             SelectionFlags flags = SelectionFlags.None;
 
-            if (SelectionState.Faces.Contains(faceIndex))
-                flags |= SelectionFlags.FaceSelected;
+            if (isActiveMesh && SelectionState != null)
+            {
+                // プライマリメッシュ: SelectionStateを見る
+                if (SelectionState.Faces.Contains(faceIndex))
+                    flags |= SelectionFlags.FaceSelected;
+            }
+            else if (meshContext != null)
+            {
+                // セカンダリメッシュ: MeshContextを見る
+                if (meshContext.SelectedFaces.Contains(faceIndex))
+                    flags |= SelectionFlags.FaceSelected;
+            }
 
             return flags;
         }
@@ -262,14 +273,15 @@ namespace Poly_Ling.Core
             int faceIndex,
             bool isVisible,
             bool isLocked,
-            bool isMirror = false)
+            bool isMirror = false,
+            Poly_Ling.Data.MeshContext meshContext = null)
         {
             SelectionFlags flags = ComputeHierarchyFlags(modelIndex, meshIndex);
 
             bool isActiveMesh = flags.IsActive();
 
             // 要素選択
-            flags |= ComputeFaceSelectionFlags(faceIndex, isActiveMesh);
+            flags |= ComputeFaceSelectionFlags(faceIndex, isActiveMesh, meshContext);
 
             // 表示制御
             if (!isVisible) flags |= SelectionFlags.Hidden;

@@ -223,6 +223,7 @@ public partial class PolyLing : EditorWindow
     private Vector2 _mouseDownScreenPos;      // MouseDown時のスクリーン座標
     private int _hitVertexOnMouseDown = -1;   // MouseDown時にヒットした頂点（-1なら空白）
     private HitResult _hitResultOnMouseDown;  // MouseDown時のヒットテスト結果（新選択システム用）
+    private int _hitMeshIndexOnMouseDown = -1; // MouseDown時にヒットしたメッシュインデックス（v2.1複数メッシュ対応）
     private Vector2 _boxSelectStart;          // 矩形選択開始点
     private Vector2 _boxSelectEnd;            // 矩形選択終了点
     private const float DragThreshold = 0f;   // ドラッグ判定の閾値（ピクセル）
@@ -335,6 +336,7 @@ public partial class PolyLing : EditorWindow
     private SelectionState _selectionState;
     private TopologyCache _meshTopology;
     private SelectionOperations _selectionOps;
+    private UnifiedAdapterVisibilityProvider _visibilityProvider;
 
 
     // スライダー編集用
@@ -545,6 +547,38 @@ public partial class PolyLing : EditorWindow
         {
             Close();
             return;
+        }
+
+        // VisibilityProviderを設定（背面カリング対応）
+        if (_unifiedAdapter != null && _selectionOps != null)
+        {
+            _visibilityProvider = new UnifiedAdapterVisibilityProvider(_unifiedAdapter, _selectedIndex);
+            
+            // 線分と面の頂点取得用デリゲートを設定
+            _visibilityProvider.SetGeometryAccessors(
+                // 線分インデックス → (v1, v2)
+                lineIndex => {
+                    var meshObject = _model?.CurrentMeshContext?.MeshObject;
+                    if (meshObject != null && lineIndex >= 0 && lineIndex < meshObject.FaceCount)
+                    {
+                        var face = meshObject.Faces[lineIndex];
+                        if (face.VertexCount == 2)
+                            return (face.VertexIndices[0], face.VertexIndices[1]);
+                    }
+                    return (-1, -1);
+                },
+                // 面インデックス → 頂点配列
+                faceIndex => {
+                    var meshObject = _model?.CurrentMeshContext?.MeshObject;
+                    if (meshObject != null && faceIndex >= 0 && faceIndex < meshObject.FaceCount)
+                    {
+                        return meshObject.Faces[faceIndex].VertexIndices.ToArray();
+                    }
+                    return null;
+                }
+            );
+            
+            _selectionOps.SetVisibilityProvider(_visibilityProvider);
         }
 
     }
@@ -968,7 +1002,43 @@ public partial class PolyLing : EditorWindow
         NotifyUnifiedTransformChanged();
     }
 
+    /// <summary>
+    /// v2.1: 選択中の全メッシュの頂点位置を同期
+    /// </summary>
+    private void SyncAllSelectedMeshPositions()
+    {
+        if (_model == null || _model.SelectedMeshIndices.Count == 0)
+        {
+            // フォールバック: プライマリメッシュのみ
+            SyncMeshPositionsOnly(_model?.CurrentMeshContext);
+            return;
+        }
 
+        foreach (int meshIdx in _model.SelectedMeshIndices)
+        {
+            var meshContext = _model.GetMeshContext(meshIdx);
+            if (meshContext?.MeshObject == null || meshContext.UnityMesh == null)
+                continue;
+
+            var meshObject = meshContext.MeshObject;
+            var unityMesh = meshContext.UnityMesh;
+
+            // 頂点位置配列を構築
+            int vertexCount = meshObject.VertexCount;
+            var vertices = new Vector3[vertexCount];
+            for (int i = 0; i < vertexCount; i++)
+            {
+                vertices[i] = meshObject.Vertices[i].Position;
+            }
+
+            // 位置のみ更新
+            unityMesh.vertices = vertices;
+            unityMesh.RecalculateBounds();
+        }
+
+        // GPUバッファの位置情報を更新
+        NotifyUnifiedTransformChanged();
+    }
 
 
 
@@ -1413,7 +1483,104 @@ public partial class PolyLing : EditorWindow
     {
         // DrawSplitter内で処理するため、ここでは何もしない
     }
+}
 
+/// <summary>
+/// UnifiedSystemAdapterをIVisibilityProviderとしてラップ
+/// </summary>
+internal class UnifiedAdapterVisibilityProvider : Poly_Ling.Rendering.IVisibilityProvider
+{
+    private readonly Poly_Ling.Core.UnifiedSystemAdapter _adapter;
+    private Func<int, (int, int)> _getLineVertices;  // 線分インデックス → (v1, v2)
+    private Func<int, int[]> _getFaceVertices;       // 面インデックス → 頂点配列
+    public int MeshIndex { get; set; }
 
+    public UnifiedAdapterVisibilityProvider(Poly_Ling.Core.UnifiedSystemAdapter adapter, int meshIndex)
+    {
+        _adapter = adapter;
+        MeshIndex = meshIndex;
+    }
 
+    /// <summary>
+    /// 線分と面の頂点取得用デリゲートを設定
+    /// </summary>
+    public void SetGeometryAccessors(Func<int, (int, int)> getLineVertices, Func<int, int[]> getFaceVertices)
+    {
+        _getLineVertices = getLineVertices;
+        _getFaceVertices = getFaceVertices;
+    }
+
+    public bool IsVertexVisible(int index)
+    {
+        if (_adapter == null)
+        {
+            // Debug removed
+            return true;
+        }
+        if (!_adapter.BackfaceCullingEnabled)
+        {
+            // Debug removed
+            return true;
+        }
+        bool culled = _adapter.IsVertexCulled(MeshIndex, index);
+        if (index < 5) // 最初の数頂点だけログ
+        {
+            // Debug removed
+        }
+        return !culled;
+    }
+
+    public bool IsLineVisible(int index)
+    {
+        if (_adapter == null || !_adapter.BackfaceCullingEnabled)
+            return true;
+        
+        // 線分の可視性は両端頂点の少なくとも一方が見えていればtrue
+        if (_getLineVertices != null)
+        {
+            var (v1, v2) = _getLineVertices(index);
+            bool v1Visible = !_adapter.IsVertexCulled(MeshIndex, v1);
+            bool v2Visible = !_adapter.IsVertexCulled(MeshIndex, v2);
+            return v1Visible || v2Visible;
+        }
+        return true;
+    }
+
+    public bool IsFaceVisible(int index)
+    {
+        if (_adapter == null || !_adapter.BackfaceCullingEnabled)
+            return true;
+        
+        // 面の可視性は少なくとも1つの頂点が見えていればtrue
+        if (_getFaceVertices != null)
+        {
+            var vertices = _getFaceVertices(index);
+            if (vertices != null)
+            {
+                foreach (var v in vertices)
+                {
+                    if (!_adapter.IsVertexCulled(MeshIndex, v))
+                        return true;
+                }
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public float[] GetVertexVisibility()
+    {
+        // バッチ取得は未実装
+        return null;
+    }
+
+    public float[] GetLineVisibility()
+    {
+        return null;
+    }
+
+    public float[] GetFaceVisibility()
+    {
+        return null;
+    }
 }

@@ -661,6 +661,25 @@ namespace Poly_Ling.Core
         // ============================================================
 
         /// <summary>
+        /// v2.1: 指定メッシュの頂点オフセット（グローバルインデックス）を取得
+        /// </summary>
+        public int GetVertexOffset(int meshIndex)
+        {
+            if (!_isInitialized || BufferManager == null)
+                return 0;
+                
+            int unifiedMeshIndex = ContextToUnifiedMeshIndex(meshIndex);
+            if (unifiedMeshIndex < 0)
+                return 0;
+                
+            var meshInfos = BufferManager.MeshInfos;
+            if (meshInfos == null || unifiedMeshIndex >= meshInfos.Length)
+                return 0;
+                
+            return (int)meshInfos[unifiedMeshIndex].VertexStart;
+        }
+
+        /// <summary>
         /// 頂点ヒットテスト
         /// </summary>
         public int FindNearestVertex(Vector2 screenPos, float radius)

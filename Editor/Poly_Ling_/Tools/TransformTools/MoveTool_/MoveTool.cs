@@ -102,6 +102,11 @@ namespace Poly_Ling.Tools
         // 移動対象の頂点（Edge/Face/Line選択時も含む）
         private HashSet<int> _affectedVertices = new HashSet<int>();
 
+        // v2.1: 複数メッシュ対応
+        private Dictionary<int, HashSet<int>> _multiMeshAffectedVertices = new Dictionary<int, HashSet<int>>();
+        private Dictionary<int, Vector3[]> _multiMeshDragStartPositions = new Dictionary<int, Vector3[]>();
+        private Vector3 _multiMeshAccumulatedDelta = Vector3.zero;
+
         // ドラッグ開始時のヒット情報
         /// <summary>
         /// 保留中のヒットタイプ
@@ -192,10 +197,24 @@ namespace Poly_Ling.Tools
             // ================================================================
             UpdateAffectedVertices(ctx);
 
+            // v2.1: 全メッシュの選択頂点数を計算
+            int totalAffectedCount = _affectedVertices.Count;
+            foreach (var kv in _multiMeshAffectedVertices)
+            {
+                totalAffectedCount += kv.Value.Count;
+            }
+            // プライマリは両方に含まれるので重複を除く
+            var model = ctx.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            if (primaryMesh >= 0 && _multiMeshAffectedVertices.ContainsKey(primaryMesh))
+            {
+                totalAffectedCount -= _multiMeshAffectedVertices[primaryMesh].Count;
+            }
+
             // ================================================================
             // 1. 軸ギズモのヒットテスト（最優先）
             // ================================================================
-            if (_affectedVertices.Count > 0)
+            if (totalAffectedCount > 0)
             {
                 UpdateGizmoCenter(ctx);
                 _hitAxisOnMouseDown = FindAxisHandleAtScreenPos(mousePos, ctx);
@@ -216,7 +235,7 @@ namespace Poly_Ling.Tools
             // ================================================================
             // 2. 選択済み要素があれば移動準備
             // ================================================================
-            if (_affectedVertices.Count > 0)
+            if (totalAffectedCount > 0)
             {
                 _state = MoveState.PendingAction;
                 _pendingHitType = PendingHitType.Selection;  // 汎用的な「選択済み」
@@ -262,7 +281,7 @@ namespace Poly_Ling.Tools
 
             // ホバー更新
             UpdateAffectedVertices(ctx);
-            if (_state == MoveState.Idle && _affectedVertices.Count > 0)
+            if (_state == MoveState.Idle && GetTotalAffectedCount(ctx) > 0)
             {
                 UpdateGizmoCenter(ctx);
                 var newHovered = FindAxisHandleAtScreenPos(mousePos, ctx);
@@ -313,7 +332,9 @@ namespace Poly_Ling.Tools
             _lastContext = ctx;
             UpdateAffectedVertices(ctx);
 
-            if (_affectedVertices.Count == 0)
+            // v2.1: プライマリ＋セカンダリの全選択頂点数
+            int totalAffected = GetTotalAffectedCount(ctx);
+            if (totalAffected == 0)
                 return;
 
             UpdateGizmoCenter(ctx);
@@ -325,6 +346,26 @@ namespace Poly_Ling.Tools
             }
 
             DrawAxisGizmo(ctx);
+        }
+
+        /// <summary>
+        /// v2.1: 全メッシュの選択頂点数を計算
+        /// </summary>
+        private int GetTotalAffectedCount(ToolContext ctx)
+        {
+            int total = _affectedVertices.Count;
+            foreach (var kv in _multiMeshAffectedVertices)
+            {
+                total += kv.Value.Count;
+            }
+            // プライマリは両方に含まれるので重複を除く
+            var model = ctx?.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            if (primaryMesh >= 0 && _multiMeshAffectedVertices.ContainsKey(primaryMesh))
+            {
+                total -= _multiMeshAffectedVertices[primaryMesh].Count;
+            }
+            return total;
         }
 
         public void DrawSettingsUI()
@@ -348,9 +389,10 @@ namespace Poly_Ling.Tools
 
             // 選択情報表示
             EditorGUILayout.Space(5);
-            if (_affectedVertices.Count > 0)
+            int totalAffected = GetTotalAffectedCount(_lastContext);
+            if (totalAffected > 0)
             {
-                EditorGUILayout.HelpBox(T("TargetVertices", _affectedVertices.Count), MessageType.None);
+                EditorGUILayout.HelpBox(T("TargetVertices", totalAffected), MessageType.None);
             }
         }
 
@@ -392,7 +434,9 @@ namespace Poly_Ling.Tools
         private void UpdateAffectedVertices(ToolContext ctx)
         {
             _affectedVertices.Clear();
+            _multiMeshAffectedVertices.Clear();
 
+            // 元のロジック: ctx.SelectionStateから取得
             if (ctx.SelectionState != null)
             {
                 var affected = ctx.SelectionState.GetAllAffectedVertices(ctx.MeshObject);
@@ -400,18 +444,73 @@ namespace Poly_Ling.Tools
                 {
                     _affectedVertices.Add(v);
                 }
-                
-                // デバッグログ
-                if (ctx.SelectionState.Edges.Count > 0 || ctx.SelectionState.Faces.Count > 0 || ctx.SelectionState.Lines.Count > 0)
-                {
-                    Debug.Log($"[MoveTool] SelectionState: V={ctx.SelectionState.Vertices.Count}, E={ctx.SelectionState.Edges.Count}, F={ctx.SelectionState.Faces.Count}, L={ctx.SelectionState.Lines.Count} → AffectedVertices={_affectedVertices.Count}");
-                }
             }
             else if (ctx.SelectedVertices != null)
             {
                 foreach (var v in ctx.SelectedVertices)
                 {
                     _affectedVertices.Add(v);
+                }
+            }
+
+            // v2.1: 複数メッシュ対応 - プライマリメッシュを登録
+            var model = ctx.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            if (primaryMesh >= 0 && _affectedVertices.Count > 0)
+            {
+                _multiMeshAffectedVertices[primaryMesh] = new HashSet<int>(_affectedVertices);
+            }
+
+            // セカンダリメッシュはMeshContextから取得
+            // 注意: 1メッシュのみ選択でも、それがセカンダリの場合があるので常に処理
+            if (model != null)
+            {
+                foreach (int meshIdx in model.SelectedMeshIndices)
+                {
+                    if (meshIdx == primaryMesh)
+                        continue;
+                    
+                    var meshContext = model.GetMeshContext(meshIdx);
+                    if (meshContext == null || !meshContext.HasSelection)
+                        continue;
+                    
+                    var meshObject = meshContext.MeshObject;
+                    if (meshObject == null)
+                        continue;
+                    
+                    var affected = new HashSet<int>();
+                    foreach (var v in meshContext.SelectedVertices)
+                        affected.Add(v);
+                    foreach (var edge in meshContext.SelectedEdges)
+                    {
+                        affected.Add(edge.V1);
+                        affected.Add(edge.V2);
+                    }
+                    foreach (var faceIdx in meshContext.SelectedFaces)
+                    {
+                        if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
+                        {
+                            foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
+                                affected.Add(vIdx);
+                        }
+                    }
+                    foreach (var lineIdx in meshContext.SelectedLines)
+                    {
+                        if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
+                        {
+                            var face = meshObject.Faces[lineIdx];
+                            if (face.VertexCount == 2)
+                            {
+                                affected.Add(face.VertexIndices[0]);
+                                affected.Add(face.VertexIndices[1]);
+                            }
+                        }
+                    }
+                    
+                    if (affected.Count > 0)
+                    {
+                        _multiMeshAffectedVertices[meshIdx] = affected;
+                    }
                 }
             }
         }
@@ -586,10 +685,27 @@ namespace Poly_Ling.Tools
 
         private void BeginMove(ToolContext ctx)
         {
-            if (_affectedVertices.Count == 0)
+            // v2.1: プライマリ＋セカンダリの全選択頂点数
+            if (GetTotalAffectedCount(ctx) == 0)
             {
                 _state = MoveState.Idle;
                 return;
+            }
+
+            // v2.1: 複数メッシュ対応 - 開始位置保存
+            _multiMeshAccumulatedDelta = Vector3.zero;
+            _multiMeshDragStartPositions.Clear();
+            if (_multiMeshAffectedVertices.Count > 0 && ctx.Model != null)
+            {
+                foreach (var kv in _multiMeshAffectedVertices)
+                {
+                    var meshContext = ctx.Model.GetMeshContext(kv.Key);
+                    if (meshContext?.MeshObject != null)
+                    {
+                        _multiMeshDragStartPositions[kv.Key] = 
+                            meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+                    }
+                }
             }
 
             _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
@@ -609,7 +725,8 @@ namespace Poly_Ling.Tools
 
         private void MoveSelectedVertices(Vector2 screenDelta, ToolContext ctx)
         {
-            if (_affectedVertices.Count == 0 || _currentTransform == null)
+            // v2.1: プライマリ＋セカンダリの全選択頂点数
+            if (GetTotalAffectedCount(ctx) == 0 || _currentTransform == null)
                 return;
 
             Vector3 worldDelta = ctx.ScreenDeltaToWorldDelta(
@@ -624,6 +741,37 @@ namespace Poly_Ling.Tools
                 worldDelta = inverseMatrix.MultiplyVector(worldDelta);
             }
 
+            // v2.1: 複数メッシュ対応
+            _multiMeshAccumulatedDelta += worldDelta;
+            if (_multiMeshAffectedVertices.Count > 0 && ctx.Model != null)
+            {
+                foreach (var kv in _multiMeshAffectedVertices)
+                {
+                    int meshIdx = kv.Key;
+                    var affected = kv.Value;
+                    if (!_multiMeshDragStartPositions.ContainsKey(meshIdx))
+                        continue;
+                    
+                    var meshContext = ctx.Model.GetMeshContext(meshIdx);
+                    if (meshContext?.MeshObject == null)
+                        continue;
+                    
+                    var meshObject = meshContext.MeshObject;
+                    var startPositions = _multiMeshDragStartPositions[meshIdx];
+                    
+                    foreach (int vIdx in affected)
+                    {
+                        if (vIdx >= 0 && vIdx < meshObject.VertexCount && vIdx < startPositions.Length)
+                        {
+                            meshObject.Vertices[vIdx].Position = startPositions[vIdx] + _multiMeshAccumulatedDelta;
+                        }
+                    }
+                }
+                ctx.SyncMeshPositionsOnly?.Invoke();
+                return;
+            }
+
+            // 従来の単一メッシュ処理
             _currentTransform.Apply(worldDelta);
 
             var affectedIndices = _currentTransform.GetAffectedIndices();
@@ -704,6 +852,22 @@ namespace Poly_Ling.Tools
             _draggingAxis = axis;
             _lastAxisDragScreenPos = _mouseDownScreenPos;
 
+            // v2.1: 複数メッシュ対応 - 開始位置保存
+            _multiMeshAccumulatedDelta = Vector3.zero;
+            _multiMeshDragStartPositions.Clear();
+            if (_multiMeshAffectedVertices.Count > 0 && ctx.Model != null)
+            {
+                foreach (var kv in _multiMeshAffectedVertices)
+                {
+                    var meshContext = ctx.Model.GetMeshContext(kv.Key);
+                    if (meshContext?.MeshObject != null)
+                    {
+                        _multiMeshDragStartPositions[kv.Key] = 
+                            meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+                    }
+                }
+            }
+
             _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
 
             if (UseMagnet)
@@ -721,11 +885,13 @@ namespace Poly_Ling.Tools
 
         private void MoveVerticesAlongAxis(Vector2 currentScreenPos, ToolContext ctx)
         {
-            if (_currentTransform == null || ctx.MeshObject == null)
+            if (ctx.MeshObject == null)
                 return;
 
-            // スクリーン上での移動量を計算
+            // スクリーン上での移動量を計算（フレーム差分）
             Vector2 screenDelta = currentScreenPos - _lastAxisDragScreenPos;
+            _lastAxisDragScreenPos = currentScreenPos;  // 次フレーム用に更新
+            
             if (screenDelta.sqrMagnitude < 0.001f)
                 return;
 
@@ -746,17 +912,51 @@ namespace Poly_Ling.Tools
 
             // スクリーン移動量をワールド移動量に変換（距離依存のスケール）
             float worldScale = ctx.CameraDistance * 0.001f;
-            Vector3 worldDelta = axisDir * axisScreenMovement * worldScale;
+            Vector3 worldDeltaFrame = axisDir * axisScreenMovement * worldScale;
 
             // DisplayMatrixが非identityの場合、移動ベクトルを変換
             // （表示座標系からメッシュ座標系へ）
             if (ctx.DisplayMatrix != Matrix4x4.identity)
             {
                 Matrix4x4 inverseMatrix = ctx.DisplayMatrix.inverse;
-                worldDelta = inverseMatrix.MultiplyVector(worldDelta);
+                worldDeltaFrame = inverseMatrix.MultiplyVector(worldDeltaFrame);
             }
 
-            _currentTransform.Apply(worldDelta);
+            // v2.1: 複数メッシュ対応
+            _multiMeshAccumulatedDelta += worldDeltaFrame;
+            if (_multiMeshAffectedVertices.Count > 0 && ctx.Model != null)
+            {
+                foreach (var kv in _multiMeshAffectedVertices)
+                {
+                    int meshIdx = kv.Key;
+                    var affected = kv.Value;
+                    if (!_multiMeshDragStartPositions.ContainsKey(meshIdx))
+                        continue;
+                    
+                    var meshContext = ctx.Model.GetMeshContext(meshIdx);
+                    if (meshContext?.MeshObject == null)
+                        continue;
+                    
+                    var meshObject = meshContext.MeshObject;
+                    var startPositions = _multiMeshDragStartPositions[meshIdx];
+                    
+                    foreach (int vIdx in affected)
+                    {
+                        if (vIdx >= 0 && vIdx < meshObject.VertexCount && vIdx < startPositions.Length)
+                        {
+                            meshObject.Vertices[vIdx].Position = startPositions[vIdx] + _multiMeshAccumulatedDelta;
+                        }
+                    }
+                }
+                ctx.SyncMeshPositionsOnly?.Invoke();
+                return;
+            }
+
+            // 従来の単一メッシュ処理
+            if (_currentTransform == null)
+                return;
+
+            _currentTransform.Apply(worldDeltaFrame);
 
             var affectedIndices = _currentTransform.GetAffectedIndices();
             foreach (int idx in affectedIndices)
@@ -768,8 +968,6 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            // ドラッグ中は軽量版を使用（位置のみ更新）
-            Debug.Log($"[MoveTool.MoveVerticesAlongAxis] SyncMeshPositionsOnly is {(ctx.SyncMeshPositionsOnly == null ? "NULL" : "SET")}");
             ctx.SyncMeshPositionsOnly?.Invoke();
         }
 
@@ -783,6 +981,22 @@ namespace Poly_Ling.Tools
 
         private void StartCenterDrag(ToolContext ctx)
         {
+            // v2.1: 複数メッシュ対応 - 開始位置保存
+            _multiMeshAccumulatedDelta = Vector3.zero;
+            _multiMeshDragStartPositions.Clear();
+            if (_multiMeshAffectedVertices.Count > 0 && ctx.Model != null)
+            {
+                foreach (var kv in _multiMeshAffectedVertices)
+                {
+                    var meshContext = ctx.Model.GetMeshContext(kv.Key);
+                    if (meshContext?.MeshObject != null)
+                    {
+                        _multiMeshDragStartPositions[kv.Key] = 
+                            meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+                    }
+                }
+            }
+
             _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
 
             if (UseMagnet)
@@ -807,25 +1021,50 @@ namespace Poly_Ling.Tools
 
         private void UpdateGizmoCenter(ToolContext ctx)
         {
-            if (_affectedVertices.Count == 0 || ctx.MeshObject == null)
+            // v2.1: 複数メッシュ対応
+            int totalVertices = 0;
+            Vector3 sum = Vector3.zero;
+            
+            if (_multiMeshAffectedVertices.Count > 0 && ctx.Model != null)
+            {
+                foreach (var kv in _multiMeshAffectedVertices)
+                {
+                    var meshContext = ctx.Model.GetMeshContext(kv.Key);
+                    if (meshContext?.MeshObject == null)
+                        continue;
+                    
+                    var meshObject = meshContext.MeshObject;
+                    foreach (int vi in kv.Value)
+                    {
+                        if (vi >= 0 && vi < meshObject.VertexCount)
+                        {
+                            sum += meshObject.Vertices[vi].Position;
+                            totalVertices++;
+                        }
+                    }
+                }
+            }
+            else if (_affectedVertices.Count > 0 && ctx.MeshObject != null)
+            {
+                // 単一メッシュ
+                foreach (int vi in _affectedVertices)
+                {
+                    if (vi >= 0 && vi < ctx.MeshObject.VertexCount)
+                    {
+                        sum += ctx.MeshObject.Vertices[vi].Position;
+                        totalVertices++;
+                    }
+                }
+            }
+            
+            if (totalVertices == 0)
             {
                 _selectionCenter = Vector3.zero;
                 _gizmoCenter = Vector3.zero;
                 return;
             }
 
-            // 選択頂点の重心を計算（メッシュ座標系）
-            _selectionCenter = Vector3.zero;
-            foreach (int vi in _affectedVertices)
-            {
-                if (vi >= 0 && vi < ctx.MeshObject.VertexCount)
-                {
-                    _selectionCenter += ctx.MeshObject.Vertices[vi].Position;
-                }
-            }
-            _selectionCenter /= _affectedVertices.Count;
-
-            // ギズモ中心はメッシュ座標系のまま（DisplayMatrixはWorldToScreenPosで適用される）
+            _selectionCenter = sum / totalVertices;
             _gizmoCenter = _selectionCenter;
         }
 
@@ -966,7 +1205,8 @@ namespace Poly_Ling.Tools
 
         private AxisType FindAxisHandleAtScreenPos(Vector2 screenPos, ToolContext ctx)
         {
-            if (_affectedVertices.Count == 0)
+            // v2.1: プライマリ＋セカンダリの全選択頂点数
+            if (GetTotalAffectedCount(ctx) == 0)
                 return AxisType.None;
 
             // 毎回スクリーン座標を計算（キャッシュ廃止）
