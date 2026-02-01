@@ -273,8 +273,9 @@ namespace Poly_Ling.Core
                 _mirrorScreenPositions = new Vector2[_vertexCapacity];
             }
 
-            if (_mirrorScreenPosBuffer == null)
+            if (_mirrorScreenPosBuffer == null || _mirrorScreenPosBuffer.count < _mirrorVertexCount)
             {
+                _mirrorScreenPosBuffer?.Release();
                 _mirrorScreenPosBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 2);
             }
 

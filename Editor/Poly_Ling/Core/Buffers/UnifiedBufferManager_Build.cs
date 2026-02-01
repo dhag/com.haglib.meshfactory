@@ -30,6 +30,9 @@ namespace Poly_Ling.Core
                 return;
             }
 
+            // TypedIndicesのキャッシュを無効化して最新のMeshContextListを反映
+            model.InvalidateTypedIndices();
+
             // Drawableのみを取得（Morph, Bone等を除外）
             var drawableEntries = model.TypedIndices.GetEntries(MeshCategory.Drawable);
             BuildFromTypedEntries(drawableEntries, modelIndex);
@@ -130,13 +133,13 @@ namespace Poly_Ling.Core
                 };
 
                 // 頂点データ構築
-                BuildVertexData(meshObject, meshContext, modelIndex, masterIndex, ref vertexOffset);
+                BuildVertexData(meshObject, meshContext, modelIndex, _meshCount, ref vertexOffset);
 
                 // ライン/エッジデータ構築
-                uint lineCount = BuildLineData(meshObject, meshContext, modelIndex, masterIndex, vertexOffset - (uint)meshObject.VertexCount, faceOffset, ref lineOffset);
+                uint lineCount = BuildLineData(meshObject, meshContext, modelIndex, _meshCount, vertexOffset - (uint)meshObject.VertexCount, faceOffset, ref lineOffset);
 
                 // 面データ構築
-                uint indexCount = BuildFaceData(meshObject, meshContext, modelIndex, masterIndex, vertexOffset - (uint)meshObject.VertexCount, ref faceOffset, ref indexOffset);
+                uint indexCount = BuildFaceData(meshObject, meshContext, modelIndex, _meshCount, vertexOffset - (uint)meshObject.VertexCount, ref faceOffset, ref indexOffset);
 
                 // MeshInfo更新
                 _meshInfos[_meshCount].LineCount = lineCount;
