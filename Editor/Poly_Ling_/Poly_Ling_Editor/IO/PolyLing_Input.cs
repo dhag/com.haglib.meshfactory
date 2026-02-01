@@ -43,7 +43,7 @@ public partial class PolyLing
         if (e.type == EventType.ScrollWheel && rect.Contains(mousePos))
         {
             _cameraDistance *= (1f + e.delta.y * 0.05f);
-            _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 10f);
+            _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 80f);//マウスズームの上限下限（スライダーは別）：ズーム
             e.Use();
             Repaint();
             return;

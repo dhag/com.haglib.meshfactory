@@ -123,6 +123,8 @@ namespace Poly_Ling.Core.Rendering
         // ============================================================
 
         [Header("Sizes")]
+        public float VertexPointScale = 0.1f;
+
         public float VertexSizeDefault = 5f;
         public float VertexSizeActive = 6f;
         public float VertexSizeSelected = 8f;

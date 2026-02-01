@@ -32,6 +32,10 @@ namespace Poly_Ling.Tools
         private bool _isDirty = false;
         private ToolContext _ctx;
 
+        // v2.1: 複数メッシュ対応
+        private Dictionary<int, HashSet<int>> _multiMeshAffected = new Dictionary<int, HashSet<int>>();
+        private Dictionary<int, Dictionary<int, Vector3>> _multiMeshStartPositions = new Dictionary<int, Dictionary<int, Vector3>>();
+
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos) { _ctx = ctx; return false; }
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta) { _ctx = ctx; return false; }
         public bool OnMouseUp(ToolContext ctx, Vector2 mousePos) { _ctx = ctx; return false; }
@@ -56,6 +60,9 @@ namespace Poly_Ling.Tools
             _isDirty = false;
             _startPositions.Clear();
             _affected.Clear();
+            // v2.1: 複数メッシュ対応
+            _multiMeshAffected.Clear();
+            _multiMeshStartPositions.Clear();
         }
 
         public void DrawSettingsUI()
@@ -65,9 +72,10 @@ namespace Poly_Ling.Tools
             EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
 
             UpdateAffected();
-            EditorGUILayout.LabelField(T("TargetVertices", _affected.Count), EditorStyles.miniLabel);
+            int totalAffected = GetTotalAffectedCount();
+            EditorGUILayout.LabelField(T("TargetVertices", totalAffected), EditorStyles.miniLabel);
 
-            if (_affected.Count == 0)
+            if (totalAffected == 0)
             {
                 EditorGUILayout.HelpBox("頂点を選択してください", MessageType.Info);
                 return;
@@ -143,6 +151,9 @@ namespace Poly_Ling.Tools
         private void UpdateAffected()
         {
             _affected.Clear();
+            _multiMeshAffected.Clear();
+
+            // プライマリメッシュ
             if (_ctx.SelectionState != null)
             {
                 foreach (var v in _ctx.SelectionState.GetAllAffectedVertices(_ctx.MeshObject))
@@ -153,6 +164,86 @@ namespace Poly_Ling.Tools
                 foreach (var v in _ctx.SelectedVertices)
                     _affected.Add(v);
             }
+
+            // v2.1: プライマリを登録
+            var model = _ctx?.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            if (primaryMesh >= 0 && _affected.Count > 0)
+            {
+                _multiMeshAffected[primaryMesh] = new HashSet<int>(_affected);
+            }
+
+            // v2.1: セカンダリメッシュ
+            if (model != null)
+            {
+                foreach (int meshIdx in model.SelectedMeshIndices)
+                {
+                    if (meshIdx == primaryMesh)
+                        continue;
+
+                    var meshContext = model.GetMeshContext(meshIdx);
+                    if (meshContext == null || !meshContext.HasSelection)
+                        continue;
+
+                    var meshObject = meshContext.MeshObject;
+                    if (meshObject == null)
+                        continue;
+
+                    var affected = new HashSet<int>();
+                    foreach (var v in meshContext.SelectedVertices)
+                        affected.Add(v);
+                    foreach (var edge in meshContext.SelectedEdges)
+                    {
+                        affected.Add(edge.V1);
+                        affected.Add(edge.V2);
+                    }
+                    foreach (var faceIdx in meshContext.SelectedFaces)
+                    {
+                        if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
+                        {
+                            foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
+                                affected.Add(vIdx);
+                        }
+                    }
+                    foreach (var lineIdx in meshContext.SelectedLines)
+                    {
+                        if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
+                        {
+                            var face = meshObject.Faces[lineIdx];
+                            if (face.VertexCount == 2)
+                            {
+                                affected.Add(face.VertexIndices[0]);
+                                affected.Add(face.VertexIndices[1]);
+                            }
+                        }
+                    }
+
+                    if (affected.Count > 0)
+                    {
+                        _multiMeshAffected[meshIdx] = affected;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// v2.1: 全メッシュの選択頂点数を計算
+        /// </summary>
+        private int GetTotalAffectedCount()
+        {
+            int total = _affected.Count;
+            foreach (var kv in _multiMeshAffected)
+            {
+                total += kv.Value.Count;
+            }
+            // プライマリは両方に含まれるので重複を除く
+            var model = _ctx?.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            if (primaryMesh >= 0 && _multiMeshAffected.ContainsKey(primaryMesh))
+            {
+                total -= _multiMeshAffected[primaryMesh].Count;
+            }
+            return total;
         }
 
         private void UpdatePivot()
@@ -169,33 +260,113 @@ namespace Poly_Ling.Tools
                 return;
             }
 
+            // v2.1: 全メッシュの選択頂点からピボットを計算
             Vector3 sum = Vector3.zero;
+            int totalCount = 0;
+
+            // プライマリメッシュ
             foreach (int i in _affected)
+            {
                 sum += _ctx.MeshObject.Vertices[i].Position;
-            _pivot = sum / _affected.Count;
+                totalCount++;
+            }
+
+            // セカンダリメッシュ
+            var model = _ctx?.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            foreach (var kv in _multiMeshAffected)
+            {
+                if (kv.Key == primaryMesh) continue;
+                var meshContext = model?.GetMeshContext(kv.Key);
+                var meshObject = meshContext?.MeshObject;
+                if (meshObject == null) continue;
+
+                foreach (int i in kv.Value)
+                {
+                    if (i >= 0 && i < meshObject.VertexCount)
+                    {
+                        sum += meshObject.Vertices[i].Position;
+                        totalCount++;
+                    }
+                }
+            }
+
+            _pivot = totalCount > 0 ? sum / totalCount : Vector3.zero;
         }
 
         private void UpdatePreview()
         {
-            if (_ctx?.MeshObject == null || _affected.Count == 0) return;
+            if (_ctx?.MeshObject == null && GetTotalAffectedCount() == 0) return;
 
             // 初回: 開始位置を記録
-            if (_startPositions.Count == 0)
+            if (_startPositions.Count == 0 && _multiMeshStartPositions.Count == 0)
             {
                 UpdatePivot();
+                // プライマリ
                 foreach (int i in _affected)
                     _startPositions[i] = _ctx.MeshObject.Vertices[i].Position;
+
+                // v2.1: セカンダリメッシュ
+                var model = _ctx?.Model;
+                int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+                foreach (var kv in _multiMeshAffected)
+                {
+                    if (kv.Key == primaryMesh) continue;
+                    var meshContext = model?.GetMeshContext(kv.Key);
+                    var meshObject = meshContext?.MeshObject;
+                    if (meshObject == null) continue;
+
+                    var startPos = new Dictionary<int, Vector3>();
+                    foreach (int i in kv.Value)
+                    {
+                        if (i >= 0 && i < meshObject.VertexCount)
+                            startPos[i] = meshObject.Vertices[i].Position;
+                    }
+                    _multiMeshStartPositions[kv.Key] = startPos;
+                }
             }
 
             // スケール適用（開始位置から計算）
             Vector3 scale = new Vector3(_scaleX, _scaleY, _scaleZ);
-            foreach (int i in _affected)
+
+            // プライマリメッシュ
+            if (_ctx?.MeshObject != null)
             {
-                Vector3 offset = _startPositions[i] - _pivot;
-                Vector3 scaled = Vector3.Scale(offset, scale);
-                var v = _ctx.MeshObject.Vertices[i];
-                v.Position = _pivot + scaled;
-                _ctx.MeshObject.Vertices[i] = v;
+                foreach (int i in _affected)
+                {
+                    if (!_startPositions.ContainsKey(i)) continue;
+                    Vector3 offset = _startPositions[i] - _pivot;
+                    Vector3 scaled = Vector3.Scale(offset, scale);
+                    var v = _ctx.MeshObject.Vertices[i];
+                    v.Position = _pivot + scaled;
+                    _ctx.MeshObject.Vertices[i] = v;
+                }
+            }
+
+            // v2.1: セカンダリメッシュ
+            var model2 = _ctx?.Model;
+            int primaryMesh2 = model2?.PrimarySelectedMeshIndex ?? -1;
+            foreach (var kv in _multiMeshStartPositions)
+            {
+                if (kv.Key == primaryMesh2) continue;
+                var meshContext = model2?.GetMeshContext(kv.Key);
+                var meshObject = meshContext?.MeshObject;
+                if (meshObject == null) continue;
+
+                foreach (var posKv in kv.Value)
+                {
+                    int i = posKv.Key;
+                    if (i >= 0 && i < meshObject.VertexCount)
+                    {
+                        Vector3 offset = posKv.Value - _pivot;
+                        Vector3 scaled = Vector3.Scale(offset, scale);
+                        var v = meshObject.Vertices[i];
+                        v.Position = _pivot + scaled;
+                        meshObject.Vertices[i] = v;
+                    }
+                }
+
+                
             }
 
             _isDirty = true;
@@ -204,9 +375,9 @@ namespace Poly_Ling.Tools
 
         private void ApplyScale(ToolContext ctx)
         {
-            if (!_isDirty || _startPositions.Count == 0) return;
+            if (!_isDirty || (_startPositions.Count == 0 && _multiMeshStartPositions.Count == 0)) return;
 
-            // Undo記録
+            // プライマリメッシュのUndo記録
             var indices = new List<int>();
             var oldPos = new List<Vector3>();
             var newPos = new List<Vector3>();
@@ -239,30 +410,94 @@ namespace Poly_Ling.Tools
                 }
             }
 
+            // v2.1: セカンダリメッシュのUndo記録と更新
+            var model = ctx?.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            foreach (var meshKv in _multiMeshStartPositions)
+            {
+                if (meshKv.Key == primaryMesh) continue;
+                var meshContext = model?.GetMeshContext(meshKv.Key);
+                var meshObject = meshContext?.MeshObject;
+                if (meshObject == null) continue;
+
+                var secIndices = new List<int>();
+                var secOldPos = new List<Vector3>();
+                var secNewPos = new List<Vector3>();
+
+                foreach (var posKv in meshKv.Value)
+                {
+                    int i = posKv.Key;
+                    if (i >= 0 && i < meshObject.VertexCount)
+                    {
+                        Vector3 cur = meshObject.Vertices[i].Position;
+                        if (Vector3.Distance(posKv.Value, cur) > 0.0001f)
+                        {
+                            secIndices.Add(i);
+                            secOldPos.Add(posKv.Value);
+                            secNewPos.Add(cur);
+                        }
+                    }
+                }
+
+                // TODO: セカンダリメッシュのUndo記録（現状はプライマリのみ）
+                // meshContext.RecordUndo(...)
+
+                
+            }
+
             _startPositions.Clear();
+            _multiMeshStartPositions.Clear();
             _isDirty = false;
         }
 
         private void RevertToStart()
         {
-            if (_ctx?.MeshObject == null) return;
-
-            foreach (var kv in _startPositions)
+            // プライマリメッシュ
+            if (_ctx?.MeshObject != null)
             {
-                var v = _ctx.MeshObject.Vertices[kv.Key];
-                v.Position = kv.Value;
-                _ctx.MeshObject.Vertices[kv.Key] = v;
+                foreach (var kv in _startPositions)
+                {
+                    var v = _ctx.MeshObject.Vertices[kv.Key];
+                    v.Position = kv.Value;
+                    _ctx.MeshObject.Vertices[kv.Key] = v;
+                }
+            }
+
+            // v2.1: セカンダリメッシュ
+            var model = _ctx?.Model;
+            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            foreach (var meshKv in _multiMeshStartPositions)
+            {
+                if (meshKv.Key == primaryMesh) continue;
+                var meshContext = model?.GetMeshContext(meshKv.Key);
+                var meshObject = meshContext?.MeshObject;
+                if (meshObject == null) continue;
+
+                foreach (var posKv in meshKv.Value)
+                {
+                    int i = posKv.Key;
+                    if (i >= 0 && i < meshObject.VertexCount)
+                    {
+                        var v = meshObject.Vertices[i];
+                        v.Position = posKv.Value;
+                        meshObject.Vertices[i] = v;
+                    }
+                }
+
+                
             }
 
             _startPositions.Clear();
+            _multiMeshStartPositions.Clear();
             _isDirty = false;
-            _ctx.SyncMeshPositionsOnly?.Invoke(); // ドラッグ中は軽量版
+            _ctx.SyncMeshPositionsOnly?.Invoke();
         }
 
         public void DrawGizmo(ToolContext ctx)
         {
             _ctx = ctx;
-            if (_affected.Count == 0) return;
+            // v2.1: 全メッシュの選択頂点数をチェック
+            if (GetTotalAffectedCount() == 0) return;
 
             var rect = ctx.PreviewRect;
             Vector2 p = ctx.WorldToScreenPos(_pivot, rect, ctx.CameraPosition, ctx.CameraTarget);

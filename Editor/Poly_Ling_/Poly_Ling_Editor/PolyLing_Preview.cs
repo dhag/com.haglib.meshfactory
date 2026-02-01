@@ -213,7 +213,7 @@ public partial class PolyLing
         // ================================================================
         // ワイヤフレーム・頂点描画（UnifiedSystem使用）
         // ================================================================
-        var pointSize = 0.01f;
+        var pointSize =ShaderColorSettings.Default.VertexPointScale;
         PrepareUnifiedDrawing(
             _preview.camera,
             _showWireframe,
