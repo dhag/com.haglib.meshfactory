@@ -552,20 +552,9 @@ namespace Poly_Ling.UI
                         _treeRoot.SelectMultiple(_selectedAdapters);
                     }
 
-                    // v2.0: ToolContextのコールバックはDrawableタブの場合のみ
-                    // Bone/Morphタブでは頂点編集等のエディタ処理は不要なため、
-                    // SelectMeshContext()を呼ばない（LoadMeshContextToUndoController等をスキップ）
-                    if (_selectedAdapters.Count > 0 && CurrentCategory == MeshCategory.Drawable)
-                    {
-                        if (_toolContext?.SelectMeshContext != null)
-                        {
-                            var firstIndex = _selectedAdapters[0].MasterIndex;
-                            if (firstIndex >= 0)
-                            {
-                                _toolContext.SelectMeshContext(firstIndex);
-                            }
-                        }
-                    }
+                    // v2.1: 複数選択対応 - SelectMeshContextは単一選択になるため呼ばない
+                    // 代わりにOnMeshSelectionChangedでGPUバッファを同期
+                    _toolContext?.OnMeshSelectionChanged?.Invoke();
 
                     // 本体エディタに反映
                     if (Model != null)

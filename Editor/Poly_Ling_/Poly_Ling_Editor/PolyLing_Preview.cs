@@ -140,9 +140,22 @@ public partial class PolyLing
         {
             if (_showSelectedMeshOnly)
             {
-                // 選択メッシュのみ表示モードでもIsVisibleをチェック
-                if (meshContext != null && meshContext.IsVisible)
+                // 選択メッシュのみ表示モード - 複数選択対応
+                if (_model != null && _model.SelectedMeshIndices.Count > 0)
                 {
+                    foreach (int idx in _model.SelectedMeshIndices)
+                    {
+                        if (idx < 0 || idx >= _meshContextList.Count) continue;
+                        var ctx = _meshContextList[idx];
+                        if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
+                        
+                        bool isPrimary = (idx == _selectedIndex);
+                        DrawMeshWithMaterials(ctx, ctx.UnityMesh, isPrimary ? 1f : 0.8f, idx);
+                    }
+                }
+                else if (meshContext != null && meshContext.IsVisible)
+                {
+                    // フォールバック: 単一選択
                     DrawMeshWithMaterials(meshContext, mesh, 1f, _selectedIndex);
                 }
             }
@@ -154,7 +167,8 @@ public partial class PolyLing
                     if (ctx?.UnityMesh == null) continue;
                     if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
 
-                    bool isSelected = (i == _selectedIndex);
+                    // 複数選択対応: 選択メッシュは明るく表示
+                    bool isSelected = (_model?.SelectedMeshIndices.Contains(i) ?? false) || (i == _selectedIndex);
                     DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f, i);
                 }
             }
@@ -166,7 +180,19 @@ public partial class PolyLing
         {
             if (_showSelectedMeshOnly)
             {
-                if (meshContext != null && meshContext.IsVisible)
+                // 複数選択対応
+                if (_model != null && _model.SelectedMeshIndices.Count > 0)
+                {
+                    foreach (int idx in _model.SelectedMeshIndices)
+                    {
+                        if (idx < 0 || idx >= _meshContextList.Count) continue;
+                        var ctx = _meshContextList[idx];
+                        if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
+                        
+                        DrawMirroredMesh(ctx, ctx.UnityMesh);
+                    }
+                }
+                else if (meshContext != null && meshContext.IsVisible)
                 {
                     DrawMirroredMesh(meshContext, mesh);
                 }
@@ -217,12 +243,35 @@ public partial class PolyLing
         DrawSelectedFaces(localRect, meshContext, selectedDisplayMatrix);
 
         // ================================================================
-        // 頂点インデックス表示（2Dオーバーレイ）
+        // 頂点インデックス表示（2Dオーバーレイ）- v2.1: 複数選択対応
         // ================================================================
-        if (_showVertexIndices && meshContext != null && meshContext.IsVisible)
+        if (_showVertexIndices)
         {
             _unifiedAdapter?.ReadBackVertexFlags();
-            DrawVertexIndices(localRect, meshContext.MeshObject, camPos, _cameraTarget, selectedDisplayMatrix);
+            
+            // 選択されているメッシュすべてに対して頂点インデックスを表示
+            if (_model != null && _model.SelectedMeshIndices.Count > 0)
+            {
+                foreach (int meshIdx in _model.SelectedMeshIndices)
+                {
+                    if (meshIdx < 0 || meshIdx >= _model.MeshContextCount)
+                        continue;
+                        
+                    var ctx = _model.GetMeshContext(meshIdx);
+                    if (ctx == null || !ctx.IsVisible || ctx.MeshObject == null)
+                        continue;
+                    
+                    // 表示用行列を取得
+                    var displayMatrix = GetDisplayMatrix(meshIdx);
+                    bool isPrimary = (meshIdx == _selectedIndex);
+                    DrawVertexIndicesForMesh(localRect, ctx.MeshObject, meshIdx, isPrimary, camPos, _cameraTarget, displayMatrix);
+                }
+            }
+            else if (meshContext != null && meshContext.IsVisible)
+            {
+                // フォールバック: 単一選択
+                DrawVertexIndices(localRect, meshContext.MeshObject, camPos, _cameraTarget, selectedDisplayMatrix);
+            }
         }
 
         // ローカル原点マーカー
@@ -462,6 +511,66 @@ public partial class PolyLing
                 continue;
 
             GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 40, 16), i.ToString(), EditorStyles.miniLabel);
+        }
+    }
+
+    /// <summary>
+    /// v2.1: 指定メッシュの頂点インデックスを表示（複数選択対応）
+    /// </summary>
+    /// <param name="meshIndex">表示対象のメッシュインデックス</param>
+    /// <param name="isPrimary">プライマリ選択かどうか</param>
+    private void DrawVertexIndicesForMesh(Rect previewRect, MeshObject meshObject, int meshIndex, bool isPrimary, Vector3 camPos, Vector3 lookAt, Matrix4x4? displayMatrix = null)
+    {
+        if (meshObject == null)
+            return;
+
+        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
+        bool useBackfaceCulling = _unifiedAdapter != null && _unifiedAdapter.BackfaceCullingEnabled;
+
+        // ワールド変換済み座標を取得（ボーンベンディング対応）
+        Vector3[] displayPositions = null;
+        int vertexOffset = 0;
+        if (_unifiedAdapter != null)
+        {
+            var bufferManager = _unifiedAdapter.BufferManager;
+            if (bufferManager != null)
+            {
+                displayPositions = bufferManager.GetDisplayPositions();
+                // 指定メッシュの頂点オフセットを取得
+                int unifiedIdx = _unifiedAdapter.ContextToUnifiedMeshIndex(meshIndex);
+                if (unifiedIdx >= 0 && bufferManager.MeshInfos != null)
+                {
+                    vertexOffset = (int)bufferManager.MeshInfos[unifiedIdx].VertexStart;
+                }
+            }
+        }
+
+        // プライマリ選択は通常表示、追加選択は薄い表示
+        var labelStyle = isPrimary ? EditorStyles.miniLabel : EditorStyles.whiteMiniLabel;
+
+        for (int i = 0; i < meshObject.VertexCount; i++)
+        {
+            if (useBackfaceCulling && _unifiedAdapter.IsVertexCulled(meshIndex, i))
+                continue;
+
+            // ワールド変換済み座標を使用（利用可能な場合）
+            Vector3 worldPos;
+            if (displayPositions != null && (vertexOffset + i) < displayPositions.Length)
+            {
+                worldPos = displayPositions[vertexOffset + i];
+            }
+            else
+            {
+                worldPos = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
+            }
+
+            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
+
+            if (!previewRect.Contains(screenPos))
+                continue;
+
+            // ローカルインデックスのみ表示
+            GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 40, 16), i.ToString(), labelStyle);
         }
     }
 

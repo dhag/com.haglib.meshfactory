@@ -372,6 +372,9 @@ public partial class PolyLing
         var bufMgr = _unifiedAdapter.BufferManager;
         if (bufMgr != null)
         {
+            // v2.1: 複数選択をModelContextから同期（SetActiveMeshより先に）
+            bufMgr.SyncSelectionFromModel(_model);
+            
             bufMgr.SetActiveMesh(0, unifiedMeshIndex);  // UnifiedMeshIndex を使用
             bufMgr.UpdateAllSelectionFlags();
             
@@ -387,13 +390,17 @@ public partial class PolyLing
             }
         }
         
+        // v2.1: 複数選択時はselectedMeshIndex=-1を渡し、シェーダーでMeshSelectedフラグに基づきフィルタリング
+        // C#側で単一メッシュフィルタリングするとワイヤーメッシュ構築時に複数選択分が含まれない
+        int meshIndexForDrawing = (_model != null && _model.SelectedMeshIndices.Count > 1) ? -1 : unifiedMeshIndex;
+        
         _unifiedAdapter.PrepareDrawing(
             camera,
             showWireframe,
             showVertices,
             showUnselectedWireframe && !_unifiedAdapter.SkipUnselectedWireframe,
             showUnselectedVertices && !_unifiedAdapter.SkipUnselectedVertices,
-            unifiedMeshIndex,
+            meshIndexForDrawing,
             pointSize,
             alpha);
     }

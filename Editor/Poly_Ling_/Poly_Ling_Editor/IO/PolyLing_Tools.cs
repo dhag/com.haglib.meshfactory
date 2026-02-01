@@ -163,6 +163,30 @@ public partial class PolyLing : EditorWindow
         ctx.ReplaceMaterials = ReplaceMaterialsInModel;
         ctx.ReplaceMaterialReferences = ReplaceMaterialRefsInModel;
         ctx.SetCurrentMaterialIndex = (index) => { if (_model != null) _model.CurrentMaterialIndex = index; };
+        
+        // v2.1: 複数メッシュ選択変更時のコールバック（GPUバッファ同期）
+        ctx.OnMeshSelectionChanged = OnMeshSelectionChanged;
+    }
+
+    /// <summary>
+    /// v2.1: メッシュ選択変更時のコールバック（複数選択対応）
+    /// MeshListPanelなどからCtrl/Shift+クリックで呼ばれる
+    /// </summary>
+    private void OnMeshSelectionChanged()
+    {
+        // デバッグ: 選択状態を出力
+        if (_model != null)
+        {
+            var indices = string.Join(",", _model.SelectedMeshIndices);
+            UnityEngine.Debug.Log($"[OnMeshSelectionChanged] SelectedMeshIndices=[{indices}], Primary={_model.PrimarySelectedMeshIndex}");
+        }
+        
+        // UnifiedBufferManagerにModelContextから選択状態を同期
+        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
+        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+        
+        // 再描画
+        Repaint();
     }
 
     /// <summary>
@@ -1048,6 +1072,9 @@ public partial class PolyLing : EditorWindow
 
         int oldIndex = _selectedIndex;
         _selectedIndex = index;
+        
+        // v2.1: ModelContextの選択も更新（単一選択）
+        _model?.SelectMesh(index);
 
         // Undo記録（選択変更のみ）
         if (_undoController != null)
@@ -1076,6 +1103,10 @@ public partial class PolyLing : EditorWindow
             // ※メインパネルのSelectMeshAtIndexと同じ処理
             UpdateTopology();
         }
+        
+        // v2.1: GPUバッファに選択状態を同期
+        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
+        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
 
         Repaint();
         

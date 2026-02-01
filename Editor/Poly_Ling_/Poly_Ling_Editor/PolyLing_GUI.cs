@@ -645,16 +645,79 @@ public partial class PolyLing
             });
         }
 
-        // メッシュ名ボタン（選択用）
-        bool isSelected = (index == _selectedIndex);
-        bool newSelected = GUILayout.Toggle(isSelected, ctx.Name, "Button");
+        // メッシュ名ボタン（選択用）- 複数選択対応
+        bool isPrimary = (index == _selectedIndex);
+        bool isSelected = _model?.SelectedMeshIndices.Contains(index) ?? isPrimary;
+        
+        // 選択状態に応じたマーカー
+        string marker = isPrimary ? "▶ " : (isSelected ? "● " : "");
+        string label = marker + ctx.Name;
+        
+        // v2.1: クリックイベント時のみ処理（再描画時のToggle再評価を無視）
+        Event e = Event.current;
+        bool isClickEvent = (e.type == EventType.MouseUp || e.type == EventType.MouseDown);
+        
+        bool newSelected = GUILayout.Toggle(isSelected, label, "Button");
 
-        if (newSelected && !isSelected)
+        // クリック処理 - 実際のクリックイベント時のみ
+        if (isClickEvent && (newSelected != isSelected || (newSelected && !isPrimary)))
         {
-            SelectMeshAtIndex(index);
+            HandleMeshClick(index, e.control, e.shift);
         }
 
         EditorGUILayout.EndHorizontal();
+    }
+
+    /// <summary>
+    /// メッシュクリック処理（Ctrl/Shift対応）
+    /// </summary>
+    private void HandleMeshClick(int index, bool ctrlHeld, bool shiftHeld)
+    {
+        if (_model == null) return;
+        
+        if (ctrlHeld)
+        {
+            // Ctrl+クリック: トグル
+            _model.ToggleMeshSelection(index);
+            // プライマリが解除された場合、別のメッシュをプライマリに
+            if (_model.SelectedMeshIndices.Count > 0 && !_model.SelectedMeshIndices.Contains(_selectedIndex))
+            {
+                _selectedIndex = _model.PrimarySelectedMeshIndex;
+                SwitchToSelectedMesh();
+            }
+        }
+        else if (shiftHeld && _selectedIndex >= 0)
+        {
+            // Shift+クリック: 範囲選択
+            _model.SelectMeshRange(_selectedIndex, index);
+        }
+        else
+        {
+            // 通常クリック: 単一選択
+            SelectMeshAtIndex(index);
+            return; // SelectMeshAtIndexが通知を行う
+        }
+        
+        // v2.1: GPUバッファに選択状態を同期
+        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
+        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+        
+        // 他のパネルに通知
+        _model?.OnListChanged?.Invoke();
+        Repaint();
+    }
+
+    /// <summary>
+    /// 選択済みメッシュに切り替え（プライマリ変更時）
+    /// </summary>
+    private void SwitchToSelectedMesh()
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= _meshContextList.Count) return;
+        
+        MeshContext meshContext = _meshContextList[_selectedIndex];
+        LoadMeshContextToUndoController(meshContext);
+        UpdateTopology();
+        Repaint();
     }
 
     /// <summary>
@@ -677,6 +740,9 @@ public partial class PolyLing
         SaveSelectionToCurrentMesh();
 
         _selectedIndex = index;
+        
+        // v2.1: ModelContextの選択も更新（単一選択）
+        _model?.SelectMesh(index);
         ResetEditState();
         InitVertexOffsets();
 
@@ -699,6 +765,10 @@ public partial class PolyLing
         // メッシュ選択変更をUndo記録（キュー経由）
         _commandQueue?.Enqueue(new RecordMeshSelectionChangeCommand(
             _undoController, oldIndex, _selectedIndex, oldCamera, newCamera));
+        
+        // v2.1: GPUバッファに選択状態を同期
+        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
+        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();

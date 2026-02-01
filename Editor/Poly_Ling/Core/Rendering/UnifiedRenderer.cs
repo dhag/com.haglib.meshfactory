@@ -419,34 +419,21 @@ namespace Poly_Ling.Core.Rendering
                 if (v1 < 0 || v1 >= vertexCount || v2 < 0 || v2 >= vertexCount)
                     continue;
 
-                // メッシュインデックスでフィルタリング
-                int lineMeshIndex = (int)line.MeshIndex;
-                bool isSelected = (selectedMeshIndex < 0) || (lineMeshIndex == selectedMeshIndex);
-
-                // 非選択メッシュはshowUnselected=falseならスキップ
-                if (!isSelected && !showUnselected)
-                    continue;
-
-                // フラグから状態を決定
+                // v2.1: 常に全ラインを含める（選択/非選択/表示/非表示はシェーダーで処理）
+                // フラグから状態を決定（ホバー/エッジ選択の色分けはC#で行う）
                 uint flags = lineFlags != null && i < lineFlags.Length ? lineFlags[i] : 0;
                 bool isHovered = (flags & (uint)SelectionFlags.Hovered) != 0;
                 bool isEdgeSelected = (flags & (uint)SelectionFlags.EdgeSelected) != 0;
-                // カリングはシェーダーで行う
 
                 Vector3 p1 = positions[v1];
                 Vector3 p2 = positions[v2];
 
-                float alpha = isSelected ? selectedAlpha : unselectedAlpha;
-
-                // ShaderColorSettingsから色を取得
-                Color normalColor = isSelected
-                    ? _colorSettings.WithAlpha(_colorSettings.LineSelectedMesh, alpha)
-                    : _colorSettings.WithAlpha(_colorSettings.LineUnselectedMesh, alpha);
-                Color edgeSelectedColor = _colorSettings.WithAlpha(_colorSettings.EdgeSelected, alpha);
-                Color auxColor = isSelected
-                    ? _colorSettings.WithAlpha(_colorSettings.AuxLineSelectedMesh, alpha)
-                    : _colorSettings.WithAlpha(_colorSettings.AuxLineUnselectedMesh, alpha);
-                Color hoverColor = _colorSettings.WithAlpha(_colorSettings.LineHovered, alpha);
+                // v2.1: 選択/非選択の色分けはシェーダーで行う
+                // C#側ではホバー/エッジ選択/補助線の色分けのみ
+                Color normalColor = _colorSettings.WithAlpha(_colorSettings.LineSelectedMesh, selectedAlpha);
+                Color edgeSelectedColor = _colorSettings.WithAlpha(_colorSettings.EdgeSelected, selectedAlpha);
+                Color auxColor = _colorSettings.WithAlpha(_colorSettings.AuxLineSelectedMesh, selectedAlpha);
+                Color hoverColor = _colorSettings.WithAlpha(_colorSettings.LineHovered, selectedAlpha);
 
                 Color lineColor;
                 if (isHovered)
@@ -543,18 +530,14 @@ namespace Poly_Ling.Core.Rendering
             Vector3 camRight = camera.transform.right;
             Vector3 camUp = camera.transform.up;
 
+            // v2.1: 常に全メッシュを含める（選択/非選択/表示/非表示はシェーダーで処理）
             // メッシュごとに処理
             for (int meshIdx = 0; meshIdx < meshCount; meshIdx++)
             {
-                bool isSelected = (meshIdx == selectedMeshIndex) || (selectedMeshIndex < 0);
-
-                // 非選択メッシュはshowUnselected=falseならスキップ
-                if (!isSelected && !showUnselected)
-                    continue;
-
                 var meshInfo = meshInfos[meshIdx];
-                float alpha = isSelected ? selectedAlpha : unselectedAlpha;
-                float size = isSelected ? pointSize : pointSize * 0.5f;
+
+                // サイズは一律（シェーダーで選択/非選択を区別）
+                float size = pointSize;
                 float halfSize = size * 0.5f;
 
                 // このメッシュの頂点範囲をループ
@@ -573,6 +556,8 @@ namespace Poly_Ling.Core.Rendering
 
                     Vector3 center = positions[i];
                     
+                    // v2.1: 選択/非選択の区別はシェーダーで行う
+                    // C#側ではホバー/頂点選択状態のみ
                     float selectState;
                     if (isHovered)
                         selectState = 0f;  // ホバー
@@ -581,11 +566,7 @@ namespace Poly_Ling.Core.Rendering
                     else
                         selectState = 0.5f;  // 通常
 
-                    // 非選択メッシュの頂点は薄く表示
-                    if (!isSelected)
-                        selectState = 0.5f;  // 常に通常色（薄い）
-
-                    Color col = new Color(1, 1, 1, selectState * alpha);
+                    Color col = new Color(1, 1, 1, selectState * selectedAlpha);
 
                     Vector3 offset1 = (-camRight - camUp) * halfSize;
                     Vector3 offset2 = (camRight - camUp) * halfSize;
@@ -638,7 +619,8 @@ namespace Poly_Ling.Core.Rendering
         /// <summary>
         /// ワイヤーフレームを描画キューに追加
         /// </summary>
-        public void QueueWireframe()
+        /// <param name="showUnselected">非選択メッシュを表示するか</param>
+        public void QueueWireframe(bool showUnselected = true)
         {
             // フラグバッファを通常マテリアルに設定
             bool hasBuffer = _bufferManager?.LineFlagsBuffer != null;
@@ -654,8 +636,8 @@ namespace Poly_Ling.Core.Rendering
                 _wireframeMaterial.SetInt("_EnableBackfaceCulling", 0);
             }
             
-            // 通常描画（デプステストあり、選択メッシュ非表示）
-            if (_wireframeMesh != null && _wireframeMaterial != null && _wireframeMesh.vertexCount > 0)
+            // v2.1: 通常描画（非選択メッシュ）- showUnselected=falseならスキップ
+            if (showUnselected && _wireframeMesh != null && _wireframeMaterial != null && _wireframeMesh.vertexCount > 0)
             {
                 var meshCopy = UnityEngine.Object.Instantiate(_wireframeMesh);
                 meshCopy.hideFlags = HideFlags.HideAndDontSave;
@@ -680,7 +662,8 @@ namespace Poly_Ling.Core.Rendering
         /// <summary>
         /// 頂点を描画キューに追加
         /// </summary>
-        public void QueuePoints()
+        /// <param name="showUnselected">非選択メッシュを表示するか</param>
+        public void QueuePoints(bool showUnselected = true)
         {
             // ShaderColorSettingsをマテリアルに適用
             ApplyPointColorSettings(_pointMaterial);
@@ -700,8 +683,8 @@ namespace Poly_Ling.Core.Rendering
                 _pointMaterial.SetInt("_EnableBackfaceCulling", 0);
             }
             
-            // 通常描画（デプステストあり、選択メッシュ非表示）
-            if (_pointMesh != null && _pointMaterial != null && _pointMesh.vertexCount > 0)
+            // v2.1: 通常描画（非選択メッシュ）- showUnselected=falseならスキップ
+            if (showUnselected && _pointMesh != null && _pointMaterial != null && _pointMesh.vertexCount > 0)
             {
                 var meshCopy = UnityEngine.Object.Instantiate(_pointMesh);
                 meshCopy.hideFlags = HideFlags.HideAndDontSave;

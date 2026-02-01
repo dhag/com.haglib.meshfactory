@@ -606,7 +606,8 @@ namespace Poly_Ling.Core
                     1.0f,       // lineWidthPx
                     alpha,      // selectedAlpha
                     0.4f);      // unselectedAlpha
-                _renderer.QueueWireframe();
+                // v2.1: 非選択表示フラグを渡す
+                _renderer.QueueWireframe(showUnselectedWireframe);
             }
 
             if (showVertices)
@@ -619,7 +620,8 @@ namespace Poly_Ling.Core
                     pointSize,
                     alpha,      // selectedAlpha
                     0.4f);      // unselectedAlpha
-                _renderer.QueuePoints();
+                // v2.1: 非選択表示フラグを渡す
+                _renderer.QueuePoints(showUnselectedVertices);
             }
         }
 

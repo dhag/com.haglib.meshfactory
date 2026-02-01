@@ -43,6 +43,32 @@ namespace Poly_Ling.Core
         /// <summary>アクティブメッシュインデックス（編集対象）</summary>
         public int ActiveMeshIndex { get; set; } = 0;
 
+        // v2.1: 複数メッシュ選択
+        /// <summary>選択されているメッシュインデックスの集合</summary>
+        public HashSet<int> SelectedMeshIndices { get; set; } = new HashSet<int>();
+
+        /// <summary>
+        /// 指定メッシュが選択されているかチェック（複数選択対応）
+        /// </summary>
+        public bool IsMeshSelected(int meshIndex)
+        {
+            // v2.1: 複数選択をチェック
+            if (SelectedMeshIndices != null && SelectedMeshIndices.Contains(meshIndex))
+                return true;
+            
+            // 後方互換: 単一選択もチェック
+            if (meshIndex == SelectedMeshIndex)
+                return true;
+            
+            // カテゴリ別選択もチェック
+            if (meshIndex == SelectedDrawableMeshIndex ||
+                meshIndex == SelectedBoneIndex ||
+                meshIndex == SelectedMorphIndex)
+                return true;
+            
+            return false;
+        }
+
         // ============================================================
         // 選択状態参照
         // ============================================================
@@ -56,7 +82,7 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// 頂点の階層フラグを計算
-        /// v2.0: カテゴリ別選択インデックス対応
+        /// v2.1: 複数メッシュ選択対応
         /// </summary>
         /// <param name="modelIndex">モデルインデックス</param>
         /// <param name="meshIndex">メッシュインデックス（モデル内）</param>
@@ -72,18 +98,10 @@ namespace Poly_Ling.Core
             if (modelIndex == ActiveModelIndex)
                 flags |= SelectionFlags.ModelActive;
 
-            // メッシュレベル（後方互換 + カテゴリ別）
-            if (modelIndex == SelectedModelIndex)
+            // メッシュレベル - v2.1: IsMeshSelected()で複数選択をチェック
+            if (modelIndex == SelectedModelIndex && IsMeshSelected(meshIndex))
             {
-                // 後方互換: 単一SelectedMeshIndex
-                if (meshIndex == SelectedMeshIndex)
-                    flags |= SelectionFlags.MeshSelected;
-                
-                // カテゴリ別選択もチェック
-                if (meshIndex == SelectedDrawableMeshIndex ||
-                    meshIndex == SelectedBoneIndex ||
-                    meshIndex == SelectedMorphIndex)
-                    flags |= SelectionFlags.MeshSelected;
+                flags |= SelectionFlags.MeshSelected;
             }
 
             if (modelIndex == ActiveModelIndex && meshIndex == ActiveMeshIndex)

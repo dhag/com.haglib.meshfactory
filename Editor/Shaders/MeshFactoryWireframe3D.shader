@@ -3,6 +3,7 @@ Shader "Poly_Ling/Wireframe3D"
     Properties
     {
         _Color ("Color", Color) = (0, 1, 0.5, 0.9)
+        _UnselectedColor ("Unselected Color", Color) = (0.5, 0.5, 0.5, 0.4)
         [Enum(UnityEngine.Rendering.CompareFunction)] _ZTest ("ZTest", Float) = 4
     }
     SubShader
@@ -42,6 +43,7 @@ Shader "Poly_Ling/Wireframe3D"
             };
             
             float4 _Color;
+            float4 _UnselectedColor;
             
             StructuredBuffer<uint> _LineFlagsBuffer;
             int _UseLineFlagsBuffer;
@@ -82,10 +84,16 @@ Shader "Poly_Ling/Wireframe3D"
                         o.color = float4(0, 0, 0, 0);
                         return o;
                     }
+                    
+                    // v2.1: 非選択メッシュは薄い色で表示
+                    o.color = _UnselectedColor;
+                }
+                else
+                {
+                    o.color = v.color;
                 }
                 
                 o.pos = UnityObjectToClipPos(v.vertex);
-                o.color = v.color;
                 return o;
             }
             

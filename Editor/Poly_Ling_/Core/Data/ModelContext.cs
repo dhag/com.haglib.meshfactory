@@ -210,6 +210,43 @@ namespace Poly_Ling.Model
             }
         }
 
+        /// <summary>メッシュ選択をトグル（Ctrl+クリック用）</summary>
+        public void ToggleMeshSelection(int index)
+        {
+            if (index < 0 || index >= Count) return;
+            
+            if (SelectedMeshIndices.Contains(index))
+            {
+                SelectedMeshIndices.Remove(index);
+            }
+            else
+            {
+                SelectedMeshIndices.Add(index);
+            }
+            ActiveCategory = SelectionCategory.Mesh;
+        }
+
+        /// <summary>メッシュ範囲選択（Shift+クリック用）</summary>
+        public void SelectMeshRange(int fromIndex, int toIndex)
+        {
+            int start = Mathf.Min(fromIndex, toIndex);
+            int end = Mathf.Max(fromIndex, toIndex);
+            start = Mathf.Max(0, start);
+            end = Mathf.Min(Count - 1, end);
+            
+            for (int i = start; i <= end; i++)
+            {
+                SelectedMeshIndices.Add(i);
+            }
+            ActiveCategory = SelectionCategory.Mesh;
+        }
+
+        /// <summary>メッシュ選択から除去</summary>
+        public void RemoveFromMeshSelection(int index)
+        {
+            SelectedMeshIndices.Remove(index);
+        }
+
         /// <summary>ボーン選択に追加</summary>
         public void AddToBoneSelection(int index)
         {

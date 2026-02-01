@@ -36,6 +36,34 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// v2.1: 複数メッシュ選択をModelContextから同期
+        /// </summary>
+        /// <param name="model">ModelContext</param>
+        public void SyncSelectionFromModel(Poly_Ling.Model.ModelContext model)
+        {
+            if (model == null) return;
+            
+            // 複数選択を同期
+            _flagManager.SelectedMeshIndices.Clear();
+            foreach (var idx in model.SelectedMeshIndices)
+            {
+                _flagManager.SelectedMeshIndices.Add(idx);
+            }
+            
+            // アクティブ（プライマリ）メッシュも同期
+            int primary = model.PrimarySelectedMeshIndex;
+            if (primary >= 0)
+            {
+                _flagManager.ActiveMeshIndex = primary;
+                _flagManager.SelectedMeshIndex = primary;
+            }
+            
+            // デバッグ
+            var indices = string.Join(",", _flagManager.SelectedMeshIndices);
+            UnityEngine.Debug.Log($"[SyncSelectionFromModel] FlagManager.SelectedMeshIndices=[{indices}], Active={_flagManager.ActiveMeshIndex}");
+        }
+
+        /// <summary>
         /// 全頂点の選択フラグを更新
         /// </summary>
         public void UpdateAllSelectionFlags()
@@ -105,6 +133,7 @@ namespace Poly_Ling.Core
 
             int edgeSelectedCount = 0;
             int lineSelectedCount = 0;
+            int meshSelectedLineCount = 0;  // v2.1: MeshSelected付きライン数
             
             for (int lineIdx = 0; lineIdx < _totalLineCount; lineIdx++)
             {
@@ -117,6 +146,10 @@ namespace Poly_Ling.Core
 
                 // 階層フラグ
                 flags |= (uint)_flagManager.ComputeHierarchyFlags((int)line.ModelIndex, (int)line.MeshIndex);
+                
+                // v2.1: MeshSelectedフラグのカウント
+                if ((flags & (uint)SelectionFlags.MeshSelected) != 0)
+                    meshSelectedLineCount++;
 
                 if (hasSelectionState && isActiveMesh)
                 {
@@ -151,6 +184,9 @@ namespace Poly_Ling.Core
 
                 _lineFlags[lineIdx] = flags;
             }
+
+            // v2.1: MeshSelectedフラグ数をログ出力
+            Debug.Log($"[UpdateAllLineSelectionFlags] totalLines={_totalLineCount}, meshSelectedLines={meshSelectedLineCount}, SelectedMeshIndices=[{string.Join(",", _flagManager.SelectedMeshIndices)}]");
 
             // デバッグ: 選択フラグ設定数
             if (hasSelectionState && (_flagManager.SelectionState.Edges.Count > 0 || _flagManager.SelectionState.Lines.Count > 0))

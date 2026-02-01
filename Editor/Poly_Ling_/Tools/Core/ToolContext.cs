@@ -218,6 +218,9 @@ namespace Poly_Ling.Tools
         /// <summary>メッシュを選択（Undo対応）</summary>
         public Action<int> SelectMeshContext { get; set; }
 
+        /// <summary>v2.1: メッシュ選択変更時のコールバック（複数選択対応・GPUバッファ同期用）</summary>
+        public Action OnMeshSelectionChanged { get; set; }
+
         /// <summary>メッシュを複製（Undo対応）</summary>
         public Action<int> DuplicateMeshContent { get; set; }
 

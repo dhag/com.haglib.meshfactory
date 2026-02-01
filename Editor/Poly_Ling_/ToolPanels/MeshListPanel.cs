@@ -170,13 +170,21 @@ namespace Poly_Ling.Tools.Panels
 
             // v2.0: カテゴリ別選択対応 - IsSelectedが全カテゴリをチェック
             bool isSelected = model.IsSelected(index);
+            bool isPrimary = (index == model.PrimarySelectedMeshIndex);
             bool isFirst = (index == 0);
             bool isLast = (index == model.MeshContextCount - 1);
 
             // 選択中は背景色を変える
-            if (isSelected)
+            if (isPrimary)
             {
                 var bgRect = EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            }
+            else if (isSelected)
+            {
+                // 追加選択は薄い背景
+                var style = new GUIStyle(EditorStyles.helpBox);
+                style.normal.background = null;
+                EditorGUILayout.BeginVertical(style);
             }
             else
             {
@@ -185,17 +193,17 @@ namespace Poly_Ling.Tools.Panels
 
             EditorGUILayout.BeginHorizontal();
 
-            // 選択マーカー
-            string marker = isSelected ? "▶" : "  ";
+            // 選択マーカー: プライマリ=▶、追加選択=●
+            string marker = isPrimary ? "▶" : (isSelected ? "●" : "  ");
             if (GUILayout.Button(marker, EditorStyles.label, GUILayout.Width(16)))
             {
-                SelectMesh(index);
+                HandleMeshClick(index, model);
             }
 
             // 名前（クリックで選択）
             if (GUILayout.Button(meshContext.Name, EditorStyles.label, GUILayout.ExpandWidth(true)))
             {
-                SelectMesh(index);
+                HandleMeshClick(index, model);
             }
 
             // 情報表示
@@ -240,6 +248,40 @@ namespace Poly_Ling.Tools.Panels
 
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.EndVertical();
+        }
+
+        /// <summary>
+        /// メッシュクリック処理（Ctrl/Shift対応）
+        /// </summary>
+        private void HandleMeshClick(int index, ModelContext model)
+        {
+            Event e = Event.current;
+            
+            if (e.control)
+            {
+                // Ctrl+クリック: トグル
+                model.ToggleMeshSelection(index);
+            }
+            else if (e.shift && model.PrimarySelectedMeshIndex >= 0)
+            {
+                // Shift+クリック: 範囲選択
+                model.SelectMeshRange(model.PrimarySelectedMeshIndex, index);
+            }
+            else
+            {
+                // 通常クリック: 単一選択
+                SelectMesh(index);
+                return;
+            }
+            
+            // v2.1: GPUバッファ同期を通知
+            _context?.OnMeshSelectionChanged?.Invoke();
+            
+            // 他のパネルに通知
+            _isSyncingFromExternal = true;
+            model.OnListChanged?.Invoke();
+            _isSyncingFromExternal = false;
+            Repaint();
         }
 
         // ================================================================
