@@ -593,7 +593,7 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// 孤立頂点を検出
         /// </summary>
-        private HashSet<int> GetIsolatedVertices(MeshObject mo)
+        public static HashSet<int> GetIsolatedVertices(MeshObject mo)
         {
             var usedVertices = new HashSet<int>();
 
@@ -623,7 +623,7 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// UV展開後の頂点数を計算（孤立点除外）
         /// </summary>
-        private int CalculateExpandedVertexCount(MeshObject mo, HashSet<int> excludeVertices)
+        public static  int CalculateExpandedVertexCount(MeshObject mo, HashSet<int> excludeVertices)
         {
             int count = 0;
             for (int i = 0; i < mo.Vertices.Count; i++)

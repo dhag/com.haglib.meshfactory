@@ -3,6 +3,8 @@ Shader "Poly_Ling/Point3D"
     Properties
     {
         _PointSize ("Point Size", Float) = 0.01
+        _ScreenSpaceSize ("Screen Space Size", Float) = 8.0
+        _UseScreenSpace ("Use Screen Space Size", Int) = 1
         
         // 頂点色（ShaderColorSettingsから設定）
         _ColorSelected ("Selected Fill", Color) = (1, 0.6, 0, 1)
@@ -52,6 +54,8 @@ Shader "Poly_Ling/Point3D"
             };
             
             float _PointSize;
+            float _ScreenSpaceSize;
+            int _UseScreenSpace;
             
             // 色プロパティ
             float4 _ColorSelected;
@@ -121,7 +125,25 @@ Shader "Poly_Ling/Point3D"
                     }
                 }
                 
-                o.pos = UnityObjectToClipPos(v.vertex);
+                // 頂点位置をクリップ空間に変換
+                float4 clipPos = UnityObjectToClipPos(v.vertex);
+                
+                // スクリーンスペースサイズを使用する場合、距離に依存しないサイズに補正
+                if (_UseScreenSpace > 0)
+                {
+                    // クリップ空間でのオフセットを計算
+                    // v.uv は quad の各頂点で (0,0), (1,0), (0,1), (1,1) など
+                    // 中心からのオフセットに変換: -0.5 ~ 0.5
+                    float2 offset = (v.uv - 0.5) * 2.0;
+                    
+                    // スクリーンピクセルサイズをクリップ空間サイズに変換
+                    // clipPos.w で割ることで、距離に関係なく一定のスクリーンサイズになる
+                    float2 pixelSize = _ScreenSpaceSize / _ScreenParams.xy;
+                    
+                    clipPos.xy += offset * pixelSize * clipPos.w;
+                }
+                
+                o.pos = clipPos;
                 
                 // ShaderColorSettingsからの色を使用
                 if (selectState > 0.9)

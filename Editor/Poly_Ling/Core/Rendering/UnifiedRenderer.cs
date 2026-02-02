@@ -530,6 +530,9 @@ namespace Poly_Ling.Core.Rendering
             Vector3 camRight = camera.transform.right;
             Vector3 camUp = camera.transform.up;
 
+            // スクリーンスペースサイズを使用するかどうか
+            bool useScreenSpace = _pointMaterial != null && _pointMaterial.GetInt("_UseScreenSpace") > 0;
+
             // v2.1: 常に全メッシュを含める（選択/非選択/表示/非表示はシェーダーで処理）
             // メッシュごとに処理
             for (int meshIdx = 0; meshIdx < meshCount; meshIdx++)
@@ -537,7 +540,7 @@ namespace Poly_Ling.Core.Rendering
                 var meshInfo = meshInfos[meshIdx];
 
                 // サイズは一律（シェーダーで選択/非選択を区別）
-                float size = pointSize;
+                float size = useScreenSpace ? 0f : pointSize;  // スクリーンスペース時は0（シェーダで処理）
                 float halfSize = size * 0.5f;
 
                 // このメッシュの頂点範囲をループ
