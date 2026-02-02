@@ -410,47 +410,137 @@ public partial class PolyLing
             EditorGUILayout.Space(5);
 
             // ================================================================
-            // メッシュリスト
+            // メッシュリスト（タイプ別グループ化）
             // ================================================================
             EditorGUILayout.LabelField("UnityMesh List", EditorStyles.miniBoldLabel);
 
+            // タイプ別にカウントとインデックスリストを作成
+            var typeIndices = new Dictionary<MeshType, List<int>>();
             for (int i = 0; i < _meshContextList.Count; i++)
             {
-                var ctx = _meshContextList[i];
-                
-                // ボーンの場合の表示制御
-                if (ctx.Type == MeshType.Bone)
-                {
-                    // ボーン非表示モードならスキップ
-                    if (!_showBones) continue;
-                    
-                    // ボーンルートかどうか判定
-                    bool isRoot = IsBoneRoot(i);
-                    
-                    if (isRoot)
-                    {
-                        // ルートボーン: 折りたたみヘッダー表示
-                        DrawBoneRootItem(i, ctx);
-                    }
-                    else
-                    {
-                        // 子ボーン: 親が折りたたまれていたらスキップ
-                        int rootIndex = FindBoneRootIndex(i);
-                        if (rootIndex >= 0 && _foldedBoneRoots.Contains(rootIndex))
-                            continue;
-                        
-                        // インデント付きで表示
-                        DrawBoneChildItem(i, ctx);
-                    }
+                var t = _meshContextList[i].Type;
+                if (!typeIndices.ContainsKey(t))
+                    typeIndices[t] = new List<int>();
+                typeIndices[t].Add(i);
+            }
+
+            // 描画可能タイプ (Mesh, BakedMirror) を先に描画
+            var drawableTypes = new[] { MeshType.Mesh, MeshType.BakedMirror };
+            foreach (var meshType in drawableTypes)
+            {
+                if (!typeIndices.TryGetValue(meshType, out var indices) || indices.Count == 0)
                     continue;
-                }
+
+                // 折りたたみヘッダー
+                bool isFolded = _foldedTypes.Contains(meshType);
+                string label = $"{GetTypeDisplayName(meshType)} ({indices.Count})";
                 
-                // 通常メッシュの描画
-                DrawMeshListItem(i, ctx);
+                EditorGUILayout.BeginHorizontal();
+                string foldIcon = isFolded ? "▶" : "▼";
+                if (GUILayout.Button(foldIcon, EditorStyles.label, GUILayout.Width(16)))
+                {
+                    if (isFolded) _foldedTypes.Remove(meshType);
+                    else _foldedTypes.Add(meshType);
+                }
+                EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+                EditorGUILayout.EndHorizontal();
+
+                if (!isFolded)
+                {
+                    foreach (int i in indices)
+                    {
+                        DrawMeshListItem(i, _meshContextList[i]);
+                    }
+                }
+            }
+
+            // ボーンは既存のロジックを使用
+            if (typeIndices.TryGetValue(MeshType.Bone, out var boneIndices) && boneIndices.Count > 0)
+            {
+                bool isFolded = !_showBones;
+                string label = $"Bones ({boneIndices.Count})";
+                
+                EditorGUILayout.BeginHorizontal();
+                string foldIcon = isFolded ? "▶" : "▼";
+                if (GUILayout.Button(foldIcon, EditorStyles.label, GUILayout.Width(16)))
+                {
+                    _showBones = !_showBones;
+                }
+                EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+                EditorGUILayout.EndHorizontal();
+
+                if (_showBones)
+                {
+                    foreach (int i in boneIndices)
+                    {
+                        var ctx = _meshContextList[i];
+                        bool isRoot = IsBoneRoot(i);
+                        
+                        if (isRoot)
+                        {
+                            DrawBoneRootItem(i, ctx);
+                        }
+                        else
+                        {
+                            int rootIndex = FindBoneRootIndex(i);
+                            if (rootIndex >= 0 && _foldedBoneRoots.Contains(rootIndex))
+                                continue;
+                            DrawBoneChildItem(i, ctx);
+                        }
+                    }
+                }
+            }
+
+            // その他のタイプ（Morph, RigidBody等）
+            var otherTypes = new[] { MeshType.Morph, MeshType.RigidBody, MeshType.RigidBodyJoint, MeshType.Helper, MeshType.Group };
+            foreach (var meshType in otherTypes)
+            {
+                if (!typeIndices.TryGetValue(meshType, out var indices) || indices.Count == 0)
+                    continue;
+
+                bool isFolded = _foldedTypes.Contains(meshType);
+                string label = $"{GetTypeDisplayName(meshType)} ({indices.Count})";
+                
+                EditorGUILayout.BeginHorizontal();
+                string foldIcon = isFolded ? "▶" : "▼";
+                if (GUILayout.Button(foldIcon, EditorStyles.label, GUILayout.Width(16)))
+                {
+                    if (isFolded) _foldedTypes.Remove(meshType);
+                    else _foldedTypes.Add(meshType);
+                }
+                EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+                EditorGUILayout.EndHorizontal();
+
+                if (!isFolded)
+                {
+                    foreach (int i in indices)
+                    {
+                        DrawMeshListItem(i, _meshContextList[i]);
+                    }
+                }
             }
 
             EditorGUILayout.EndScrollView();
         }
+    }
+
+    /// <summary>
+    /// MeshTypeの表示名を取得
+    /// </summary>
+    private string GetTypeDisplayName(MeshType type)
+    {
+        return type switch
+        {
+            MeshType.Mesh => "Meshes",
+            MeshType.BakedMirror => "Baked Mirrors",
+            MeshType.Bone => "Bones",
+            MeshType.Morph => "Morphs",
+            MeshType.RigidBody => "Rigid Bodies",
+            MeshType.RigidBodyJoint => "Joints",
+            MeshType.Helper => "Helpers",
+            MeshType.Group => "Groups",
+            _ => type.ToString()
+        };
     }
 
     /// <summary>

@@ -1,7 +1,7 @@
 {
-  "name": "com.haglib.meshfactory",
-  "displayName": "MeshFactory",
-  "version": "0.1.0",
+  "name": "com.haglib.polyling",
+  "displayName": "PolyLing",
+  "version": "0.1.1",
   "unity": "6000.0",
   "description": "ちょろっとメッシュを作るやつ。",
   "author": {
