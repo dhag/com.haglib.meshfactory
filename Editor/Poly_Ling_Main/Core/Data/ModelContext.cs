@@ -1111,7 +1111,7 @@ namespace Poly_Ling.Model
         /// HierarchyParentIndexに基づいてトポロジカルソート
         /// 親が先に来るようにインデックスを並べ替える
         /// </summary>
-        private List<int> TopologicalSortByHierarchy()
+        public List<int> TopologicalSortByHierarchy()
         {
             int count = MeshContextList.Count;
             var result = new List<int>(count);

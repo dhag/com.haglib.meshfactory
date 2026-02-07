@@ -40,6 +40,7 @@ namespace Poly_Ling.VMD
         private Vector2 _scrollPos;
         private bool _showBoneList;
         private bool _showMorphList;
+        private bool _applyCoordinateConversion = false;
 
         // ================================================================
         // ウィンドウ
@@ -70,7 +71,7 @@ namespace Poly_Ling.VMD
         protected override void OnDestroy()
         {
             base.OnDestroy();
-            
+
             // リセット
             if (Model != null && _applier != null)
             {
@@ -84,7 +85,7 @@ namespace Poly_Ling.VMD
             if (Model != null)
             {
                 _applier.BuildMapping(Model);
-                
+
                 // VMDがロード済みなら再適用
                 if (_vmd != null)
                 {
@@ -176,6 +177,10 @@ namespace Poly_Ling.VMD
                 {
                     ClearVMD();
                 }
+                if (GUILayout.Button("Reload", GUILayout.Width(60)))
+                {
+                    ReloadVMD();
+                }
                 EditorGUI.EndDisabledGroup();
             }
         }
@@ -198,7 +203,7 @@ namespace Poly_Ling.VMD
                     var report = _applier.DiagnoseMatching(_vmd);
                     EditorGUILayout.Space(4);
                     EditorGUILayout.LabelField($"Matched Bones: {report.MatchedBones.Count}/{_vmd.BoneNames.Count()} ({report.BoneMatchRate:P0})");
-                    
+
                     if (report.UnmatchedVMDBones.Count > 0)
                     {
                         EditorGUILayout.LabelField($"Unmatched: {string.Join(", ", report.UnmatchedVMDBones.Take(5))}", EditorStyles.miniLabel);
@@ -266,7 +271,7 @@ namespace Poly_Ling.VMD
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUILayout.LabelField("Go to:", GUILayout.Width(45));
-                
+
                 EditorGUI.BeginChangeCheck();
                 int inputFrame = EditorGUILayout.IntField(Mathf.RoundToInt(_currentFrame), GUILayout.Width(60));
                 if (EditorGUI.EndChangeCheck())
@@ -288,6 +293,18 @@ namespace Poly_Ling.VMD
 
         private void DrawDataLists()
         {
+            // オプション
+            EditorGUILayout.LabelField("Options", EditorStyles.boldLabel);
+            EditorGUI.BeginChangeCheck();
+            _applyCoordinateConversion = EditorGUILayout.Toggle("Coordinate Conversion (Z flip)", _applyCoordinateConversion);
+            if (EditorGUI.EndChangeCheck())
+            {
+                _applier.ApplyCoordinateConversion = _applyCoordinateConversion;
+                if (_vmd != null) ApplyFrame();
+            }
+
+            EditorGUILayout.Space(8);
+
             _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
             {
                 // ボーンリスト
@@ -367,12 +384,36 @@ namespace Poly_Ling.VMD
             _currentFrame = 0;
         }
 
+        private void ReloadVMD()
+        {
+            if (string.IsNullOrEmpty(_filePath)) return;
+            string path = _filePath;
+            float frame = _currentFrame;
+            ClearVMD();
+            try
+            {
+                _vmd = VMDData.LoadFromFile(path);
+                _filePath = path;
+                _currentFrame = frame;
+                if (Model != null)
+                {
+                    _applier.BuildMapping(Model);
+                    ApplyFrame();
+                }
+                Debug.Log($"[VMDTest] Reloaded: {Path.GetFileName(path)}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[VMDTest] Reload failed: {ex}");
+            }
+        }
+
         private void ApplyFrame()
         {
             if (_vmd == null || Model == null) return;
 
-            _applier.ApplyBonePose(Model, _vmd, _currentFrame);
-            
+            _applier.ApplyFrame(Model, _vmd, _currentFrame);
+
             // 再描画
             _context?.Repaint?.Invoke();
             SceneView.RepaintAll();
@@ -383,7 +424,7 @@ namespace Poly_Ling.VMD
             if (Model == null) return;
 
             _applier.ResetAllBones(Model);
-            
+
             _context?.Repaint?.Invoke();
             SceneView.RepaintAll();
         }

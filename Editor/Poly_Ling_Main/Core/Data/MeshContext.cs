@@ -378,6 +378,25 @@ namespace Poly_Ling.Data
         /// </summary>
         public Quaternion BoneModelRotation { get; set; } = Quaternion.identity;
 
+        // ================================================================
+        // IKデータ（PMXインポート時に設定）
+        // ================================================================
+
+        /// <summary>このボーンがIKボーンか</summary>
+        public bool IsIK { get; set; }
+
+        /// <summary>IKターゲット（エフェクタ）のMeshContextListインデックス</summary>
+        public int IKTargetIndex { get; set; } = -1;
+
+        /// <summary>IKループ回数</summary>
+        public int IKLoopCount { get; set; }
+
+        /// <summary>IK1回あたりの制限角度（ラジアン）</summary>
+        public float IKLimitAngle { get; set; }
+
+        /// <summary>IKリンクチェーン</summary>
+        public List<IKLinkInfo> IKLinks { get; set; }
+
         /// <summary>
         /// スキニング行列を取得（WorldMatrix × BindPose）
         /// </summary>
@@ -848,5 +867,23 @@ namespace Poly_Ling.Data
                 Lines = new HashSet<int>(this.Lines ?? new HashSet<int>())
             };
         }
+    }
+
+    /// <summary>
+    /// IKリンク情報（CCDIKのチェーン要素）
+    /// </summary>
+    public class IKLinkInfo
+    {
+        /// <summary>リンクボーンのMeshContextListインデックス</summary>
+        public int BoneIndex { get; set; }
+
+        /// <summary>角度制限あり</summary>
+        public bool HasLimit { get; set; }
+
+        /// <summary>角度制限下限（ラジアン）</summary>
+        public Vector3 LimitMin { get; set; }
+
+        /// <summary>角度制限上限（ラジアン）</summary>
+        public Vector3 LimitMax { get; set; }
     }
 }

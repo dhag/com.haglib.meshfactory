@@ -36,7 +36,7 @@ namespace Poly_Ling.VMD
         /// <summary>
         /// 座標変換を適用するかどうか
         /// </summary>
-        public bool ApplyCoordinateConversion { get; set; } = true;
+        public bool ApplyCoordinateConversion { get; set; } = false;
 
         /// <summary>
         /// 未マッチのボーン名リスト（デバッグ用）
@@ -210,13 +210,33 @@ namespace Poly_Ling.VMD
                 }
 
                 // ★★★ ローカル軸空間変換 - 削除禁止 ★★★
-                // 元ライブラリ(NCSHAGLIB BoneMatrixList)ではBoneTransformにローカル軸回転が
-                // 含まれず、最終回転 = vmdRot だった。
-                // Unity移植ではBoneTransformにローカル軸回転が入っているため、
-                // VMD回転(Q)をローカル軸空間に変換する必要がある。
-                // Rはモデル空間でのローカル軸回転（ワールド累積）。
-                // BoneTransform.RotationQuaternionは親からの相対回転なので使えない。
-                // 変換: Q' = R^-1 * Q * R
+                //
+                // ■ 背景
+                // 元ライブラリ(NCSHAGLIB BoneMatrixList)ではボーン行列を以下で計算していた:
+                //   boneMatrix = invBindpose * TRS(vmdTrans, vmdRot) * bindpose
+                // bindposeは平行移動のみでローカル軸回転を含まない。
+                // そのためVMDのQuaternionはグローバル軸空間での回転としてそのまま使えた。
+                //
+                // ■ Unity移植での構造変更
+                // UnityではTransform階層がローカル基準のため、以下の構造になった:
+                //   BoneTransform.TransformMatrix = TRS(ローカル位置, ローカル軸回転R_local)
+                //   BonePoseData.LocalMatrix       = TRS(vmdPos, convertedRot)
+                //   MeshContext.LocalMatrix         = BoneTransform × BonePoseData
+                // BoneTransformにローカル軸回転(R_local)が入っているため、
+                // VMDのQuaternion(Q)をそのまま使うと回転空間がずれる。
+                //
+                // ■ 解決策
+                // 各ボーンのモデル空間でのローカル軸回転(R)を使い、
+                // VMD回転をローカル軸空間に座標変換する:
+                //   Q' = R^-1 * Q * R
+                // Rは MeshContext.BoneModelRotation に保存されている。
+                // これはPMXImporterのCalculateBoneModelRotationの戻り値（ワールド累積回転）。
+                //
+                // ■ 注意: BoneTransform.RotationQuaternionは使えない
+                // BoneTransformの回転は親からの相対回転 = Inverse(親R) * R であり、
+                // ワールド空間でのローカル軸回転とは異なる。
+                // 相対回転で変換すると親ボーンの回転成分が抜け落ち、誤差が生じる。
+                //
                 Quaternion modelRot = ctx.BoneModelRotation;
                 if (modelRot != Quaternion.identity)
                 {
@@ -293,7 +313,23 @@ namespace Poly_Ling.VMD
         {
             ApplyBonePose(model, vmd, frameNumber);
             ApplyMorphWeights(model, vmd, frameNumber);
+
+            // IK解決
+            // ApplyBonePose内でComputeWorldMatrices()が呼ばれた後、
+            // VMD適用済みのWorldMatrixを入力としてIKを解く。
+            // CCDIKSolverはWorldMatrixを直接操作して結果を反映する
+            // （BonePoseDataレイヤーは使わない）。
+            if (EnableIK)
+            {
+                _ikSolver.Solve(model);
+            }
         }
+
+        /// <summary>IK有効フラグ</summary>
+        public bool EnableIK { get; set; } = true;
+
+        /// <summary>IKソルバー</summary>
+        private CCDIKSolver _ikSolver = new CCDIKSolver();
 
         // ================================================================
         // モーフ適用

@@ -508,7 +508,18 @@ namespace Poly_Ling.PMX
         public static Quaternion CalculateBoneModelRotation(PMXBone pmxBone, PMXDocument document, int boneIndex, PMXImportSettings settings)
         {
             const int FLAG_LOCAL_AXIS = 0x0800;
+            const int FLAG_IK = 0x0020;
             bool hasLocalAxis = (pmxBone.Flags & FLAG_LOCAL_AXIS) != 0;
+            bool isIK = (pmxBone.Flags & FLAG_IK) != 0;
+
+            // IKボーン、およびローカル軸フラグがなくIKの親となる移動制御ボーンはidentityを返す
+            // 元ライブラリではBoneMatrixListにローカル軸回転は入らず、bindposeは平行移動のみ
+            // ローカル軸フラグがないボーンにデフォルト軸を自動計算するのは
+            // ローカル軸フラグを持つボーンのみに限定すべき
+            if (isIK || !hasLocalAxis)
+            {
+                return Quaternion.identity;
+            }
 
             Vector3 localX, localZ;
 
@@ -1116,6 +1127,59 @@ namespace Poly_Ling.PMX
 
             // ★MeshContextにもHierarchyParentIndexを設定（重要！）
             meshContext.HierarchyParentIndex = parentIndex;
+
+            // IKデータを設定
+            const int FLAG_IK = 0x0020;
+            if ((pmxBone.Flags & FLAG_IK) != 0 && pmxBone.IKLinks != null && pmxBone.IKLinks.Count > 0)
+            {
+                meshContext.IsIK = true;
+                // IKターゲット（エフェクタ）のインデックス解決
+                if (!string.IsNullOrEmpty(pmxBone.IKTargetBoneName) &&
+                    boneNameToIndex.TryGetValue(pmxBone.IKTargetBoneName, out int ikTargetIdx))
+                {
+                    meshContext.IKTargetIndex = ikTargetIdx;
+                }
+                else if (pmxBone.IKTargetIndex >= 0)
+                {
+                    meshContext.IKTargetIndex = pmxBone.IKTargetIndex;
+                }
+                meshContext.IKLoopCount = pmxBone.IKLoopCount;
+                meshContext.IKLimitAngle = pmxBone.IKLimitAngle;
+
+                meshContext.IKLinks = new List<IKLinkInfo>();
+                foreach (var link in pmxBone.IKLinks)
+                {
+                    int linkIdx = -1;
+                    if (!string.IsNullOrEmpty(link.BoneName) &&
+                        boneNameToIndex.TryGetValue(link.BoneName, out int nameIdx))
+                    {
+                        linkIdx = nameIdx;
+                    }
+                    else if (link.BoneIndex >= 0)
+                    {
+                        linkIdx = link.BoneIndex;
+                    }
+
+                    meshContext.IKLinks.Add(new IKLinkInfo
+                    {
+                        BoneIndex = linkIdx,
+                        HasLimit = link.HasLimit,
+                        LimitMin = link.LimitMin,
+                        LimitMax = link.LimitMax
+                    });
+                }
+
+                Debug.Log($"[PMXImporter] IK Bone '{pmxBone.Name}': target={meshContext.IKTargetIndex}, loops={meshContext.IKLoopCount}, links={meshContext.IKLinks.Count}");
+                foreach (var lnk in meshContext.IKLinks)
+                {
+                    Debug.Log($"[PMXImporter]   Link: resolvedIdx={lnk.BoneIndex} hasLimit={lnk.HasLimit} min={lnk.LimitMin} max={lnk.LimitMax}");
+                }
+                // PMXのIKLinkの元データも出力
+                foreach (var link in pmxBone.IKLinks)
+                {
+                    Debug.Log($"[PMXImporter]   RawLink: BoneIndex={link.BoneIndex} BoneName='{link.BoneName}'");
+                }
+            }
 
             return meshContext;
         }
